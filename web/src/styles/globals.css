@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* ── SOULDAWN DATING — Global Styles ─────────────────────────── */
+
+@theme {
+  --color-bg: #0a0a1a;
+  --color-bg-secondary: #12122a;
+  --color-surface: #1a1a2e;
+  --color-accent: #ff6b9d;
+  --color-accent-secondary: #c97b3d;
+  --color-text: #f0f0f5;
+  --color-text-muted: #8a8a9a;
+  --color-success: #6bff9d;
+  --color-danger: #ff6b6b;
+  --color-warn: #ffd93d;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Oswald", system-ui, sans-serif;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  overscroll-behavior: none;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+/* Hide scrollbar but keep scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Swipe card glow */
+.swipe-card-glow {
+  box-shadow: 0 20px 60px -10px rgba(255, 107, 157, 0.3);
+}
+
+/* Match modal animation */
+@keyframes heart-beat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+.heart-beat {
+  animation: heart-beat 1s ease-in-out infinite;
+}
+
+/* Safe area for iOS */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

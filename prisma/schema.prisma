@@ -1,0 +1,233 @@
+// ── SOULDAWN DATING — Database Schema ──────────────────────────
+// Source of truth для всех сервисов (bot, api, web)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ПОЛЬЗОВАТЕЛИ
+// ════════════════════════════════════════════════════════════════
+
+model User {
+  @@map("dating_users")
+
+  id          String   @id @default(cuid())
+  telegramId  BigInt?  @unique          // Telegram user ID
+  phone       String?                   // Телефон (SMS auth — позже)
+  role        String   @default("user") // user | admin | owner
+  isBanned    Boolean  @default(false)
+  isVerified  Boolean  @default(false) // Верифицирован через Telegram Premium / Apple
+  lastSeenAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  profile     Profile?
+  likesGiven  Like[]   @relation("LikesGiven")
+  likesReceived Like[] @relation("LikesReceived")
+  matches1    Match[]  @relation("Matches1")
+  matches2    Match[]  @relation("Matches2")
+  messages    Message[]
+  reportsMade Report[] @relation("ReportsMade")
+  reportsReceived Report[] @relation("ReportsReceived")
+  subscription Subscription?
+  moderationLogs AiModerationLog[]
+  swipeSessions SwipeSession[]
+
+  @@index([telegramId])
+  @@index([isBanned])
+}
+
+// ════════════════════════════════════════════════════════════════
+//  АНКЕТА ПРОФИЛЯ
+// ════════════════════════════════════════════════════════════════
+
+model Profile {
+  @@map("dating_profiles")
+
+  userId             String   @id // 1:1 с User
+  displayName        String   @default("")
+  bio                String   @default("")   // до 500 символов
+  gender             String   @default("other") // male | female | other
+  birthDate          DateTime?               // для возраста
+  city               String   @default("")
+  latitude           Float?
+  longitude          Float?
+  photos             String   @default("[]") // JSON array of R2 URLs (max 6)
+  interests          String   @default("[]") // JSON array строк
+  aiBio              String?                // AI-сгенерированное описание
+  verificationStatus String   @default("none") // none | pending | verified
+  isIncognito        Boolean  @default(false) // Premium: скрыть из поисковых
+  lookingFor         String   @default("any") // male | female | other | any
+  ageMin             Int      @default(18)
+  ageMax             Int      @default(99)
+  distanceMax        Int      @default(100) // км
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([gender])
+  @@index([city])
+  @@index([lookingFor])
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ЛАЙКИ / ДИЗЛАЙКИ
+// ════════════════════════════════════════════════════════════════
+
+model Like {
+  @@map("dating_likes")
+
+  id        String   @id @default(cuid())
+  likerId   String
+  likedId   String
+  type      String   @default("like") // like | superlike | pass
+  createdAt DateTime @default(now())
+
+  liker  User @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
+  liked  User @relation("LikesReceived", fields: [likedId], references: [id], onDelete: Cascade)
+
+  @@unique([likerId, likedId]) // Один лайк на пользователя
+  @@index([likerId])
+  @@index([likedId])
+  @@index([type])
+}
+
+// ════════════════════════════════════════════════════════════════
+//  МЭТЧИ (взаимные лайки)
+// ════════════════════════════════════════════════════════════════
+
+model Match {
+  @@map("dating_matches")
+
+  id         String   @id @default(cuid())
+  user1Id    String
+  user2Id    String
+  matchScore Int?             // AI-скоринг 0-100
+  aiReason   String?          // AI-объяснение совместимости
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  user1 User @relation("Matches1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2 User @relation("Matches2", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  messages Message[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@index([isActive])
+}
+
+// ════════════════════════════════════════════════════════════════
+//  СООБЩЕНИЯ
+// ════════════════════════════════════════════════════════════════
+
+model Message {
+  @@map("dating_messages")
+
+  id        String    @id @default(cuid())
+  matchId   String
+  senderId  String
+  text      String    @default("")
+  imageUrl  String?           // Если отправили фото
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  match   Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  sender  User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([matchId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ЖАЛОБЫ (App Store requirement: report/block 1 click)
+// ════════════════════════════════════════════════════════════════
+
+model Report {
+  @@map("dating_reports")
+
+  id          String   @id @default(cuid())
+  reporterId  String
+  reportedId  String
+  reason      String   // spam | harassment | nudity | scam | other
+  description String   @default("")
+  status      String   @default("pending") // pending | reviewed | resolved | dismissed
+  createdAt   DateTime @default(now())
+
+  reporter User @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported User @relation("ReportsReceived", fields: [reportedId], references: [id], onDelete: Cascade)
+
+  @@index([reporterId])
+  @@index([reportedId])
+  @@index([status])
+}
+
+// ════════════════════════════════════════════════════════════════
+//  СЕССИЯ СВАЙПОВ (чтобы не показывать повторно)
+// ════════════════════════════════════════════════════════════════
+
+model SwipeSession {
+  @@map("dating_swipe_sessions")
+
+  id           String   @id @default(cuid())
+  userId       String
+  viewedIds    String   @default("[]") // JSON array of viewed profile userIds
+  expiresAt    DateTime @default(now()) // Сбрасывается через 24ч
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ПОДПИСКА (Premium)
+// ════════════════════════════════════════════════════════════════
+
+model Subscription {
+  @@map("dating_subscriptions")
+
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  plan       String    @default("free") // free | premium | vip
+  stripeId   String?               // Stripe subscription ID
+  features   String   @default("[]") // JSON array: ["incognito", "see_who_liked", "ai_bio"]
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ════════════════════════════════════════════════════════════════
+//  AI-МОДЕРАЦИЯ (лог проверок контента)
+// ════════════════════════════════════════════════════════════════
+
+model AiModerationLog {
+  @@map("dating_ai_moderation_logs")
+
+  id         String   @id @default(cuid())
+  userId     String
+  contentType String  // photo | bio | message
+  content    String   // URL фото или текст
+  result     String   // safe | warning | blocked
+  action     String   // none | warn | ban
+  reason     String   @default("")
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([result])
+  @@index([createdAt])
+}

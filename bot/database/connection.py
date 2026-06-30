@@ -1,0 +1,280 @@
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from config import DATABASE_URL
+from database.models import Base, User, Profile, Like, Match, Message
+
+logger = logging.getLogger(__name__)
+
+engine = create_async_engine(
+    DATABASE_URL,
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+)
+
+async_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def _session_cls() -> async_sessionmaker[AsyncSession]:
+    global async_session_factory
+    if async_session_factory is None:
+        async_session_factory = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False,
+        )
+    return async_session_factory
+
+
+async def init_db():
+    """Create tables if they don't exist."""
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            await session.run_sync(Base.metadata.create_all)
+    logger.info("Database tables ensured")
+
+
+# ════════════════════════════════════════════════════════════════
+#  USER CRUD
+# ════════════════════════════════════════════════════════════════
+
+async def get_or_create_user(telegram_id: int, username: str = "", name: str = "") -> dict:
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            user = result.scalar_one_or_none()
+
+            if user:
+                user.last_seen_at = datetime.now()
+                await session.flush()
+                return _user_to_dict(user)
+
+            user = User(telegram_id=telegram_id, role="user")
+            session.add(user)
+            await session.flush()
+
+            # Create empty profile
+            profile = Profile(user_id=user.id, display_name=name)
+            session.add(profile)
+            await session.flush()
+
+            logger.info(f"New user registered: {telegram_id} @{username}")
+            return _user_to_dict(user)
+
+
+async def get_user_by_telegram_id(telegram_id: int) -> dict | None:
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        return _user_to_dict(user) if user else None
+
+
+async def get_user_by_id(user_id: str) -> dict | None:
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        return _user_to_dict(user) if user else None
+
+
+async def get_profile(user_id: str) -> dict | None:
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(Profile).where(Profile.user_id == user_id)
+        )
+        profile = result.scalar_one_or_none()
+        return _profile_to_dict(profile) if profile else None
+
+
+async def update_profile(user_id: str, **fields) -> dict | None:
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Profile).where(Profile.user_id == user_id)
+            )
+            profile = result.scalar_one_or_none()
+
+            if not profile:
+                profile = Profile(user_id=user_id)
+                session.add(profile)
+
+            for k, v in fields.items():
+                if k in ("photos", "interests") and isinstance(v, (list, dict)):
+                    setattr(profile, k, json.dumps(v))
+                else:
+                    setattr(profile, k, v)
+
+            await session.flush()
+            return _profile_to_dict(profile)
+
+
+async def set_profile_ready(user_id: str) -> None:
+    """Mark profile as complete after onboarding."""
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            if user:
+                user.is_verified = True
+
+
+# ════════════════════════════════════════════════════════════════
+#  LIKES & MATCHES
+# ════════════════════════════════════════════════════════════════
+
+async def create_like(liker_id: str, liked_id: str, like_type: str = "like") -> dict:
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            # Check existing
+            result = await session.execute(
+                select(Like).where(
+                    Like.liker_id == liker_id,
+                    Like.liked_id == liked_id,
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                return {"already_exists": True, "type": existing.type}
+
+            like = Like(liker_id=liker_id, liked_id=liked_id, type=like_type)
+            session.add(like)
+            await session.flush()
+            return {"id": like.id, "type": like.type}
+
+
+async def check_mutual_like(liker_id: str, liked_id: str) -> dict | None:
+    """Check if liked_id previously liked liker_id."""
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(Like).where(
+                Like.liker_id == liked_id,
+                Like.liked_id == liker_id,
+                Like.type != "pass",
+            )
+        )
+        mutual = result.scalar_one_or_none()
+        return {"mutual": mutual is not None, "type": mutual.type if mutual else None} if mutual else None
+
+
+async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
+    """Get random profiles for the bot to show (like Дайвинчик)."""
+    cls = _session_cls()
+    async with cls() as session:
+        # Get already liked
+        result = await session.execute(
+            select(Like.liked_id).where(Like.liker_id == user_id)
+        )
+        liked_ids = {row[0] for row in result.all()} | {user_id}
+
+        result = await session.execute(
+            select(Profile)
+            .join(User, Profile.user_id == User.id)
+            .where(
+                User.is_banned == False,
+                Profile.is_incognito == False,
+                Profile.user_id.notin_(liked_ids) if liked_ids else True,
+            )
+            .order_by(text("RANDOM()"))
+            .limit(limit)
+        )
+        profiles = result.scalars().all()
+        return [_profile_to_dict(p) for p in profiles]
+
+
+async def get_match_partner(match_id: str, user_id: str) -> dict | None:
+    """Get the other user in a match."""
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(Match).where(Match.id == match_id)
+        )
+        match = result.scalar_one_or_none()
+        if not match:
+            return None
+
+        partner_id = match.user2_id if match.user1_id == user_id else match.user1_id
+        return await get_profile(partner_id)
+
+
+async def get_user_matches(user_id: str) -> list[dict]:
+    """Get all matches for a user."""
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(Match).where(
+                (Match.user1_id == user_id) | (Match.user2_id == user_id),
+                Match.is_active == True,
+            ).order_by(Match.created_at.desc())
+        )
+        matches = result.scalars().all()
+        return [
+            {
+                "id": m.id,
+                "partner_id": m.user2_id if m.user1_id == user_id else m.user1_id,
+                "match_score": m.match_score,
+                "ai_reason": m.ai_reason,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in matches
+        ]
+
+
+# ════════════════════════════════════════════════════════════════
+#  HELPERS
+# ════════════════════════════════════════════════════════════════
+
+def _user_to_dict(user: User) -> dict:
+    return {
+        "id": user.id,
+        "telegram_id": user.telegram_id,
+        "role": user.role,
+        "is_banned": user.is_banned,
+        "is_verified": user.is_verified,
+        "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+    }
+
+
+def _profile_to_dict(profile: Profile) -> dict:
+    photos = profile.photos if isinstance(profile.photos, list) else json.loads(profile.photos or "[]")
+    interests = profile.interests if isinstance(profile.interests, list) else json.loads(profile.interests or "[]")
+
+    age = None
+    if profile.birth_date:
+        now = datetime.now()
+        age = now.year - profile.birth_date.year
+        if (now.month, now.day) < (profile.birth_date.month, profile.birth_date.day):
+            age -= 1
+
+    return {
+        "user_id": profile.user_id,
+        "display_name": profile.display_name or "",
+        "bio": profile.bio or "",
+        "gender": profile.gender or "other",
+        "age": age,
+        "city": profile.city or "",
+        "photos": photos,
+        "interests": interests,
+        "ai_bio": profile.ai_bio,
+        "looking_for": profile.looking_for,
+    }
