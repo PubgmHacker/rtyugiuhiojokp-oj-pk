@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -36,7 +37,9 @@ async def upload_photo_to_r2(object_key: str, data: bytes, content_type: str) ->
         return f"https://placehold.co/600x800/1a1a2e/e0e0e0?text=Photo"
 
     try:
-        client.put_object(
+        # boto3 синхронный — не блокируем event loop
+        await asyncio.to_thread(
+            client.put_object,
             Bucket=settings.R2_BUCKET_NAME,
             Key=object_key,
             Body=data,
@@ -56,7 +59,9 @@ async def delete_photo_from_r2(object_key: str):
         return
 
     try:
-        client.delete_object(Bucket=settings.R2_BUCKET_NAME, Key=object_key)
+        await asyncio.to_thread(
+            client.delete_object, Bucket=settings.R2_BUCKET_NAME, Key=object_key,
+        )
     except Exception as e:
         logger.error(f"R2 delete error: {e}")
 

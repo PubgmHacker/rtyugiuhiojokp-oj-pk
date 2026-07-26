@@ -23,6 +23,13 @@ REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6380/0")
 API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000")
 SITE_URL: str = os.getenv("SITE_URL", "http://localhost:5173")  # Web frontend
 
+# ── Cloudflare R2 (перезаливка фото из Telegram, чтобы видел веб) ─
+R2_ACCOUNT_ID: str = os.getenv("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID: str = os.getenv("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY: str = os.getenv("R2_SECRET_ACCESS_KEY", "")
+R2_BUCKET_NAME: str = os.getenv("R2_BUCKET_NAME", "souldawn-dating")
+R2_PUBLIC_URL: str = os.getenv("R2_PUBLIC_URL", "")
+
 # ── Misc ─────────────────────────────────────────────────────────
 # Railway отдаёт PORT для web-сервисов; для бота используем WEBHOOK_PORT
 WEBHOOK_PORT: int = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8081")))

@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
-from database.models import Base, User, Profile, Like, Match, Message
+from database.models import Base, User, Profile, Like, Match, Message, Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,58 @@ async def set_profile_ready(user_id: str) -> None:
 
 
 # ════════════════════════════════════════════════════════════════
+#  PREMIUM
+# ════════════════════════════════════════════════════════════════
+
+async def get_active_subscription(user_id: str) -> dict | None:
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(Subscription).where(Subscription.user_id == user_id)
+        )
+        sub = result.scalar_one_or_none()
+        if not sub or sub.plan == "free":
+            return None
+        if sub.expires_at and sub.expires_at.replace(tzinfo=None) < datetime.utcnow():
+            return None
+        return {
+            "plan": sub.plan,
+            "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+        }
+
+
+async def activate_premium(user_id: str, days: int = 30, payment_id: str = "") -> dict:
+    """Активировать/продлить Premium (оплата Telegram Stars)."""
+    from datetime import timedelta
+
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Subscription).where(Subscription.user_id == user_id)
+            )
+            sub = result.scalar_one_or_none()
+
+            now = datetime.utcnow()
+            if not sub:
+                sub = Subscription(user_id=user_id)
+                session.add(sub)
+
+            # Продление поверх остатка, а не с текущей даты
+            base = now
+            if sub.expires_at:
+                current = sub.expires_at.replace(tzinfo=None)
+                if current > now:
+                    base = current
+
+            sub.plan = "premium"
+            sub.stripe_id = payment_id or sub.stripe_id
+            sub.expires_at = base + timedelta(days=days)
+            await session.flush()
+            return {"plan": sub.plan, "expires_at": sub.expires_at.isoformat()}
+
+
+# ════════════════════════════════════════════════════════════════
 #  LIKES & MATCHES
 # ════════════════════════════════════════════════════════════════
 
@@ -195,28 +247,54 @@ async def create_match(user_a: str, user_b: str) -> dict:
 
 
 async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
-    """Get random profiles for the bot to show (like Дайвинчик)."""
+    """Анкеты для показа в боте: фильтр по предпочтениям + сортировка по интересам."""
     cls = _session_cls()
     async with cls() as session:
+        result = await session.execute(
+            select(Profile).where(Profile.user_id == user_id)
+        )
+        my = result.scalar_one_or_none()
+
         # Get already liked
         result = await session.execute(
             select(Like.liked_id).where(Like.liker_id == user_id)
         )
         liked_ids = {row[0] for row in result.all()} | {user_id}
 
+        filters = [
+            User.is_banned == False,
+            Profile.is_incognito == False,
+            Profile.display_name != "",  # пустые анкеты не показываем
+            Profile.user_id.notin_(liked_ids) if liked_ids else True,
+        ]
+        if my and my.looking_for and my.looking_for != "any":
+            filters.append(Profile.gender.in_([my.looking_for, "other"]))
+
         result = await session.execute(
             select(Profile)
             .join(User, Profile.user_id == User.id)
-            .where(
-                User.is_banned == False,
-                Profile.is_incognito == False,
-                Profile.user_id.notin_(liked_ids) if liked_ids else True,
-            )
+            .where(*filters)
             .order_by(text("RANDOM()"))
-            .limit(limit)
+            .limit(limit * 3)
         )
-        profiles = result.scalars().all()
-        return [_profile_to_dict(p) for p in profiles]
+        profiles = [_profile_to_dict(p) for p in result.scalars().all()]
+
+        # Встречный фильтр + сортировка по общим интересам
+        my_gender = my.gender if my else "other"
+        my_interests = set(
+            (my.interests if isinstance(my.interests, list) else []) if my else []
+        )
+
+        def _visible(p: dict) -> bool:
+            lf = p.get("looking_for") or "any"
+            return lf == "any" or lf == my_gender or my_gender == "other"
+
+        profiles = [p for p in profiles if _visible(p)]
+        profiles.sort(
+            key=lambda p: len(my_interests & set(p.get("interests") or [])),
+            reverse=True,
+        )
+        return profiles[:limit]
 
 
 async def get_match_partner(match_id: str, user_id: str) -> dict | None:

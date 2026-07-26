@@ -13,8 +13,10 @@ from database.connection import (
     get_deck_profiles,
     get_match_partner,
     get_user_matches,
+    get_active_subscription,
+    activate_premium,
 )
-from database.models import Base, User, Profile, Like, Match, Message
+from database.models import Base, User, Profile, Like, Match, Message, Subscription
 
 __all__ = [
     "engine",
@@ -31,4 +33,6 @@ __all__ = [
     "get_deck_profiles",
     "get_match_partner",
     "get_user_matches",
+    "get_active_subscription",
+    "activate_premium",
 ]

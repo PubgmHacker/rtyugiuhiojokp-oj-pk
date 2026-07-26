@@ -43,8 +43,11 @@ class UserProfile(BaseModel):
     ai_bio: Optional[str] = None
     looking_for: str = "any"
     is_incognito: bool = False
+    is_premium: bool = False
     age_min: int = 18
     age_max: int = 99
+    distance_max: int = 100
+    has_location: bool = False
 
 
 class ProfileUpdate(BaseModel):

@@ -85,6 +85,18 @@ class Match(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Subscription(Base):
+    __tablename__ = "dating_subscriptions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), unique=True)
+    plan: Mapped[str] = mapped_column(String, default="free")
+    stripe_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    features: Mapped[dict | list] = mapped_column(JSON, default=list)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Message(Base):
     __tablename__ = "dating_messages"
 

@@ -7,10 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import and_, or_
+
 from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import User, Profile, Like, SwipeSession
+from models.models import User, Profile, Like, Subscription, SwipeSession
 from models.schemas import DeckProfile, ProfileUpdate, UserProfile
 from services.matching import get_deck_profiles
 from services.ai_moderation import moderate_text
@@ -39,6 +41,20 @@ async def reset_deck(
     from services.realtime import clear_viewed_profiles
     await clear_viewed_profiles(user.id)
     return {"success": True}
+
+
+async def _is_premium(session: AsyncSession, user_id: str) -> bool:
+    result = await session.execute(
+        select(Subscription.id).where(and_(
+            Subscription.user_id == user_id,
+            Subscription.plan != "free",
+            or_(
+                Subscription.expires_at.is_(None),
+                Subscription.expires_at > datetime.now(timezone.utc),
+            ),
+        ))
+    )
+    return result.scalar_one_or_none() is not None
 
 
 @router.get("/me", response_model=UserProfile)
@@ -74,8 +90,11 @@ async def get_my_profile(
         ai_bio=profile.ai_bio if profile else None,
         looking_for=profile.looking_for if profile else "any",
         is_incognito=profile.is_incognito if profile else False,
+        is_premium=await _is_premium(session, user.id),
         age_min=profile.age_min if profile else 18,
         age_max=profile.age_max if profile else 99,
+        distance_max=profile.distance_max if profile else 100,
+        has_location=bool(profile and profile.latitude is not None),
     )
 
 
@@ -95,6 +114,10 @@ async def update_my_profile(
         await session.flush()
 
     update_fields = data.model_dump(exclude_unset=True)
+
+    # Инкогнито-режим — премиум-фича (выключить может любой)
+    if update_fields.get("is_incognito") is True and not await _is_premium(session, user.id):
+        raise HTTPException(status_code=403, detail="Инкогнито-режим доступен в Premium")
 
     if "birth_date" in update_fields and update_fields["birth_date"]:
         try:
@@ -146,6 +169,9 @@ async def update_my_profile(
         ai_bio=profile.ai_bio,
         looking_for=profile.looking_for,
         is_incognito=profile.is_incognito,
+        is_premium=await _is_premium(session, user.id),
         age_min=profile.age_min,
         age_max=profile.age_max,
+        distance_max=profile.distance_max,
+        has_location=profile.latitude is not None,
     )

@@ -27,6 +27,21 @@ export default function Onboarding() {
   const [photos, setPhotos] = useState<string[]>(user?.photos || []);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [geoStatus, setGeoStatus] = useState<"idle" | "busy" | "ok" | "fail">("idle");
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+
+  const handleGeolocate = () => {
+    if (!navigator.geolocation) return setGeoStatus("fail");
+    setGeoStatus("busy");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        setGeoStatus("ok");
+      },
+      () => setGeoStatus("fail"),
+      { timeout: 10000 }
+    );
+  };
 
   const totalSteps = 7;
 
@@ -78,6 +93,7 @@ export default function Onboarding() {
         looking_for: lookingFor,
         interests,
         photos,
+        ...(coords ? { latitude: coords.lat, longitude: coords.lon } : {}),
       });
       setUser(updated);
       hapticFeedback("success");
@@ -186,6 +202,16 @@ export default function Onboarding() {
                   autoFocus
                   className="w-full px-5 py-4 bg-surface rounded-2xl text-lg outline-none focus:ring-2 focus:ring-accent"
                 />
+                <button
+                  type="button"
+                  onClick={handleGeolocate}
+                  disabled={geoStatus === "busy"}
+                  className="mt-3 w-full py-3 bg-surface/60 rounded-2xl text-sm text-text-muted disabled:opacity-50"
+                >
+                  {geoStatus === "busy" ? "📍 Определяю координаты…"
+                    : geoStatus === "ok" ? "📍 Координаты сохранены ✓ (введите город выше)"
+                    : "📍 Разрешить поиск рядом (геолокация)"}
+                </button>
               </StepContainer>
             )}
 

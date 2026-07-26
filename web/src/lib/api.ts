@@ -51,8 +51,11 @@ export interface UserProfile {
   ai_bio?: string | null;
   looking_for: string;
   is_incognito: boolean;
+  is_premium?: boolean;
   age_min?: number;
   age_max?: number;
+  distance_max?: number;
+  has_location?: boolean;
 }
 
 export interface DeckProfile {

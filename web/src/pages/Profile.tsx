@@ -12,8 +12,14 @@ export default function Profile() {
   const [lookingFor, setLookingFor] = useState("any");
   const [ageMin, setAgeMin] = useState(18);
   const [ageMax, setAgeMax] = useState(99);
+  const [distanceMax, setDistanceMax] = useState(100);
   const [savingFilters, setSavingFilters] = useState(false);
   const [filtersSaved, setFiltersSaved] = useState(false);
+  const [geoStatus, setGeoStatus] = useState<"idle" | "busy" | "ok" | "fail">("idle");
+  const [incognitoBusy, setIncognitoBusy] = useState(false);
+  const [incognitoError, setIncognitoError] = useState("");
+
+  const botUsername = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
 
   useEffect(() => {
     loadProfile();
@@ -26,6 +32,7 @@ export default function Profile() {
       setLookingFor(data.looking_for || "any");
       setAgeMin(data.age_min ?? 18);
       setAgeMax(data.age_max ?? 99);
+      setDistanceMax(data.distance_max ?? 100);
     } catch (e) {
       console.error(e);
     } finally {
@@ -40,9 +47,13 @@ export default function Profile() {
       const clamp = (v: number) => Math.min(99, Math.max(18, v || 18));
       const lo = clamp(Math.min(ageMin, ageMax));
       const hi = clamp(Math.max(ageMin, ageMax));
-      await updateMyProfile({ looking_for: lookingFor, age_min: lo, age_max: hi });
+      const dist = Math.min(500, Math.max(1, distanceMax || 100));
+      await updateMyProfile({
+        looking_for: lookingFor, age_min: lo, age_max: hi, distance_max: dist,
+      });
       setAgeMin(lo);
       setAgeMax(hi);
+      setDistanceMax(dist);
       setDeck([]); // сбрасываем деку, чтобы фильтры применились сразу
       setFiltersSaved(true);
       setTimeout(() => setFiltersSaved(false), 2000);
@@ -56,6 +67,44 @@ export default function Profile() {
   const handleLogout = () => {
     logout();
     navigate("/login");
+  };
+
+  const handleGeolocate = () => {
+    if (!navigator.geolocation) {
+      setGeoStatus("fail");
+      return;
+    }
+    setGeoStatus("busy");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await updateMyProfile({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setGeoStatus("ok");
+          setProfile((p) => (p ? { ...p, has_location: true } : p));
+        } catch {
+          setGeoStatus("fail");
+        }
+      },
+      () => setGeoStatus("fail"),
+      { timeout: 10000 }
+    );
+  };
+
+  const toggleIncognito = async () => {
+    if (!profile || incognitoBusy) return;
+    setIncognitoBusy(true);
+    setIncognitoError("");
+    try {
+      const updated = await updateMyProfile({ is_incognito: !profile.is_incognito });
+      setProfile(updated);
+    } catch (e: any) {
+      setIncognitoError(e.response?.data?.detail || "Не удалось изменить режим");
+    } finally {
+      setIncognitoBusy(false);
+    }
   };
 
   if (loading) {
@@ -172,6 +221,26 @@ export default function Profile() {
           </div>
         </div>
 
+        <div className="mb-4">
+          <p className="text-xs text-text-muted mb-2">Радиус поиска: {distanceMax} км</p>
+          <input
+            type="range" min={1} max={500} value={distanceMax}
+            onChange={(e) => setDistanceMax(parseInt(e.target.value))}
+            className="w-full accent-[var(--color-accent,#e94560)]"
+          />
+          <button
+            onClick={handleGeolocate}
+            disabled={geoStatus === "busy"}
+            className="mt-2 w-full py-2 bg-bg rounded-full text-sm text-text-muted disabled:opacity-50"
+          >
+            {geoStatus === "busy" ? "📍 Определяю…"
+              : geoStatus === "ok" ? "📍 Местоположение обновлено ✓"
+              : geoStatus === "fail" ? "📍 Не удалось — проверьте доступ"
+              : profile?.has_location ? "📍 Обновить местоположение"
+              : "📍 Включить поиск рядом (геолокация)"}
+          </button>
+        </div>
+
         <button
           onClick={saveFilters}
           disabled={savingFilters}
@@ -191,16 +260,50 @@ export default function Profile() {
           <span>Редактировать анкету</span>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 bg-gradient-to-r from-warn/20 to-accent/20 rounded-2xl">
-          <Crown size={20} className="text-warn" />
-          <span className="flex-1 text-left">Premium</span>
-          <span className="text-xs text-text-muted">Скоро</span>
-        </button>
-
-        <button className="w-full flex items-center gap-3 p-4 bg-surface rounded-2xl hover:bg-surface/80 transition">
-          <Shield size={20} className="text-success" />
-          <span>Конфиденциальность</span>
-        </button>
+        {profile?.is_premium ? (
+          <div className="p-4 bg-gradient-to-r from-warn/20 to-accent/20 rounded-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <Crown size={20} className="text-warn" />
+              <span className="flex-1 font-semibold">Premium активен</span>
+              <span className="text-xs px-2 py-1 bg-warn/30 rounded-full">⭐</span>
+            </div>
+            <button
+              onClick={toggleIncognito}
+              disabled={incognitoBusy}
+              className="w-full flex items-center gap-3 p-3 bg-bg/40 rounded-xl disabled:opacity-50"
+            >
+              <Shield size={18} className={profile.is_incognito ? "text-success" : "text-text-muted"} />
+              <span className="flex-1 text-left text-sm">Инкогнито-режим</span>
+              <span
+                className={`w-11 h-6 rounded-full relative transition ${
+                  profile.is_incognito ? "bg-success" : "bg-surface"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${
+                    profile.is_incognito ? "left-[22px]" : "left-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+            {incognitoError && <p className="mt-2 text-xs text-danger">{incognitoError}</p>}
+          </div>
+        ) : (
+          <a
+            href={`https://t.me/${botUsername}?start=premium`}
+            target="_blank"
+            rel="noreferrer"
+            className="w-full flex items-center gap-3 p-4 bg-gradient-to-r from-warn/20 to-accent/20 rounded-2xl hover:opacity-90 transition"
+          >
+            <Crown size={20} className="text-warn" />
+            <span className="flex-1">
+              <span className="block font-semibold">Premium за ⭐ Stars</span>
+              <span className="block text-xs text-text-muted">
+                Инкогнито-режим + буст в выдаче · оформление в Telegram
+              </span>
+            </span>
+          </a>
+        )}
 
         <button
           onClick={handleLogout}

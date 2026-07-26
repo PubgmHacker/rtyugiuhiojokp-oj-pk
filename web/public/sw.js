@@ -1,11 +1,8 @@
 // Souldawn Dating — Service Worker (PWA offline cache)
-const CACHE_NAME = "souldawn-dating-v1";
-const STATIC_ASSETS = ["/", "/discover", "/matches", "/profile"];
+// Network-first: свежий бандл всегда приоритетен, кеш — только офлайн-фолбэк.
+const CACHE_NAME = "souldawn-dating-v2";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
   self.skipWaiting();
 });
 
@@ -19,23 +16,24 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  // Skip non-GET and API calls
-  if (event.request.method !== "GET" || event.request.url.includes("/api/")) {
+  // Skip non-GET, API calls and WebSocket upgrades
+  if (
+    event.request.method !== "GET" ||
+    event.request.url.includes("/api/") ||
+    event.request.url.includes("/ws/")
+  ) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request)
-          .then((response) => {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-            return response;
-          })
-          .catch(() => cached)
-      );
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

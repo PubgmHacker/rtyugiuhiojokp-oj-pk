@@ -96,7 +96,26 @@ async def process_photo(message: Message, state: FSMContext):
 
     # Get highest resolution photo
     photo = message.photo[-1]
-    photos.append(photo.file_id)
+
+    # Перезаливаем в R2, чтобы фото видел и веб; иначе храним file_id
+    stored: str = photo.file_id
+    try:
+        from services.r2_storage import upload_photo as r2_upload
+
+        db_user = await get_or_create_user(
+            message.from_user.id,
+            message.from_user.username or "",
+            message.from_user.first_name or "",
+        )
+        file = await message.bot.get_file(photo.file_id)
+        buf = await message.bot.download_file(file.file_path)
+        url = await r2_upload(db_user["id"], buf.read())
+        if url:
+            stored = url
+    except Exception as e:
+        logger.warning(f"Photo re-upload to R2 failed, keeping file_id: {e}")
+
+    photos.append(stored)
     await state.update_data(reg_photos=photos)
     count = len(photos)
     await message.answer(f"📸 Фото {count}/6 добавлено. Отправьте ещё или /skip")

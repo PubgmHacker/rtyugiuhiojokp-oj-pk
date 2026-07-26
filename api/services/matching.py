@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
+import random
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select, and_, not_, func
+from sqlalchemy import select, and_, not_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from models.models import User, Profile, Like
+from models.models import User, Profile, Like, Subscription
 from models.schemas import DeckProfile
 from services.ai_matchmaker import score_match
 from utils import as_list
@@ -71,9 +72,24 @@ async def get_deck_profiles(
             )
         )
         .order_by(func.random())
-        .limit(limit * 2)  # Fetch extra for filtering
+        .limit(limit * 3)  # Fetch extra for filtering + smart sort
     )
     profiles = result.scalars().all()
+
+    # Активные премиумы среди кандидатов — буст в выдаче
+    premium_ids: set[str] = set()
+    if profiles:
+        result = await session.execute(
+            select(Subscription.user_id).where(and_(
+                Subscription.user_id.in_([p.user_id for p in profiles]),
+                Subscription.plan != "free",
+                or_(
+                    Subscription.expires_at.is_(None),
+                    Subscription.expires_at > datetime.now(timezone.utc),
+                ),
+            ))
+        )
+        premium_ids = {row[0] for row in result.all()}
 
     # Filter by preferences and build deck
     deck: list[DeckProfile] = []
@@ -129,7 +145,21 @@ async def get_deck_profiles(
             match_reason=ai_reason,
         ))
 
-        if len(deck) >= limit:
-            break
+    # Умная сортировка вместо рандома: общие интересы, город, близость,
+    # премиум-буст + лёгкий шум, чтобы дека не была детерминированной
+    my_interests = set(as_list(my_profile.interests)) if my_profile else set()
+    my_city = (my_profile.city or "").strip().lower() if my_profile else ""
 
-    return deck
+    def _rank(p: DeckProfile) -> float:
+        score = 0.0
+        score += len(my_interests & set(p.interests)) * 10
+        if my_city and (p.city or "").strip().lower() == my_city:
+            score += 15
+        if p.distance is not None:
+            score += max(0.0, 20 - p.distance / 5)
+        if p.id in premium_ids:
+            score += 25
+        return score + random.uniform(0, 8)
+
+    deck.sort(key=_rank, reverse=True)
+    return deck[:limit]

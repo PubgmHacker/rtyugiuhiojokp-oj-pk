@@ -11,7 +11,7 @@ from aiohttp import web
 
 from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, BANNERS, REDIS_URL
 from database import init_db, get_or_create_user
-from handlers import registration, dating, matches
+from handlers import registration, dating, matches, premium
 from keyboards import main_kb
 from middlewares.registration import RegistrationMiddleware
 from services.redis_subscriber import start_redis_subscriber
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 async def cmd_start(message, state):
-    """Обработчик /start — главное меню."""
+    """Обработчик /start — главное меню (+ deep-link аргументы)."""
     await state.clear()
 
     db_user = await get_or_create_user(
@@ -33,6 +33,14 @@ async def cmd_start(message, state):
         message.from_user.username or "",
         message.from_user.first_name or "",
     )
+
+    # Deep-link: t.me/<bot>?start=premium (кнопка Premium из веба)
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) > 1 and parts[1].strip() == "premium":
+        from handlers.premium import PREMIUM_PITCH, send_premium_offer
+        await message.answer(PREMIUM_PITCH)
+        await send_premium_offer(message, db_user["id"])
+        return
 
     await message.answer_photo(
         photo=BANNERS["welcome"],
@@ -93,7 +101,11 @@ async def main():
     dp.callback_query.outer_middleware(RegistrationMiddleware())
 
     # Handlers
-    dp.message.register(cmd_start, lambda m: m.text == "/start" or m.text == "/help")
+    dp.message.register(
+        cmd_start,
+        lambda m: bool(m.text) and (m.text.startswith("/start") or m.text == "/help"),
+    )
+    dp.include_router(premium.router)
     dp.include_router(registration.router)
     dp.include_router(dating.router)
     dp.include_router(matches.router)
@@ -101,6 +113,7 @@ async def main():
     # Set bot commands
     await bot.set_my_commands([
         {"command": "start", "description": "Главное меню"},
+        {"command": "premium", "description": "⭐ Premium-подписка"},
         {"command": "help", "description": "Помощь"},
     ])
     if ADMIN_IDS:
@@ -122,7 +135,11 @@ async def main():
     # Start polling
     logger.info(f"Souldawn Dating Bot @{BOT_USERNAME} started!")
     try:
-        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+        # pre_checkout_query обязателен для платежей Telegram Stars
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "callback_query", "pre_checkout_query"],
+        )
     finally:
         redis_task.cancel()
         await bot.session.close()
