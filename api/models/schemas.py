@@ -48,6 +48,10 @@ class UserProfile(BaseModel):
     age_max: int = 99
     distance_max: int = 100
     has_location: bool = False
+    invited_count: int = 0
+    referral_boost: bool = False
+    referral_target: int = 3
+    referral_boost_percent: int = 12
 
 
 class ProfileUpdate(BaseModel):

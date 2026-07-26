@@ -22,6 +22,9 @@ def main_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="⭐ Premium", callback_data="premium"),
+            InlineKeyboardButton(text="🎁 Друзья", callback_data="referral"),
+        ],
+        [
             InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
         ],
     ])

@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # ── Zhipu AI (GLM-5.2) ──────────────────────────────────────
     ZHIPU_API_KEY: str = ""
 
+    # ── Referral program ─────────────────────────────────────────
+    REFERRAL_MIN_INVITES: int = 3     # друзей для активации буста
+    REFERRAL_BOOST_PERCENT: int = 12  # +% к скору анкеты в выдаче (10–15)
+
     # ── Profile limits ───────────────────────────────────────────
     MAX_PHOTOS: int = 6
     MAX_BIO_LENGTH: int = 500

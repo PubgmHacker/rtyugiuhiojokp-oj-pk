@@ -9,7 +9,7 @@ from sqlalchemy import select, and_, not_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from models.models import User, Profile, Like, Subscription
+from models.models import User, Profile, Like, Subscription, Referral
 from models.schemas import DeckProfile
 from services.ai_matchmaker import score_match
 from utils import as_list
@@ -78,10 +78,12 @@ async def get_deck_profiles(
 
     # Активные премиумы среди кандидатов — буст в выдаче
     premium_ids: set[str] = set()
+    referral_boost_ids: set[str] = set()
     if profiles:
+        candidate_ids = [p.user_id for p in profiles]
         result = await session.execute(
             select(Subscription.user_id).where(and_(
-                Subscription.user_id.in_([p.user_id for p in profiles]),
+                Subscription.user_id.in_(candidate_ids),
                 Subscription.plan != "free",
                 or_(
                     Subscription.expires_at.is_(None),
@@ -90,6 +92,15 @@ async def get_deck_profiles(
             ))
         )
         premium_ids = {row[0] for row in result.all()}
+
+        # Реферальный буст: пригласил >= N друзей → анкета выше в выдаче
+        result = await session.execute(
+            select(Referral.referrer_id)
+            .where(Referral.referrer_id.in_(candidate_ids))
+            .group_by(Referral.referrer_id)
+            .having(func.count(Referral.id) >= settings.REFERRAL_MIN_INVITES)
+        )
+        referral_boost_ids = {row[0] for row in result.all()}
 
     # Filter by preferences and build deck
     deck: list[DeckProfile] = []
@@ -150,6 +161,8 @@ async def get_deck_profiles(
     my_interests = set(as_list(my_profile.interests)) if my_profile else set()
     my_city = (my_profile.city or "").strip().lower() if my_profile else ""
 
+    referral_mult = 1 + settings.REFERRAL_BOOST_PERCENT / 100
+
     def _rank(p: DeckProfile) -> float:
         score = 0.0
         score += len(my_interests & set(p.interests)) * 10
@@ -159,6 +172,8 @@ async def get_deck_profiles(
             score += max(0.0, 20 - p.distance / 5)
         if p.id in premium_ids:
             score += 25
+        if p.id in referral_boost_ids:
+            score *= referral_mult  # пригласил друзей — анкета выше
         return score + random.uniform(0, 8)
 
     deck.sort(key=_rank, reverse=True)

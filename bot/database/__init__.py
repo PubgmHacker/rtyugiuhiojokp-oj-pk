@@ -15,8 +15,10 @@ from database.connection import (
     get_user_matches,
     get_active_subscription,
     activate_premium,
+    record_referral,
+    get_referral_count,
 )
-from database.models import Base, User, Profile, Like, Match, Message, Subscription
+from database.models import Base, User, Profile, Like, Match, Message, Referral, Subscription
 
 __all__ = [
     "engine",
@@ -35,4 +37,6 @@ __all__ = [
     "get_user_matches",
     "get_active_subscription",
     "activate_premium",
+    "record_referral",
+    "get_referral_count",
 ]

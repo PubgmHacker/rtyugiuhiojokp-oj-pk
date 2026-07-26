@@ -12,7 +12,7 @@ from sqlalchemy import and_, or_
 from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import User, Profile, Like, Subscription, SwipeSession
+from models.models import User, Profile, Like, Referral, Subscription, SwipeSession
 from models.schemas import DeckProfile, ProfileUpdate, UserProfile
 from services.matching import get_deck_profiles
 from services.ai_moderation import moderate_text
@@ -41,6 +41,19 @@ async def reset_deck(
     from services.realtime import clear_viewed_profiles
     await clear_viewed_profiles(user.id)
     return {"success": True}
+
+
+async def _referral_stats(session: AsyncSession, user_id: str) -> dict:
+    result = await session.execute(
+        select(func.count(Referral.id)).where(Referral.referrer_id == user_id)
+    )
+    invited = result.scalar() or 0
+    return {
+        "invited_count": invited,
+        "referral_boost": invited >= settings.REFERRAL_MIN_INVITES,
+        "referral_target": settings.REFERRAL_MIN_INVITES,
+        "referral_boost_percent": settings.REFERRAL_BOOST_PERCENT,
+    }
 
 
 async def _is_premium(session: AsyncSession, user_id: str) -> bool:
@@ -95,6 +108,7 @@ async def get_my_profile(
         age_max=profile.age_max if profile else 99,
         distance_max=profile.distance_max if profile else 100,
         has_location=bool(profile and profile.latitude is not None),
+        **(await _referral_stats(session, user.id)),
     )
 
 
@@ -174,4 +188,5 @@ async def update_my_profile(
         age_max=profile.age_max,
         distance_max=profile.distance_max,
         has_location=profile.latitude is not None,
+        **(await _referral_stats(session, user.id)),
     )

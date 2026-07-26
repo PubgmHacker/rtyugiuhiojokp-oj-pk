@@ -23,6 +23,19 @@ REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6380/0")
 API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000")
 SITE_URL: str = os.getenv("SITE_URL", "http://localhost:5173")  # Web frontend
 
+# ── Premium / Payments (значения задаются в .env) ──────────────
+PREMIUM_DAYS: int = int(os.getenv("PREMIUM_DAYS", "30"))
+PREMIUM_PRICE_STARS: int = int(os.getenv("PREMIUM_PRICE_STARS", "250"))
+# CryptoBot (@CryptoBot, Crypto Pay API) — если токен пуст, способ скрыт
+CRYPTOBOT_TOKEN: str = os.getenv("CRYPTOBOT_TOKEN", "")
+PREMIUM_PRICE_USDT: str = os.getenv("PREMIUM_PRICE_USDT", "3")
+# СБП — появится после подключения провайдера (заглушка)
+SBP_ENABLED: bool = os.getenv("SBP_ENABLED", "").lower() in ("1", "true", "yes")
+
+# ── Referral program ─────────────────────────────────────────────
+REFERRAL_MIN_INVITES: int = int(os.getenv("REFERRAL_MIN_INVITES", "3"))
+REFERRAL_BOOST_PERCENT: int = int(os.getenv("REFERRAL_BOOST_PERCENT", "12"))
+
 # ── Cloudflare R2 (перезаливка фото из Telegram, чтобы видел веб) ─
 R2_ACCOUNT_ID: str = os.getenv("R2_ACCOUNT_ID", "")
 R2_ACCESS_KEY_ID: str = os.getenv("R2_ACCESS_KEY_ID", "")

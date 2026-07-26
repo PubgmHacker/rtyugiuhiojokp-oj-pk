@@ -56,6 +56,10 @@ export interface UserProfile {
   age_max?: number;
   distance_max?: number;
   has_location?: boolean;
+  invited_count?: number;
+  referral_boost?: boolean;
+  referral_target?: number;
+  referral_boost_percent?: number;
 }
 
 export interface DeckProfile {

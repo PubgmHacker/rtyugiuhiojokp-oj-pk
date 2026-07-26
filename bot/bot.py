@@ -10,8 +10,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiohttp import web
 
 from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, BANNERS, REDIS_URL
-from database import init_db, get_or_create_user
-from handlers import registration, dating, matches, premium
+from database import init_db, get_or_create_user, record_referral, get_user_by_id
+from handlers import registration, dating, matches, premium, referral
 from keyboards import main_kb
 from middlewares.registration import RegistrationMiddleware
 from services.redis_subscriber import start_redis_subscriber
@@ -34,19 +34,55 @@ async def cmd_start(message, state):
         message.from_user.first_name or "",
     )
 
-    # Deep-link: t.me/<bot>?start=premium (кнопка Premium из веба)
+    # Deep-links: t.me/<bot>?start=premium | ?start=ref_<user_id>
     parts = (message.text or "").split(maxsplit=1)
-    if len(parts) > 1 and parts[1].strip() == "premium":
+    arg = parts[1].strip() if len(parts) > 1 else ""
+
+    if arg == "premium":
         from handlers.premium import PREMIUM_PITCH, send_premium_offer
         await message.answer(PREMIUM_PITCH)
         await send_premium_offer(message, db_user["id"])
         return
+
+    if arg.startswith("ref_"):
+        await _handle_referral(message, db_user, arg[4:])
 
     await message.answer_photo(
         photo=BANNERS["welcome"],
         caption=welcome(message.from_user.first_name),
         reply_markup=main_kb(),
     )
+
+
+async def _handle_referral(message, db_user: dict, referrer_id: str):
+    """Засчитать приглашение и уведомить пригласившего."""
+    from config import REFERRAL_MIN_INVITES, REFERRAL_BOOST_PERCENT
+
+    try:
+        result = await record_referral(referrer_id.strip()[:64], db_user["id"])
+        if not result["counted"]:
+            return
+
+        referrer = await get_user_by_id(referrer_id)
+        if not referrer or not referrer.get("telegram_id"):
+            return
+
+        total = result["total"]
+        if total >= REFERRAL_MIN_INVITES:
+            text = (
+                f"🎉 Друг присоединился ({total}/{REFERRAL_MIN_INVITES})!\n\n"
+                f"🚀 <b>Буст активирован</b> — ваша анкета теперь показывается "
+                f"на {REFERRAL_BOOST_PERCENT}% выше в выдаче."
+            )
+        else:
+            text = (
+                f"🎉 По вашей ссылке пришёл друг! Прогресс: "
+                f"<b>{total}/{REFERRAL_MIN_INVITES}</b> до буста анкеты "
+                f"+{REFERRAL_BOOST_PERCENT}%."
+            )
+        await message.bot.send_message(chat_id=referrer["telegram_id"], text=text)
+    except Exception as e:
+        logger.warning(f"Referral processing error: {e}")
 
 
 async def health_handler(request):
@@ -106,6 +142,7 @@ async def main():
         lambda m: bool(m.text) and (m.text.startswith("/start") or m.text == "/help"),
     )
     dp.include_router(premium.router)
+    dp.include_router(referral.router)
     dp.include_router(registration.router)
     dp.include_router(dating.router)
     dp.include_router(matches.router)
@@ -114,6 +151,7 @@ async def main():
     await bot.set_my_commands([
         {"command": "start", "description": "Главное меню"},
         {"command": "premium", "description": "⭐ Premium-подписка"},
+        {"command": "invite", "description": "🎁 Пригласить друзей (буст анкеты)"},
         {"command": "help", "description": "Помощь"},
     ])
     if ADMIN_IDS:

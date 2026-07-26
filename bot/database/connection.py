@@ -5,11 +5,11 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
-from database.models import Base, User, Profile, Like, Match, Message, Subscription
+from database.models import Base, User, Profile, Like, Match, Message, Referral, Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,65 @@ async def set_profile_ready(user_id: str) -> None:
 
 
 # ════════════════════════════════════════════════════════════════
+#  REFERRALS
+# ════════════════════════════════════════════════════════════════
+
+async def record_referral(referrer_id: str, invited_id: str) -> dict:
+    """Засчитать приглашение. Возвращает {'counted': bool, 'total': int}.
+
+    Защита от накрутки: нельзя пригласить себя, каждый приглашённый
+    считается один раз, засчитываются только свежесозданные аккаунты
+    (клик по ссылке существующим пользователем не считается).
+    """
+    from datetime import timedelta
+
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            counted = False
+            if referrer_id != invited_id:
+                result = await session.execute(
+                    select(Referral).where(Referral.invited_id == invited_id)
+                )
+                already = result.scalar_one_or_none()
+
+                result = await session.execute(
+                    select(User).where(User.id == invited_id)
+                )
+                invited = result.scalar_one_or_none()
+                is_fresh = bool(
+                    invited and invited.created_at
+                    and invited.created_at.replace(tzinfo=None)
+                    > datetime.utcnow() - timedelta(minutes=5)
+                )
+
+                result = await session.execute(
+                    select(User).where(User.id == referrer_id)
+                )
+                referrer_exists = result.scalar_one_or_none() is not None
+
+                if not already and is_fresh and referrer_exists:
+                    session.add(Referral(referrer_id=referrer_id, invited_id=invited_id))
+                    await session.flush()
+                    counted = True
+
+            result = await session.execute(
+                select(func.count(Referral.id)).where(Referral.referrer_id == referrer_id)
+            )
+            total = result.scalar() or 0
+            return {"counted": counted, "total": total}
+
+
+async def get_referral_count(user_id: str) -> int:
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(func.count(Referral.id)).where(Referral.referrer_id == user_id)
+        )
+        return result.scalar() or 0
+
+
+# ════════════════════════════════════════════════════════════════
 #  PREMIUM
 # ════════════════════════════════════════════════════════════════
 
@@ -169,6 +228,12 @@ async def activate_premium(user_id: str, days: int = 30, payment_id: str = "") -
             if not sub:
                 sub = Subscription(user_id=user_id)
                 session.add(sub)
+            elif payment_id and sub.stripe_id == payment_id:
+                # Повторная проверка того же платежа — не продлеваем дважды
+                return {
+                    "plan": sub.plan,
+                    "expires_at": sub.expires_at.isoformat() if sub.expires_at else "",
+                }
 
             # Продление поверх остатка, а не с текущей даты
             base = now

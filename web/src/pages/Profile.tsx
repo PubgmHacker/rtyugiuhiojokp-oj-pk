@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Settings, Shield, Crown, SlidersHorizontal } from "lucide-react";
+import { LogOut, Settings, Shield, Crown, SlidersHorizontal, Gift, Copy, Check } from "lucide-react";
 import { getMyProfile, updateMyProfile, type UserProfile } from "../lib/api";
 import { useStore } from "../lib/store";
 
@@ -18,6 +18,7 @@ export default function Profile() {
   const [geoStatus, setGeoStatus] = useState<"idle" | "busy" | "ok" | "fail">("idle");
   const [incognitoBusy, setIncognitoBusy] = useState(false);
   const [incognitoError, setIncognitoError] = useState("");
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const botUsername = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
 
@@ -91,6 +92,19 @@ export default function Profile() {
       () => setGeoStatus("fail"),
       { timeout: 10000 }
     );
+  };
+
+  const referralLink = profile ? `https://t.me/${botUsername}?start=ref_${profile.id}` : "";
+
+  const copyReferralLink = async () => {
+    try {
+      await navigator.clipboard.writeText(referralLink);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // clipboard может быть недоступен вне https — показываем ссылку текстом
+      window.prompt("Скопируйте ссылку:", referralLink);
+    }
   };
 
   const toggleIncognito = async () => {
@@ -247,6 +261,50 @@ export default function Profile() {
           className="w-full py-2.5 bg-accent text-white rounded-full font-semibold text-sm disabled:opacity-50"
         >
           {filtersSaved ? "✓ Сохранено" : savingFilters ? "Сохраняю…" : "Применить фильтры"}
+        </button>
+      </div>
+
+      {/* Referral program */}
+      <div className="mb-6 p-4 bg-surface rounded-2xl">
+        <h3 className="text-sm text-text-muted mb-2 flex items-center gap-2">
+          <Gift size={16} className="text-warn" />
+          Пригласи друзей — буст анкеты
+        </h3>
+        {profile?.referral_boost ? (
+          <p className="text-sm mb-3">
+            🚀 <span className="text-success font-semibold">Буст активен:</span>{" "}
+            анкета показывается на {profile?.referral_boost_percent ?? 12}% выше
+          </p>
+        ) : (
+          <>
+            <p className="text-sm mb-2">
+              Приведи {profile?.referral_target ?? 3} друзей — анкета будет на{" "}
+              <span className="text-warn font-semibold">
+                +{profile?.referral_boost_percent ?? 12}%
+              </span>{" "}
+              выше в выдаче
+            </p>
+            <div className="flex gap-1.5 mb-3">
+              {[...Array(profile?.referral_target ?? 3)].map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full ${
+                    i < (profile?.invited_count ?? 0) ? "bg-warn" : "bg-bg"
+                  }`}
+                />
+              ))}
+            </div>
+            <p className="text-xs text-text-muted mb-3">
+              Прогресс: {profile?.invited_count ?? 0}/{profile?.referral_target ?? 3}
+            </p>
+          </>
+        )}
+        <button
+          onClick={copyReferralLink}
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-warn/15 text-warn rounded-full text-sm font-medium"
+        >
+          {linkCopied ? <Check size={16} /> : <Copy size={16} />}
+          {linkCopied ? "Скопировано!" : "Скопировать ссылку-приглашение"}
         </button>
       </div>
 
