@@ -8,8 +8,11 @@ export class ChatWebSocket {
   private matchId: string;
   private token: string;
   private handlers: Set<MessageHandler> = new Set();
+  private openHandlers: Set<() => void> = new Set();
   private reconnectAttempts = 0;
   private maxReconnects = 5;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private closed = false;
 
   constructor(matchId: string, token: string) {
     this.matchId = matchId;
@@ -22,6 +25,7 @@ export class ChatWebSocket {
     this.ws.onopen = () => {
       console.log("[WS] Connected to chat", this.matchId);
       this.reconnectAttempts = 0;
+      this.openHandlers.forEach((h) => h());
     };
 
     this.ws.onmessage = (event) => {
@@ -35,9 +39,9 @@ export class ChatWebSocket {
 
     this.ws.onclose = (event) => {
       console.log("[WS] Closed:", event.code, event.reason);
-      if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnects) {
+      if (!this.closed && event.code !== 1000 && this.reconnectAttempts < this.maxReconnects) {
         this.reconnectAttempts++;
-        setTimeout(() => this.connect(), 2000 * this.reconnectAttempts);
+        this.reconnectTimer = setTimeout(() => this.connect(), 2000 * this.reconnectAttempts);
       }
     };
 
@@ -46,10 +50,21 @@ export class ChatWebSocket {
     };
   }
 
-  send(text: string, imageUrl?: string) {
+  isOpen(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** @returns true, если сообщение реально ушло в сокет */
+  send(text: string, imageUrl?: string): boolean {
+    return this.sendRaw({ type: "message", text, image_url: imageUrl });
+  }
+
+  sendRaw(payload: Record<string, unknown>): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ text, image_url: imageUrl }));
+      this.ws.send(JSON.stringify(payload));
+      return true;
     }
+    return false;
   }
 
   onMessage(handler: MessageHandler) {
@@ -57,9 +72,20 @@ export class ChatWebSocket {
     return () => this.handlers.delete(handler);
   }
 
+  onOpen(handler: () => void) {
+    this.openHandlers.add(handler);
+    if (this.ws?.readyState === WebSocket.OPEN) handler();
+  }
+
   close() {
+    this.closed = true;
     this.reconnectAttempts = this.maxReconnects; // prevent reconnect
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer); // иначе отложенный connect() создаст зомби-сокет
+      this.reconnectTimer = null;
+    }
     this.ws?.close(1000, "User closed");
     this.handlers.clear();
+    this.openHandlers.clear();
   }
 }

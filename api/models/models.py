@@ -5,12 +5,14 @@ from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Float,
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import (
@@ -30,7 +32,7 @@ class User(Base):
     __tablename__ = "dating_users"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    telegram_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True, nullable=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -77,6 +79,7 @@ class Profile(Base):
 
 class Like(Base):
     __tablename__ = "dating_likes"
+    __table_args__ = (UniqueConstraint("liker_id", "liked_id", name="uq_like_pair"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     liker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -90,6 +93,8 @@ class Like(Base):
 
 class Match(Base):
     __tablename__ = "dating_matches"
+    # user1_id/user2_id всегда хранятся в лексикографическом порядке (см. likes.py)
+    __table_args__ = (UniqueConstraint("user1_id", "user2_id", name="uq_match_pair"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user1_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -143,18 +148,6 @@ class Subscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="subscription")
-
-
-class Report(Base):
-    __tablename__ = "dating_reports"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    reporter_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
-    reported_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
-    reason: Mapped[str] = mapped_column(String)
-    description: Mapped[str] = mapped_column(String, default="")
-    status: Mapped[str] = mapped_column(String, default="pending")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SwipeSession(Base):

@@ -30,15 +30,25 @@ async def publish_match_event(match_id: str, user1_id: str, user2_id: str):
         logger.error(f"Redis publish error: {e}")
 
 
-async def publish_message_event(match_id: str, sender_id: str, text: str):
-    """Publish message for real-time sync."""
+async def publish_message_event(
+    match_id: str,
+    sender_id: str,
+    text: str,
+    message_id: str = "",
+    created_at: str | None = None,
+):
+    """Publish message for real-time sync (web WS слушает канал dating:match:{id})."""
     try:
         r = await _get_redis()
         data = {
-            "type": "new_message",
+            "type": "message",
+            "origin": "bot",
+            "id": message_id,
             "match_id": match_id,
             "sender_id": sender_id,
             "text": text,
+            "image_url": None,
+            "created_at": created_at,
         }
         await r.publish(f"dating:match:{match_id}", json.dumps(data))
     except Exception as e:
@@ -61,15 +71,20 @@ async def start_redis_subscriber(bot):
 
             try:
                 data = json.loads(message["data"])
+                event_type = data.get("type")
 
-                if data["type"] == "new_match":
-                    match_id = data["match_id"]
-                    user1_id = data["user1_id"]
-                    user2_id = data["user2_id"]
-
+                if event_type == "new_match":
                     # Notify both users
-                    for uid in [user1_id, user2_id]:
-                        await _notify_user_about_match(bot, uid, match_id)
+                    for uid in [data["user1_id"], data["user2_id"]]:
+                        await _notify_user_about_match(bot, uid, data["match_id"])
+
+                elif event_type == "new_message":
+                    await _notify_user_about_message(
+                        bot, data["receiver_id"], data["sender_id"], data.get("text", ""),
+                    )
+
+                elif event_type == "new_like":
+                    await _notify_user_about_like(bot, data["receiver_id"], data["liker_id"])
 
             except Exception as e:
                 logger.error(f"Redis message processing error: {e}")
@@ -111,3 +126,52 @@ async def _notify_user_about_match(bot, user_id: str, match_id: str):
 
     except Exception as e:
         logger.error(f"Match notification error: {e}")
+
+
+async def _notify_user_about_message(bot, receiver_id: str, sender_id: str, text: str):
+    """Уведомить в Telegram о новом сообщении из web-чата."""
+    try:
+        from database import get_user_by_id, get_profile
+
+        receiver = await get_user_by_id(receiver_id)
+        if not receiver or not receiver.get("telegram_id"):
+            return
+
+        import html as _html
+
+        sender = await get_profile(sender_id)
+        sender_name = _html.escape((sender or {}).get("display_name") or "Ваш мэтч", quote=False)
+
+        preview = (text[:100] + "…") if len(text) > 100 else text
+        preview = _html.escape(preview, quote=False)
+        await bot.send_message(
+            chat_id=receiver["telegram_id"],
+            text=f"💬 <b>{sender_name}</b> написал(а) вам:\n\n«{preview}»\n\n"
+                 f"Откройте «💕 Мои мэтчи», чтобы ответить.",
+        )
+    except Exception as e:
+        logger.error(f"Message notification error: {e}")
+
+
+async def _notify_user_about_like(bot, receiver_id: str, liker_id: str):
+    """Уведомить в Telegram о новом лайке из web-приложения (Дайвинчик-механика)."""
+    try:
+        from database import get_user_by_id, get_profile
+
+        receiver = await get_user_by_id(receiver_id)
+        if not receiver or not receiver.get("telegram_id"):
+            return
+
+        liker = await get_profile(liker_id)
+        if not liker or not liker.get("display_name"):
+            return
+
+        from handlers.dating import _render_profile_to_chat
+
+        await bot.send_message(
+            chat_id=receiver["telegram_id"],
+            text="💌 Вы кому-то понравились! Взгляните на анкету:",
+        )
+        await _render_profile_to_chat(bot, receiver["telegram_id"], liker)
+    except Exception as e:
+        logger.error(f"Like notification error: {e}")

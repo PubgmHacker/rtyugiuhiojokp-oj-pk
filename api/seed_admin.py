@@ -38,7 +38,7 @@ async def create_admin(telegram_id: int, name: str = "Admin", email: str | None 
 
     # Connect to DB
     from database.connection import engine, async_session_factory
-    from database.models import Base, User, Profile
+    from models.models import Base, User, Profile
 
     # Ensure tables exist
     async with engine.begin() as conn:

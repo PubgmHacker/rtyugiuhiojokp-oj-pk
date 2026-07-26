@@ -43,6 +43,8 @@ class UserProfile(BaseModel):
     ai_bio: Optional[str] = None
     looking_for: str = "any"
     is_incognito: bool = False
+    age_min: int = 18
+    age_max: int = 99
 
 
 class ProfileUpdate(BaseModel):
@@ -54,6 +56,8 @@ class ProfileUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     interests: Optional[list[str]] = None
+    photos: Optional[list[str]] = None
+    is_incognito: Optional[bool] = None
     looking_for: Optional[str] = Field(None, pattern="^(male|female|other|any)$")
     age_min: Optional[int] = Field(None, ge=18, le=99)
     age_max: Optional[int] = Field(None, ge=18, le=99)

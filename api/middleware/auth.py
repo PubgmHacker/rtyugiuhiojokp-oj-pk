@@ -37,29 +37,48 @@ def verify_access_token(token: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
-def verify_telegram_init_data(init_data: str) -> dict:
-    """Верифицирует initData от Telegram WebApp."""
-    from urllib.parse import parse_qs
+def verify_telegram_init_data(init_data: str, max_age_seconds: int = 86400) -> dict:
+    """Верифицирует initData от Telegram WebApp (Mini App).
+
+    Схема Mini Apps: secret_key = HMAC_SHA256(key="WebAppData", msg=BOT_TOKEN),
+    hash = HMAC_SHA256(key=secret_key, msg=data_check_string).
+    """
+    from urllib.parse import parse_qsl
+
+    params = dict(parse_qsl(init_data, keep_blank_values=True))
 
     if not settings.BOT_TOKEN:
-        # В dev-режиме без токена — пропускаем верификацию
-        return parse_qs(init_data)
+        if settings.DEBUG:
+            # Только в dev-режиме без токена — пропускаем верификацию
+            return params
+        # В проде без BOT_TOKEN нельзя «доверять на слово» — иначе любой
+        # может подделать initData (в т.ч. с admin telegram_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram auth is not configured",
+        )
 
-    params = parse_qs(init_data)
-    hash_val = params.pop("hash", [""])[0]
+    hash_val = params.pop("hash", "")
+    if not hash_val:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No hash in initData")
 
-    data_check_string = "\n".join(
-        f"{k}={v[0]}" for k, v in sorted(params.items())
-    )
-    secret_key = hashlib.sha256(settings.BOT_TOKEN.encode()).digest()
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+    secret_key = hmac.new(b"WebAppData", settings.BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
-    if computed_hash != hash_val:
+    if not hmac.compare_digest(computed_hash, hash_val):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram hash")
 
-    # Flattening parse_qs (lists → single values)
-    result = {k: v[0] for k, v in params.items()}
-    return result
+    # Защита от replay: initData не старше суток
+    try:
+        auth_date = int(params.get("auth_date", "0"))
+    except ValueError:
+        auth_date = 0
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    if auth_date and now_ts - auth_date > max_age_seconds:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="initData expired")
+
+    return params
 
 
 async def get_current_user(

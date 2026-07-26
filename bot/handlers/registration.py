@@ -22,11 +22,7 @@ router = Router()
 async def start_registration(callback: CallbackQuery, state: FSMContext):
     """Начать/перезапустить создание анкеты."""
     await state.clear()
-    await callback.message.edit_media(
-        media={"type": "photo", "photo": BANNERS["profile"], "caption": reg_step("name")},
-        reply_markup=skip_kb() if False else None,
-    )
-    # Send text message for name input
+    await callback.answer()
     await callback.message.answer(reg_step("name"))
     await state.set_state(RegistrationStates.waiting_name)
 
@@ -143,7 +139,7 @@ async def _finish_registration(message: Message, state: FSMContext):
         db_user["id"],
         display_name=data.get("reg_name", ""),
         gender=data.get("reg_gender", "other"),
-        birth_date=datetime(datetime.now().year - (data.get("reg_age", 25)), 1, 1).date() if data.get("reg_age") else None,
+        birth_date=datetime(datetime.now().year - (data.get("reg_age", 25)), 1, 1) if data.get("reg_age") else None,
         city=data.get("reg_city", ""),
         bio=data.get("reg_bio", ""),
         looking_for=data.get("reg_looking_for", "any"),

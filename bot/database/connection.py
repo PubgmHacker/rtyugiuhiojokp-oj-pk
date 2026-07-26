@@ -34,10 +34,8 @@ def _session_cls() -> async_sessionmaker[AsyncSession]:
 
 async def init_db():
     """Create tables if they don't exist."""
-    cls = _session_cls()
-    async with cls() as session:
-        async with session.begin():
-            await session.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables ensured")
 
 
@@ -113,11 +111,9 @@ async def update_profile(user_id: str, **fields) -> dict | None:
                 profile = Profile(user_id=user_id)
                 session.add(profile)
 
+            # photos/interests — JSON-колонки, храним списки нативно
             for k, v in fields.items():
-                if k in ("photos", "interests") and isinstance(v, (list, dict)):
-                    setattr(profile, k, json.dumps(v))
-                else:
-                    setattr(profile, k, v)
+                setattr(profile, k, v)
 
             await session.flush()
             return _profile_to_dict(profile)
@@ -176,6 +172,28 @@ async def check_mutual_like(liker_id: str, liked_id: str) -> dict | None:
         return {"mutual": mutual is not None, "type": mutual.type if mutual else None} if mutual else None
 
 
+async def create_match(user_a: str, user_b: str) -> dict:
+    """Создать мэтч (пара нормализована — без дублей), вернуть его."""
+    u1, u2 = (user_a, user_b) if user_a < user_b else (user_b, user_a)
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Match).where(Match.user1_id == u1, Match.user2_id == u2)
+            )
+            match = result.scalar_one_or_none()
+            if not match:
+                match = Match(user1_id=u1, user2_id=u2, is_active=True)
+                session.add(match)
+                await session.flush()
+            return {
+                "id": match.id,
+                "user1_id": match.user1_id,
+                "user2_id": match.user2_id,
+                "match_score": match.match_score,
+            }
+
+
 async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
     """Get random profiles for the bot to show (like Дайвинчик)."""
     cls = _session_cls()
@@ -202,14 +220,20 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
 
 
 async def get_match_partner(match_id: str, user_id: str) -> dict | None:
-    """Get the other user in a match."""
+    """Get the other user in a match.
+
+    Возвращает None, если мэтч не существует, разорван или user_id
+    не является его участником (защита от подстановки чужого match_id).
+    """
     cls = _session_cls()
     async with cls() as session:
         result = await session.execute(
             select(Match).where(Match.id == match_id)
         )
         match = result.scalar_one_or_none()
-        if not match:
+        if not match or not match.is_active:
+            return None
+        if user_id not in (match.user1_id, match.user2_id):
             return None
 
         partner_id = match.user2_id if match.user1_id == user_id else match.user1_id

@@ -2,9 +2,18 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Heart, Sparkles, MessageCircle, Zap } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { authWithTelegram } from "../lib/api";
+import { authWithTelegram, authDev, type UserProfile } from "../lib/api";
 import { getInitData, initTelegram, isInTelegram } from "../lib/telegram";
 import { useStore } from "../lib/store";
+
+function getDeviceId(): string {
+  let id = localStorage.getItem("sd_device_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("sd_device_id", id);
+  }
+  return id;
+}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -20,10 +29,21 @@ export default function Login() {
     }
   }, []);
 
+  const finishLogin = (token: string, user: UserProfile) => {
+    setToken(token);
+    setUser(user);
+    // Redirect based on onboarding status
+    if (!user.display_name || !user.photos?.length) {
+      navigate("/onboarding");
+    } else {
+      navigate("/discover");
+    }
+  };
+
   const handleTelegramLogin = async () => {
     const initData = getInitData();
     if (!initData) {
-      setError("Не удалось получить данные Telegram");
+      setError("Откройте приложение через Telegram-бота — или войдите как гость ниже");
       return;
     }
 
@@ -31,16 +51,22 @@ export default function Login() {
     setError("");
     try {
       const { token, user } = await authWithTelegram(initData);
-      setToken(token);
-      setUser(user);
-      // Redirect based on onboarding status
-      if (!user.display_name || !user.photos?.length) {
-        navigate("/onboarding");
-      } else {
-        navigate("/discover");
-      }
+      finishLogin(token, user);
     } catch (e: any) {
       setError(e.response?.data?.detail || "Ошибка авторизации");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { token, user } = await authDev(getDeviceId());
+      finishLogin(token, user);
+    } catch (e: any) {
+      setError(e.response?.data?.detail || "Гостевой вход недоступен");
     } finally {
       setLoading(false);
     }
@@ -111,11 +137,18 @@ export default function Login() {
       </button>
 
       {!isInTelegram() && (
-        <p className="text-xs text-text-muted mt-4 text-center">
-          Для авторизации через Telegram откройте приложение через бота.
-          <br />
-          Или продолжите как web-пользователь.
-        </p>
+        <>
+          <button
+            onClick={handleGuestLogin}
+            disabled={loading}
+            className="w-full py-3 mt-3 bg-surface text-text font-semibold rounded-full hover:bg-surface/80 transition disabled:opacity-50"
+          >
+            Продолжить как гость
+          </button>
+          <p className="text-xs text-text-muted mt-4 text-center">
+            Для входа через Telegram откройте приложение через бота.
+          </p>
+        </>
       )}
     </div>
   );

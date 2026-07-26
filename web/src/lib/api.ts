@@ -51,6 +51,8 @@ export interface UserProfile {
   ai_bio?: string | null;
   looking_for: string;
   is_incognito: boolean;
+  age_min?: number;
+  age_max?: number;
 }
 
 export interface DeckProfile {
@@ -106,6 +108,10 @@ export async function getDeck(limit = 10): Promise<DeckProfile[]> {
   return data;
 }
 
+export async function resetDeck(): Promise<void> {
+  await api.post("/profiles/deck/reset");
+}
+
 export async function likeProfile(targetId: string, type: "like" | "superlike" | "pass" = "like"): Promise<{
   liked: boolean;
   matched: boolean;
@@ -136,4 +142,24 @@ export async function uploadPhoto(file: File): Promise<{ url: string; key: strin
 
 export async function reportUser(reportedId: string, reason: string, description = ""): Promise<void> {
   await api.post("/report", { reported_id: reportedId, reason, description });
+}
+
+export async function authDev(deviceId: string, name = ""): Promise<{ token: string; user: UserProfile }> {
+  const { data } = await api.post("/auth/dev", { device_id: deviceId, name });
+  if (!data.success) throw new Error("Dev auth disabled");
+  return { token: data.token, user: data.user };
+}
+
+export async function getLikesReceived(): Promise<UserProfile[]> {
+  const { data } = await api.get("/likes/received");
+  return data;
+}
+
+export async function unmatch(matchId: string): Promise<void> {
+  await api.post(`/matches/${matchId}/unmatch`);
+}
+
+export async function getIcebreakers(matchId: string): Promise<string[]> {
+  const { data } = await api.get(`/matches/${matchId}/icebreakers`);
+  return data.icebreakers ?? [];
 }

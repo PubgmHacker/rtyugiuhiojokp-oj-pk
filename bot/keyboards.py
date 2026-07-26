@@ -80,8 +80,9 @@ def profile_kb() -> InlineKeyboardMarkup:
 def matches_list_kb(matches: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for m in matches[:10]:
+        label = m.get("partner_name") or f"Мэтч #{m['partner_id'][:8]}"
         rows.append([InlineKeyboardButton(
-            text=f"💕 Мэтч #{m['partner_id'][:8]}",
+            text=f"💕 {label}",
             callback_data=f"chat:open:{m['id']}",
         )])
     rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu")])

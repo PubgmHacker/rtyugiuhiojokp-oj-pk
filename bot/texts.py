@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import html
 from datetime import datetime
+
+
+def _esc(value) -> str:
+    """Экранирует пользовательский контент для parse_mode=HTML."""
+    return html.escape(str(value or ""), quote=False)
 
 
 def welcome(name: str = "") -> str:
@@ -15,51 +21,43 @@ def welcome(name: str = "") -> str:
         greet = "Добрый вечер"
 
     return (
-        f"{greet}{', ' + name if name else ''}! 💕\n\n"
-        "Добро пожаловать в **Souldawn Dating** — сервис знакомств нового поколения.\n\n"
-        "🔮 **AI-совместимость** — наша нейросеть подбирает идеальные мэтчи\n"
-        "💬 **Реал-тайм чат** — общайся мгновенно\n"
-        "📱 **3 платформы** — Telegram, Web и iOS\n\n"
+        f"{greet}{', ' + _esc(name) if name else ''}! 💕\n\n"
+        "Добро пожаловать в <b>Souldawn Dating</b> — сервис знакомств нового поколения.\n\n"
+        "🔮 <b>AI-совместимость</b> — наша нейросеть подбирает идеальные мэтчи\n"
+        "💬 <b>Реал-тайм чат</b> — общайся мгновенно\n"
+        "📱 <b>3 платформы</b> — Telegram, Web и iOS\n\n"
         "Нажми кнопку ниже, чтобы начать!"
     )
 
 
 def profile_card(profile: dict) -> str:
-    parts = []
-    if profile.get("display_name"):
-        parts.append(f"👤 **{profile['display_name']}")
-    if profile.get("age"):
-        parts.append(f"{profile['age']}")
-    if parts:
-        parts[0] = parts[0] + "**" if not parts[0].endswith("**") else parts[0]
-
-    line = f"👤 **{profile.get('display_name', 'Без имени')}**"
+    line = f"👤 <b>{_esc(profile.get('display_name', 'Без имени'))}</b>"
     if profile.get("age"):
         line += f", {profile['age']}"
     if profile.get("city"):
-        line += f"\n📍 {profile['city']}"
+        line += f"\n📍 {_esc(profile['city'])}"
 
     if profile.get("bio"):
-        line += f"\n\n💬 _{profile['bio']}_"
+        line += f"\n\n💬 <i>{_esc(profile['bio'])}</i>"
     if profile.get("interests"):
         interests = profile["interests"]
         if isinstance(interests, list) and interests:
-            line += f"\n\n🎯 {', '.join(f'#{i}' for i in interests[:5])}"
+            line += f"\n\n🎯 {', '.join('#' + _esc(i) for i in interests[:5])}"
     if profile.get("ai_bio"):
-        line += f"\n\n✨ _{profile['ai_bio']}_"
+        line += f"\n\n✨ <i>{_esc(profile['ai_bio'])}</i>"
 
     return line
 
 
 def match_notification(partner: dict, score: int | None = None, reason: str | None = None) -> str:
-    text = f"🎉 **НОВЫЙ МЭТЧ!**\n\n"
-    text += f"👤 **{partner.get('display_name', 'Без имени')}**"
+    text = "🎉 <b>НОВЫЙ МЭТЧ!</b>\n\n"
+    text += f"👤 <b>{_esc(partner.get('display_name', 'Без имени'))}</b>"
     if partner.get("age"):
         text += f", {partner['age']}"
     text += "\n\n"
 
     if score and reason:
-        text += f"🔮 **Совместимость: {score}/100**\n_{reason}_\n\n"
+        text += f"🔮 <b>Совместимость: {score}/100</b>\n<i>{_esc(reason)}</i>\n\n"
 
     text += "Начните общение прямо сейчас! 💬"
     return text
@@ -89,11 +87,14 @@ def reg_step(step: str) -> str:
 def menu_text(name: str = "", is_verified: bool = False) -> str:
     status = "✅ Анкета заполнена" if is_verified else "⚠️ Заполните анкету"
     return (
-        f"**SOULDAWN DATING** 💕\n\n"
+        "<b>SOULDAWN DATING</b> 💕\n\n"
         f"{status}\n\n"
         "Выберите действие:"
     )
 
 
 def chat_header(partner_name: str) -> str:
-    return f"💬 Чат с **{partner_name}**\n_Отправьте сообщение или отправьте фото_\n\n"
+    return (
+        f"💬 Чат с <b>{_esc(partner_name)}</b>\n"
+        "<i>Отправьте сообщение или откройте чат в Web App</i>\n\n"
+    )

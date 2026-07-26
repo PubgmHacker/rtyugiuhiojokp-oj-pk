@@ -15,17 +15,37 @@ logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+_MIGRATIONS = [
+    # create_all не меняет существующие таблицы — минимальные идемпотентные ALTER'ы
+    "ALTER TABLE dating_users ALTER COLUMN telegram_id TYPE BIGINT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_like_pair ON dating_likes (liker_id, liked_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_match_pair ON dating_matches (user1_id, user2_id)",
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup + shutdown hooks."""
     logger.info("SOULDAWN DATING API starting up...")
 
+    if not settings.DEBUG and settings.JWT_SECRET == "change_this_in_production":
+        raise RuntimeError(
+            "JWT_SECRET is still the default value — set a random secret before running in production"
+        )
+
     # Test DB connection + auto-create tables
     try:
+        from sqlalchemy import text as sa_text
         from database.connection import engine
         from models.models import Base
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        for stmt in _MIGRATIONS:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(sa_text(stmt))
+            except Exception as e:
+                logger.debug(f"Migration skipped ({stmt[:40]}…): {e}")
         logger.info("PostgreSQL connected, tables ensured")
     except Exception as e:
         logger.warning(f"PostgreSQL not available: {e}")
@@ -56,11 +76,12 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None,
 )
 
-# CORS — allow all origins for dev (TMA, web, iOS)
+# CORS: авторизация через Bearer-заголовок, куки не используем —
+# credentials выключены (wildcard + credentials браузеры отвергают)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

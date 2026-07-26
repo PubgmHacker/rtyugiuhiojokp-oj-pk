@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from models.models import User, Profile, Like
+from utils import as_list
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -50,11 +52,13 @@ async def score_match(
         return _simple_score(p1, p2)
 
     try:
-        interests1 = json.loads(p1.interests) if p1.interests else []
-        interests2 = json.loads(p2.interests) if p2.interests else []
+        interests1 = as_list(p1.interests)
+        interests2 = as_list(p2.interests)
         common = list(set(interests1) & set(interests2))
 
-        response = client.chat.completions.create(
+        # Zhipu SDK синхронный — не блокируем event loop
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model="glm-4-flash",
             messages=[
                 {
@@ -100,8 +104,8 @@ async def score_match(
 
 def _simple_score(p1: Profile, p2: Profile) -> tuple[int, Optional[str]]:
     """Fallback scoring without AI."""
-    interests1 = set(json.loads(p1.interests) if p1.interests else [])
-    interests2 = set(json.loads(p2.interests) if p2.interests else [])
+    interests1 = set(as_list(p1.interests))
+    interests2 = set(as_list(p2.interests))
     common = interests1 & interests2
 
     # Looking for compatibility
@@ -122,3 +126,64 @@ def _simple_score(p1: Profile, p2: Profile) -> tuple[int, Optional[str]]:
         reason = f"Общие интересы: {', '.join(list(common)[:3])}"
 
     return min(100, score), reason
+
+
+_FALLBACK_ICEBREAKERS = [
+    "Привет! Заметил(а), что у нас есть общие интересы — с чего всё началось у тебя?",
+    "Если бы у тебя был свободный день без планов — как бы ты его провёл(а)?",
+    "Какое место в твоём городе стоит показать в первую очередь?",
+]
+
+
+async def generate_icebreakers(
+    session: AsyncSession,
+    my_id: str,
+    partner_id: str,
+) -> list[str]:
+    """AI-айсбрейкеры: 3 персональных первых сообщения по анкете партнёра."""
+    result = await session.execute(select(Profile).where(Profile.user_id == my_id))
+    me = result.scalar_one_or_none()
+    result = await session.execute(select(Profile).where(Profile.user_id == partner_id))
+    partner = result.scalar_one_or_none()
+
+    client = _get_zhipu_client()
+    if not client or not partner:
+        return _FALLBACK_ICEBREAKERS
+
+    try:
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model="glm-4-flash",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты помощник в дейтинг-приложении. Придумай 3 коротких, живых первых "
+                        "сообщения (айсбрейкера) на русском для начала диалога. Без пошлости, "
+                        "без банальных «привет, как дела». Опирайся на анкету собеседника. "
+                        'Ответ строго JSON: {"icebreakers": ["...", "...", "..."]}'
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Моя анкета: {me.display_name if me else ''}, bio: {me.bio if me else ''}, "
+                        f"интересы: {as_list(me.interests) if me else []}\n"
+                        f"Анкета собеседника: {partner.display_name}, bio: {partner.bio}, "
+                        f"интересы: {as_list(partner.interests)}, город: {partner.city}"
+                    ),
+                },
+            ],
+            temperature=0.8,
+            max_tokens=400,
+        )
+        content = response.choices[0].message.content.strip()
+        if "{" in content and "}" in content:
+            data = json.loads(content[content.index("{"):content.rindex("}") + 1])
+            items = [str(x).strip() for x in data.get("icebreakers", []) if str(x).strip()]
+            if items:
+                return items[:3]
+    except Exception as e:
+        logger.error(f"AI icebreakers error: {e}")
+
+    return _FALLBACK_ICEBREAKERS

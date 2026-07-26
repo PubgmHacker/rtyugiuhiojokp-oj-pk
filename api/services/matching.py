@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 from datetime import datetime
 from typing import Optional
@@ -11,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from models.models import User, Profile, Like
 from models.schemas import DeckProfile
-from services.realtime import get_viewed_profile_ids, cache_deck_profile
 from services.ai_matchmaker import score_match
+from utils import as_list
 
 settings = get_settings()
 
@@ -49,17 +48,16 @@ async def get_deck_profiles(
     result = await session.execute(select(Profile).where(Profile.user_id == user_id))
     my_profile = result.scalar_one_or_none()
 
-    # Get already viewed IDs
-    viewed_ids = await get_viewed_profile_ids(user_id)
-
     # Get already liked/passed IDs
     result = await session.execute(
         select(Like.liked_id).where(Like.liker_id == user_id)
     )
     liked_ids = {row[0] for row in result.all()}
 
-    # Exclude: self, viewed, liked/passed, banned, incognito users
-    exclude_ids = viewed_ids | liked_ids | {user_id}
+    # Exclude: self, liked/passed, banned, incognito users.
+    # Не отмечаем анкеты «просмотренными» при загрузке — иначе повторный
+    # запрос деки (перезагрузка страницы) сжигает непросмотренные анкеты.
+    exclude_ids = liked_ids | {user_id}
 
     result = await session.execute(
         select(Profile)
@@ -68,6 +66,7 @@ async def get_deck_profiles(
             and_(
                 User.is_banned == False,
                 not_(Profile.is_incognito),  # Hide incognito users from deck
+                Profile.display_name != "",  # Пустые (незаполненные) анкеты не показываем
                 not_(Profile.user_id.in_(exclude_ids)) if exclude_ids else True,
             )
         )
@@ -122,8 +121,8 @@ async def get_deck_profiles(
             age=profile_age,
             city=profile.city or "",
             bio=profile.bio or "",
-            photos=json.loads(profile.photos) if profile.photos else [],
-            interests=json.loads(profile.interests) if profile.interests else [],
+            photos=as_list(profile.photos),
+            interests=as_list(profile.interests),
             ai_bio=profile.ai_bio,
             distance=distance,
             match_score=ai_score,
@@ -132,9 +131,5 @@ async def get_deck_profiles(
 
         if len(deck) >= limit:
             break
-
-    # Cache viewed profiles
-    if deck:
-        await cache_deck_profile(user_id, [p.id for p in deck])
 
     return deck

@@ -48,17 +48,28 @@ async def create_report(
     session.add(report)
     await session.flush()
 
-    # Auto-ban after 3+ pending reports (simple anti-spam)
+    # Эскалация по числу РАЗНЫХ жалобщиков (одного зациклить нельзя):
+    # 3+ — профиль скрывается из выдачи до решения модератора,
+    # 5+ — автобан. Полный бан руками — в админке.
     from sqlalchemy import func
+    from models.models import Profile
+
     result = await session.execute(
-        select(func.count(Report.id)).where(
+        select(func.count(func.distinct(Report.reporter_id))).where(
             and_(Report.reported_id == data.reported_id, Report.status == "pending")
         )
     )
-    report_count = result.scalar() or 0
+    distinct_reporters = result.scalar() or 0
 
-    if report_count >= 3:
+    if distinct_reporters >= 5:
         target.is_banned = True
-        await session.flush()
+    elif distinct_reporters >= 3:
+        result = await session.execute(
+            select(Profile).where(Profile.user_id == data.reported_id)
+        )
+        reported_profile = result.scalar_one_or_none()
+        if reported_profile:
+            reported_profile.is_incognito = True  # скрыт из деки до ревью модератором
+    await session.flush()
 
     return ReportResponse(success=True, message="Report submitted. Thank you for keeping our community safe.")

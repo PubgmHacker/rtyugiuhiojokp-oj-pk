@@ -42,10 +42,11 @@ async def publish_match(
 
 
 async def publish_new_like(receiver_id: str, liker_id: str):
-    """Уведомить о новом лайке."""
+    """Уведомить о новом лайке (web-канал + Telegram-бот)."""
     r = await get_redis()
     data = {"type": "new_like", "liker_id": liker_id}
     await r.publish(f"dating:user:{receiver_id}", json.dumps(data))
+    await publish_bot_event({"type": "new_like", "receiver_id": receiver_id, "liker_id": liker_id})
 
 
 async def publish_message(match_id: str, sender_id: str, text: str):
@@ -57,9 +58,19 @@ async def publish_message(match_id: str, sender_id: str, text: str):
 
 async def publish_new_match_for_bot(match_id: str, user1_id: str, user2_id: str):
     """Опубликовать мэтч для Telegram-бота (отдельный канал)."""
-    r = await get_redis()
-    data = {"type": "new_match", "match_id": match_id, "user1_id": user1_id, "user2_id": user2_id}
-    await r.publish("dating:bot:matches", json.dumps(data))
+    await publish_bot_event({
+        "type": "new_match", "match_id": match_id,
+        "user1_id": user1_id, "user2_id": user2_id,
+    })
+
+
+async def publish_bot_event(data: dict):
+    """Событие для Telegram-бота (new_match / new_message / new_like)."""
+    try:
+        r = await get_redis()
+        await r.publish("dating:bot:matches", json.dumps(data))
+    except Exception as e:
+        logger.error(f"Bot event publish failed: {e}")
 
 
 async def cache_deck_profile(user_id: str, profile_ids: list[str], ttl: int = 3600):
@@ -75,7 +86,8 @@ async def get_viewed_profile_ids(user_id: str) -> set[str]:
     """Получить множество уже показанных ID анкет."""
     r = await get_redis()
     key = f"dating:deck:viewed:{user_id}"
-    return {x async for x in r.smembers(key)}
+    members = await r.smembers(key)
+    return set(members or [])
 
 
 async def clear_viewed_profiles(user_id: str):

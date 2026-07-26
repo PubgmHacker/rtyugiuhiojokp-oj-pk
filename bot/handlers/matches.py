@@ -8,9 +8,10 @@ from aiogram.fsm.context import FSMContext
 
 from config import BANNERS
 from database import get_or_create_user, get_user_matches, get_match_partner, get_profile
-from keyboards import matches_list_kb, chat_kb, main_kb
+from keyboards import matches_list_kb, chat_kb, main_kb, profile_kb
 from states import ChatStates
 from texts import chat_header
+from utils import safe_edit_text
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -27,15 +28,22 @@ async def list_matches(callback: CallbackQuery):
     matches = await get_user_matches(db_user["id"])
 
     if not matches:
-        await callback.message.edit_text(
+        await safe_edit_text(
+            callback.message,
             "💕 Пока нет мэтчей. Продолжайте ставить 👍!\n\n"
             "Чем больше анкет вы посмотрите — тем выше шанс найти того самого.",
             reply_markup=main_kb(),
         )
         return
 
-    await callback.message.edit_text(
-        f"💕 **Ваши мэтчи ({len(matches)}):**\n\nВыберите мэтч для начала чата:",
+    # Подписываем мэтчи именами партнёров, а не ID
+    for m in matches:
+        partner = await get_profile(m["partner_id"])
+        m["partner_name"] = (partner or {}).get("display_name") or "Аноним"
+
+    await safe_edit_text(
+        callback.message,
+        f"💕 <b>Ваши мэтчи ({len(matches)}):</b>\n\nВыберите мэтч для начала чата:",
         reply_markup=matches_list_kb(matches),
     )
 
@@ -51,20 +59,21 @@ async def view_profile(callback: CallbackQuery):
     profile = await get_profile(db_user["id"])
 
     if not profile or not profile.get("display_name"):
-        await callback.message.edit_text(
+        await safe_edit_text(
+            callback.message,
             "⚠️ Анкета не заполнена. Начните создание!",
-            reply_markup=main_kb(),
+            reply_markup=profile_kb(),
         )
         return
 
     from texts import profile_card
     text = (
-        "👤 **Ваша анкета:**\n\n"
+        "👤 <b>Ваша анкета:</b>\n\n"
         f"{profile_card(profile)}\n\n"
         f"{'✅ Анкета активна' if db_user.get('is_verified') else '⚠️ Заполните анкету'}"
     )
 
-    await callback.message.edit_text(text, reply_markup=main_kb())
+    await safe_edit_text(callback.message, text, reply_markup=profile_kb())
 
 
 @router.callback_query(F.data.startswith("chat:open:"))
@@ -83,7 +92,8 @@ async def open_chat(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ChatStates.in_chat)
     await state.update_data(active_match_id=match_id)
 
-    await callback.message.edit_text(
+    await safe_edit_text(
+        callback.message,
         chat_header(partner_name),
         reply_markup=chat_kb(match_id),
     )
@@ -122,6 +132,13 @@ async def send_message(message: Message, state: FSMContext):
         message.from_user.first_name or "",
     )
 
+    # Отправитель обязан быть участником живого мэтча (IDOR-защита)
+    partner_profile = await get_match_partner(match_id, db_user["id"])
+    if not partner_profile:
+        await state.clear()
+        await message.answer("⚠️ Этот чат недоступен.", reply_markup=main_kb())
+        return
+
     cls = _session_cls()
     async with cls() as session:
         async with session.begin():
@@ -132,16 +149,25 @@ async def send_message(message: Message, state: FSMContext):
             )
             session.add(msg)
             await session.flush()
+            msg_id = msg.id
+            msg_created = msg.created_at.isoformat() if msg.created_at else None
 
-    # Publish via Redis for real-time sync
-    from services.redis_subscriber import publish_message_event
-    await publish_message_event(match_id, db_user["id"], text.strip())
+    # Publish via Redis for real-time sync (web получит мгновенно)
+    from services.redis_subscriber import publish_message_event, _notify_user_about_message
+    await publish_message_event(match_id, db_user["id"], text.strip(), msg_id, msg_created)
 
-    await message.answer(f"✅ Сообщение отправлено!")
+    # И прямое уведомление партнёру в Telegram (web-сокет может быть закрыт)
+    try:
+        await _notify_user_about_message(
+            message.bot, partner_profile["user_id"], db_user["id"], text.strip(),
+        )
+    except Exception as e:
+        logger.warning(f"Partner TG notify failed: {e}")
+
+    await message.answer("✅ Сообщение отправлено!")
 
     # Return to chat menu
-    partner_profile = await get_match_partner(match_id, db_user["id"])
-    partner_name = partner_profile.get("display_name", "Партнёр") if partner_profile else "Партнёр"
+    partner_name = partner_profile.get("display_name", "Партнёр")
 
     await state.set_state(ChatStates.in_chat)
     await message.answer(
@@ -160,7 +186,8 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
         callback.from_user.first_name or "",
     )
     from texts import menu_text
-    await callback.message.edit_text(
+    await safe_edit_text(
+        callback.message,
         menu_text(db_user.get("id", "")[:8], db_user.get("is_verified", False)),
         reply_markup=main_kb(),
     )
@@ -168,8 +195,48 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "settings")
 async def show_settings(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "⚙️ **Настройки**\n\n"
+    await safe_edit_text(
+        callback.message,
+        "⚙️ <b>Настройки</b>\n\n"
         "Настройки поиска и профиля доступны в Web App.",
         reply_markup=main_kb(),
     )
+
+
+@router.callback_query(F.data.startswith("chat:hint:"))
+async def chat_hint(callback: CallbackQuery):
+    """Подсказка для первого сообщения (по общим интересам)."""
+    match_id = callback.data.split(":")[-1]
+    db_user = await get_or_create_user(
+        callback.from_user.id,
+        callback.from_user.username or "",
+        callback.from_user.first_name or "",
+    )
+
+    partner = await get_match_partner(match_id, db_user["id"])
+    me = await get_profile(db_user["id"])
+
+    common = []
+    if partner and me:
+        common = list(set(partner.get("interests") or []) & set(me.get("interests") or []))
+
+    if common:
+        hint = (
+            f"⚡ У вас общие интересы: <b>{', '.join(common[:3])}</b>.\n\n"
+            f"Попробуйте начать с вопроса про «{common[0]}» — например, "
+            f"как {partner.get('display_name', 'собеседник')} к этому пришёл(ла)."
+        )
+    elif partner and partner.get("bio"):
+        hint = (
+            "⚡ Зацепитесь за био собеседника:\n\n"
+            f"«{partner['bio'][:150]}»\n\n"
+            "Задайте открытый вопрос по нему — это работает лучше «привет»."
+        )
+    else:
+        hint = (
+            "⚡ Начните с открытого вопроса: «Как бы ты провёл(а) идеальный "
+            "выходной?» — отвечать на такое интереснее, чем на «привет»."
+        )
+
+    await callback.answer()
+    await callback.message.answer(hint, reply_markup=chat_kb(match_id))

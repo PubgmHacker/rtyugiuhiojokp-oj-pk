@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Settings, Shield, Crown } from "lucide-react";
-import { getMyProfile, type UserProfile } from "../lib/api";
+import { LogOut, Settings, Shield, Crown, SlidersHorizontal } from "lucide-react";
+import { getMyProfile, updateMyProfile, type UserProfile } from "../lib/api";
 import { useStore } from "../lib/store";
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { logout } = useStore();
+  const { logout, setDeck } = useStore();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lookingFor, setLookingFor] = useState("any");
+  const [ageMin, setAgeMin] = useState(18);
+  const [ageMax, setAgeMax] = useState(99);
+  const [savingFilters, setSavingFilters] = useState(false);
+  const [filtersSaved, setFiltersSaved] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -18,10 +23,33 @@ export default function Profile() {
     try {
       const data = await getMyProfile();
       setProfile(data);
+      setLookingFor(data.looking_for || "any");
+      setAgeMin(data.age_min ?? 18);
+      setAgeMax(data.age_max ?? 99);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveFilters = async () => {
+    setSavingFilters(true);
+    setFiltersSaved(false);
+    try {
+      const clamp = (v: number) => Math.min(99, Math.max(18, v || 18));
+      const lo = clamp(Math.min(ageMin, ageMax));
+      const hi = clamp(Math.max(ageMin, ageMax));
+      await updateMyProfile({ looking_for: lookingFor, age_min: lo, age_max: hi });
+      setAgeMin(lo);
+      setAgeMax(hi);
+      setDeck([]); // сбрасываем деку, чтобы фильтры применились сразу
+      setFiltersSaved(true);
+      setTimeout(() => setFiltersSaved(false), 2000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingFilters(false);
     }
   };
 
@@ -94,6 +122,64 @@ export default function Profile() {
           </div>
         </div>
       )}
+
+      {/* Search filters */}
+      <div className="mb-6 p-4 bg-surface rounded-2xl">
+        <h3 className="text-sm text-text-muted mb-3 flex items-center gap-2">
+          <SlidersHorizontal size={16} className="text-accent" />
+          Настройки поиска
+        </h3>
+
+        <div className="mb-3">
+          <p className="text-xs text-text-muted mb-2">Кого показывать</p>
+          <div className="flex gap-2">
+            {[
+              { value: "female", label: "Девушек" },
+              { value: "male", label: "Парней" },
+              { value: "any", label: "Всех" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setLookingFor(opt.value)}
+                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
+                  lookingFor === opt.value
+                    ? "bg-accent text-white"
+                    : "bg-bg text-text-muted"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-xs text-text-muted mb-2">
+            Возраст: {Math.min(ageMin, ageMax)}–{Math.max(ageMin, ageMax)}
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              type="number" min={18} max={99} value={ageMin}
+              onChange={(e) => setAgeMin(parseInt(e.target.value) || 18)}
+              className="w-20 px-3 py-2 bg-bg rounded-xl text-center outline-none focus:ring-2 focus:ring-accent"
+            />
+            <span className="text-text-muted">—</span>
+            <input
+              type="number" min={18} max={99} value={ageMax}
+              onChange={(e) => setAgeMax(parseInt(e.target.value) || 99)}
+              className="w-20 px-3 py-2 bg-bg rounded-xl text-center outline-none focus:ring-2 focus:ring-accent"
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={saveFilters}
+          disabled={savingFilters}
+          className="w-full py-2.5 bg-accent text-white rounded-full font-semibold text-sm disabled:opacity-50"
+        >
+          {filtersSaved ? "✓ Сохранено" : savingFilters ? "Сохраняю…" : "Применить фильтры"}
+        </button>
+      </div>
 
       {/* Menu items */}
       <div className="space-y-2">

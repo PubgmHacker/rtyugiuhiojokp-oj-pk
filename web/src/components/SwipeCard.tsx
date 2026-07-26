@@ -58,7 +58,7 @@ export default function SwipeCard({ profile, onSwipe, isTop, index }: SwipeCardP
       <motion.div
         className="absolute inset-0 rounded-3xl overflow-hidden bg-surface"
         style={{
-          zIndex: index,
+          zIndex: 9 - index, // ближе к верху деки — выше в стеке
           scale: 1 - index * 0.05,
           translateY: index * 12,
         }}

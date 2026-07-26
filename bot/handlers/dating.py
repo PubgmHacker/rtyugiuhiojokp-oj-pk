@@ -8,11 +8,13 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from config import BANNERS, SITE_URL
-from database import get_or_create_user, get_profile, get_deck_profiles, create_like, check_mutual_like
-from keyboards import dating_action_kb, main_kb
+from database import (
+    get_or_create_user, get_profile, get_deck_profiles,
+    create_like, check_mutual_like, create_match, get_user_by_id,
+)
+from keyboards import dating_action_kb, main_kb, profile_kb
 from states import DatingStates
 from texts import profile_card, no_more_profiles, match_notification
-from services.redis_subscriber import publish_match_event
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -37,6 +39,10 @@ async def start_dating(callback: CallbackQuery, state: FSMContext):
     profile = await get_profile(db_user["id"])
     if not profile or not profile.get("display_name"):
         await callback.answer("Сначала создайте анкету!", show_alert=True)
+        await callback.message.answer(
+            "👤 Ваша анкета ещё пуста — создайте её за минуту:",
+            reply_markup=profile_kb(),
+        )
         return
 
     await _show_next_profile(callback.message, callback.from_user.id, db_user["id"], state)
@@ -69,28 +75,21 @@ async def _render_profile(message: Message, profile: dict):
     """Отрендерить карточку анкеты."""
     caption = profile_card(profile)
 
-    # Try to send with photo
-    photo = None
-    photos = profile.get("photos", [])
-    if photos and isinstance(photos, list) and photos:
-        # If photos are URLs, use first one
-        if isinstance(photos[0], str) and photos[0].startswith("http"):
-            photo = photos[0]
-        else:
-            photo = BANNERS["deck"]
+    # Telegram принимает и URL, и file_id — берём первое фото как есть
+    photos = profile.get("photos") or []
+    photo = photos[0] if isinstance(photos, list) and photos else BANNERS["deck"]
 
     kb = dating_action_kb(profile["user_id"])
 
-    if photo:
-        try:
-            await message.answer_photo(photo=photo, caption=caption, reply_markup=kb)
-        except Exception:
-            await message.answer(caption, reply_markup=kb)
-    else:
+    try:
+        await message.answer_photo(photo=photo, caption=caption, reply_markup=kb)
+    except Exception:
         await message.answer(caption, reply_markup=kb)
 
 
-@router.callback_query(DatingStates.viewing_profile, F.data.startswith("like:"))
+# Без фильтра по состоянию: кнопки должны работать и из уведомлений
+# «вы кому-то понравились», где FSM-состояния нет.
+@router.callback_query(F.data.startswith("like:"))
 async def handle_like(callback: CallbackQuery, state: FSMContext):
     """Обработка лайка/пасс."""
     parts = callback.data.split(":")
@@ -104,6 +103,16 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
     )
 
     like_type = "pass" if action == "pass" else "like"
+
+    if action == "message":
+        await callback.answer("💌 Напишите после мэтча — поставьте 👍!", show_alert=True)
+        return
+
+    # Пользователь в середине заполнения анкеты (лайк из старого уведомления):
+    # лайк засчитываем, но не трогаем FSM-состояние регистрации
+    current_state = await state.get_state()
+    in_registration = bool(current_state and current_state.startswith("RegistrationStates"))
+
     await create_like(db_user["id"], target_id, like_type)
 
     if action == "pass":
@@ -113,30 +122,85 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
             await callback.message.delete()
         except Exception:
             pass
-        await _show_next_from_deck(callback.message, db_user["id"], state)
-
-    elif action == "message":
-        await callback.answer("💌 Функция 'написать' — скоро!", show_alert=True)
-
-    elif action == "like":
-        # Check mutual
-        result = await check_mutual_like(db_user["id"], target_id)
-        if result and result.get("mutual"):
-            await callback.answer("🎉 Это мэтч!", show_alert=True)
-            # Get partner profile for notification
-            partner = await get_profile(target_id)
-            await callback.message.answer_photo(
-                photo=BANNERS["match"],
-                caption=match_notification(partner or {}),
-                reply_markup=main_kb(),
-            )
-        else:
-            await callback.answer("👍 Понравилось!")
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
+        if not in_registration:
             await _show_next_from_deck(callback.message, db_user["id"], state)
+        return
+
+    # action == "like"
+    result = await check_mutual_like(db_user["id"], target_id)
+    if result and result.get("mutual"):
+        # Взаимно: создаём мэтч и уведомляем обоих напрямую.
+        # publish_match_event тут НЕ зовём — его слушает этот же бот,
+        # и оба пользователя получили бы уведомления дважды.
+        match = await create_match(db_user["id"], target_id)
+        await callback.answer("🎉 Это мэтч!", show_alert=True)
+
+        # Убираем карточку с «живыми» кнопками (повторные тапы = спам)
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        partner = await get_profile(target_id)
+        await callback.message.answer_photo(
+            photo=BANNERS["match"],
+            caption=match_notification(partner or {}),
+            reply_markup=main_kb(),
+        )
+
+        # Уведомляем партнёра в Telegram
+        partner_user = await get_user_by_id(target_id)
+        if partner_user and partner_user.get("telegram_id"):
+            my_profile = await get_profile(db_user["id"])
+            try:
+                await callback.bot.send_photo(
+                    chat_id=partner_user["telegram_id"],
+                    photo=BANNERS["match"],
+                    caption=match_notification(my_profile or {}),
+                    reply_markup=main_kb(),
+                )
+            except Exception as e:
+                logger.warning(f"Failed to notify match partner: {e}")
+
+        # Продолжаем показ анкет
+        if not in_registration:
+            await _show_next_from_deck(callback.message, db_user["id"], state)
+    else:
+        await callback.answer("👍 Понравилось!")
+        # Дайвинчик-механика: показываем партнёру анкету лайкнувшего
+        partner_user = await get_user_by_id(target_id)
+        if partner_user and partner_user.get("telegram_id"):
+            my_profile = await get_profile(db_user["id"])
+            if my_profile and my_profile.get("display_name"):
+                try:
+                    await callback.bot.send_message(
+                        chat_id=partner_user["telegram_id"],
+                        text="💌 Вы кому-то понравились! Взгляните на анкету:",
+                    )
+                    await _render_profile_to_chat(
+                        callback.bot, partner_user["telegram_id"], my_profile,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify liked user: {e}")
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        if not in_registration:
+            await _show_next_from_deck(callback.message, db_user["id"], state)
+
+
+async def _render_profile_to_chat(bot, chat_id: int, profile: dict):
+    """Отправить карточку анкеты в произвольный чат (для уведомлений о лайке)."""
+    caption = profile_card(profile)
+    kb = dating_action_kb(profile["user_id"])
+    photos = profile.get("photos") or []
+    photo = photos[0] if photos else BANNERS["deck"]
+    try:
+        await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, reply_markup=kb)
+    except Exception:
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb)
 
 
 async def _show_next_from_deck(message: Message, user_id: str, state: FSMContext):

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_, or_, desc, case
+from sqlalchemy import select, func, and_, or_, desc, case, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session

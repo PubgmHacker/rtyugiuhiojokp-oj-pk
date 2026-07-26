@@ -1,13 +1,14 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Flame, MessageCircle, User } from "lucide-react";
+import { Flame, MessageCircle, User, Sparkles } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
 import Discover from "./pages/Discover";
 import Matches from "./pages/Matches";
+import Likes from "./pages/Likes";
 import Chat from "./pages/Chat";
 import Profile from "./pages/Profile";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -19,6 +20,7 @@ function BottomNav() {
 
   const navItems = [
     { path: "/discover", icon: Flame, label: "Поиск" },
+    { path: "/likes", icon: Sparkles, label: "Лайки" },
     { path: "/matches", icon: MessageCircle, label: "Мэтчи" },
     { path: "/profile", icon: User, label: "Профиль" },
   ];
@@ -62,7 +64,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { token, setUser } = useStore();
+  const { token, setUser, isOnboarded } = useStore();
 
   useEffect(() => {
     initTelegram();
@@ -82,12 +84,16 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<Landing />} />
-        <Route path="/login" element={token ? <Navigate to="/discover" /> : <Login />} />
+        <Route
+          path="/login"
+          element={token ? <Navigate to={isOnboarded ? "/discover" : "/onboarding"} /> : <Login />}
+        />
 
         {/* Protected */}
         <Route path="/onboarding" element={<ProtectedLayout><Onboarding /></ProtectedLayout>} />
         <Route path="/discover" element={<ProtectedLayout><Discover /></ProtectedLayout>} />
         <Route path="/matches" element={<ProtectedLayout><Matches /></ProtectedLayout>} />
+        <Route path="/likes" element={<ProtectedLayout><Likes /></ProtectedLayout>} />
         <Route path="/chat/:matchId" element={<ProtectedLayout><Chat /></ProtectedLayout>} />
         <Route path="/profile" element={<ProtectedLayout><Profile /></ProtectedLayout>} />
 

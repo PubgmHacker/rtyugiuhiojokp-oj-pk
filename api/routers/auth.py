@@ -16,6 +16,7 @@ from middleware.auth import (
 )
 from models.models import User, Profile, Subscription
 from models.schemas import AuthResponse, UserProfile
+from utils import as_list
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -41,8 +42,8 @@ def _user_to_profile(user: User, profile: Profile | None) -> UserProfile:
         gender=profile.gender if profile else "other",
         age=age,
         city=profile.city if profile else "",
-        photos=json.loads(profile.photos) if profile and profile.photos else [],
-        interests=json.loads(profile.interests) if profile and profile.interests else [],
+        photos=as_list(profile.photos) if profile else [],
+        interests=as_list(profile.interests) if profile else [],
         ai_bio=profile.ai_bio if profile else None,
         looking_for=profile.looking_for if profile else "any",
         is_incognito=profile.is_incognito if profile else False,
@@ -111,6 +112,44 @@ async def auth_telegram(
         token=token,
         user=_user_to_profile(user, profile),
     )
+
+
+@router.post("/dev", response_model=AuthResponse)
+async def auth_dev(
+    data: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """Dev/гостевой вход без Telegram (только при DEBUG=true).
+
+    Принимает {"device_id": "...", "name": "..."} — device_id хранится в phone,
+    чтобы гость возвращался в свой же аккаунт.
+    """
+    if not settings.DEBUG:
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
+
+    device_id = str(data.get("device_id", "")).strip()[:64]
+    name = str(data.get("name", "")).strip()[:50]
+    if not device_id:
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
+
+    result = await session.execute(select(User).where(User.phone == f"dev:{device_id}"))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = User(phone=f"dev:{device_id}", role="user")
+        session.add(user)
+        await session.flush()
+        session.add(Profile(user_id=user.id, display_name=name))
+    else:
+        user.last_seen_at = datetime.now(timezone.utc)
+
+    await session.flush()
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    token = create_access_token(user.id, user.telegram_id)
+    return AuthResponse(success=True, token=token, user=_user_to_profile(user, profile))
 
 
 @router.get("/me", response_model=UserProfile)

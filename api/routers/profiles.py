@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +14,7 @@ from models.models import User, Profile, Like, SwipeSession
 from models.schemas import DeckProfile, ProfileUpdate, UserProfile
 from services.matching import get_deck_profiles
 from services.ai_moderation import moderate_text
+from utils import as_list
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 settings = get_settings()
@@ -29,6 +29,16 @@ async def get_deck(
     """Получить анкеты для свайпов."""
     profiles = await get_deck_profiles(session, user.id, limit)
     return profiles
+
+
+@router.post("/deck/reset")
+async def reset_deck(
+    user: User = Depends(get_current_user),
+):
+    """Сбросить кеш просмотренных анкет (кнопка «Обновить»)."""
+    from services.realtime import clear_viewed_profiles
+    await clear_viewed_profiles(user.id)
+    return {"success": True}
 
 
 @router.get("/me", response_model=UserProfile)
@@ -59,11 +69,13 @@ async def get_my_profile(
         gender=profile.gender if profile else "other",
         age=age,
         city=profile.city if profile else "",
-        photos=json.loads(profile.photos) if profile and profile.photos else [],
-        interests=json.loads(profile.interests) if profile and profile.interests else [],
+        photos=as_list(profile.photos) if profile else [],
+        interests=as_list(profile.interests) if profile else [],
         ai_bio=profile.ai_bio if profile else None,
         looking_for=profile.looking_for if profile else "any",
         is_incognito=profile.is_incognito if profile else False,
+        age_min=profile.age_min if profile else 18,
+        age_max=profile.age_max if profile else 99,
     )
 
 
@@ -86,19 +98,19 @@ async def update_my_profile(
 
     if "birth_date" in update_fields and update_fields["birth_date"]:
         try:
+            # Колонка DateTime(timezone=True) — храним datetime, не date
             update_fields["birth_date"] = datetime.strptime(
                 update_fields["birth_date"], "%Y-%m-%d"
-            ).date()
+            ).replace(tzinfo=timezone.utc)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
 
     for key, value in update_fields.items():
-        if key in ("interests", "photos") and value is not None:
-            setattr(profile, key, json.dumps(value))
-        else:
-            setattr(profile, key, value)
+        if value is None:
+            continue  # explicit null не затирает non-nullable колонки (иначе 500)
+        setattr(profile, key, value)
 
-    if len(json.loads(profile.photos)) > settings.MAX_PHOTOS:
+    if len(as_list(profile.photos)) > settings.MAX_PHOTOS:
         raise HTTPException(status_code=400, detail=f"Max {settings.MAX_PHOTOS} photos allowed")
     if len(profile.bio) > settings.MAX_BIO_LENGTH:
         raise HTTPException(status_code=400, detail=f"Bio must be under {settings.MAX_BIO_LENGTH} chars")
@@ -129,9 +141,11 @@ async def update_my_profile(
         gender=profile.gender,
         age=age,
         city=profile.city,
-        photos=json.loads(profile.photos) if profile.photos else [],
-        interests=json.loads(profile.interests) if profile.interests else [],
+        photos=as_list(profile.photos),
+        interests=as_list(profile.interests),
         ai_bio=profile.ai_bio,
         looking_for=profile.looking_for,
         is_incognito=profile.is_incognito,
+        age_min=profile.age_min,
+        age_max=profile.age_max,
     )

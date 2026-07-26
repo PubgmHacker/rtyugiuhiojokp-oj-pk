@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -28,7 +29,7 @@ class User(Base):
     __tablename__ = "dating_users"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    telegram_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)

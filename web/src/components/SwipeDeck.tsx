@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, Zap, RotateCcw } from "lucide-react";
+import { X, Heart, Star, RotateCcw } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
-import { likeProfile, getDeck } from "../lib/api";
+import { likeProfile, getDeck, resetDeck } from "../lib/api";
 import { useStore } from "../lib/store";
 import { hapticFeedback } from "../lib/telegram";
 import SwipeCard from "./SwipeCard";
@@ -22,25 +22,38 @@ export default function SwipeDeck() {
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
   const [lastSwiped, setLastSwiped] = useState<{ profile: DeckProfile; direction: string } | null>(null);
 
-  // Load deck on mount
-  useEffect(() => {
-    if (deck.length === 0) {
-      loadDeck();
-    }
-  }, []);
+  const loadingRef = useRef(false);
 
+  // Подгрузка с дедупом: не затирает текущую деку (важно — сервер
+  // кеширует показанные анкеты и повторный запрос может вернуть пусто)
   const loadDeck = async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       const profiles = await getDeck(10);
-      setDeck(profiles);
+      const existing = new Set(useStore.getState().deck.map((p) => p.id));
+      const fresh = profiles.filter((p) => !existing.has(p.id));
+      if (fresh.length) addDeck(fresh);
     } catch (e) {
       console.error("Failed to load deck:", e);
+    } finally {
+      loadingRef.current = false;
     }
   };
 
-  // Preload more when running low
+  // Кнопка «Обновить»: сбрасываем кеш просмотренных и грузим заново
+  const handleRefresh = async () => {
+    try {
+      await resetDeck();
+    } catch (e) {
+      console.error(e);
+    }
+    await loadDeck();
+  };
+
+  // Load on mount + preload when running low
   useEffect(() => {
-    if (deck.length <= 3 && deck.length > 0) {
+    if (deck.length <= 3) {
       loadDeck();
     }
   }, [deck.length]);
@@ -97,11 +110,11 @@ export default function SwipeDeck() {
   };
 
   const handleRewind = () => {
-    if (lastSwiped) {
-      setDeck([lastSwiped.profile, ...deck]);
-      setLastSwiped(null);
-      hapticFeedback("light");
-    }
+    // Во время 300мс-анимации свайпа карта ещё в деке — вернём дубликат
+    if (isAnimatingOut || !lastSwiped) return;
+    setDeck([lastSwiped.profile, ...deck.filter((p) => p.id !== lastSwiped.profile.id)]);
+    setLastSwiped(null);
+    hapticFeedback("light");
   };
 
   if (deck.length === 0) {
@@ -117,7 +130,7 @@ export default function SwipeDeck() {
         <h2 className="text-xl font-bold mb-2">Анкеты закончились</h2>
         <p className="text-text-muted mb-6">Попробуйте обновить позже или измените настройки поиска</p>
         <button
-          onClick={loadDeck}
+          onClick={handleRefresh}
           className="px-6 py-3 bg-accent text-white rounded-full font-semibold hover:bg-accent/90 transition"
         >
           Обновить
@@ -131,19 +144,15 @@ export default function SwipeDeck() {
       {/* Card stack */}
       <div className="relative flex-1 mb-4">
         <AnimatePresence>
-          {deck.slice(0, 3).reverse().map((profile, idx) => {
-            const realIndex = deck.length - 1 - idx;
-            const isTop = idx === deck.length - 1;
-            return (
-              <SwipeCard
-                key={profile.id}
-                profile={profile}
-                onSwipe={handleSwipe}
-                isTop={isTop}
-                index={realIndex}
-              />
-            );
-          })}
+          {deck.slice(0, 3).map((profile, idx) => (
+            <SwipeCard
+              key={profile.id}
+              profile={profile}
+              onSwipe={handleSwipe}
+              isTop={idx === 0}
+              index={idx}
+            />
+          ))}
         </AnimatePresence>
       </div>
 
@@ -163,10 +172,6 @@ export default function SwipeDeck() {
 
         <ActionButton onClick={() => handleButtonSwipe("right")} className="bg-surface text-success" size="md">
           <Heart size={26} fill="currentColor" />
-        </ActionButton>
-
-        <ActionButton onClick={() => {}} className="bg-surface text-accent" size="sm">
-          <Zap size={20} />
         </ActionButton>
       </div>
 

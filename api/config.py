@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     # ── App ──────────────────────────────────────────────────────
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
-    DEBUG: bool = True
+    # DEBUG включает /docs, гостевой /auth/dev и fail-open проверку initData.
+    # По умолчанию ВЫКЛЮЧЕН — включайте явно через .env только локально.
+    DEBUG: bool = False
 
     # ── JWT ─────────────────────────────────────────────────────
     JWT_SECRET: str = "change_this_in_production"
@@ -55,8 +57,10 @@ class Settings(BaseSettings):
         return [int(x.strip()) for x in self.ADMIN_IDS.split(",") if x.strip().isdigit()]
 
     class Config:
-        env_file = ".env"
+        # Ищем .env и в корне репо (запуск `uvicorn` из api/), и рядом
+        env_file = ("../.env", ".env")
         env_file_encoding = "utf-8"
+        extra = "ignore"  # в общем .env есть переменные бота/фронтенда
 
 
 @lru_cache
