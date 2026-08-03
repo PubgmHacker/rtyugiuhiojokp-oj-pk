@@ -43,19 +43,29 @@ R2_SECRET_ACCESS_KEY: str = os.getenv("R2_SECRET_ACCESS_KEY", "")
 R2_BUCKET_NAME: str = os.getenv("R2_BUCKET_NAME", "souldawn-dating")
 R2_PUBLIC_URL: str = os.getenv("R2_PUBLIC_URL", "")
 
+# ── AI-модерация (Zhipu GLM) ─────────────────────────────────────
+# Без ключа модерация в боте работает по словарному фильтру
+ZHIPU_API_KEY: str = os.getenv("ZHIPU_API_KEY", "")
+
+# ── Антифлуд ─────────────────────────────────────────────────────
+# Минимальный интервал между действиями одного пользователя, секунды
+THROTTLE_MESSAGE: float = float(os.getenv("THROTTLE_MESSAGE", "0.7"))
+THROTTLE_CALLBACK: float = float(os.getenv("THROTTLE_CALLBACK", "0.4"))
+
 # ── Misc ─────────────────────────────────────────────────────────
 # Railway отдаёт PORT для web-сервисов; для бота используем WEBHOOK_PORT
 WEBHOOK_PORT: int = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8081")))
 
 # ── Banners ─────────────────────────────────────────────────────
+# Цвета совпадают с дизайн-системой: фон #0b0a12, акцент #ff3d71
 BANNERS: dict[str, str] = {
-    "welcome": "https://placehold.co/600x400/0a0a1a/c97b3d.png?text=SOULDAWN+DATING",
-    "match": "https://placehold.co/600x400/1a0a2e/ff6b9d.png?text=It%E2%80%99s+a+Match!",
-    "profile": "https://placehold.co/600x400/0a1a2e/6bb3ff.png?text=Your+Profile",
-    "like": "https://placehold.co/600x200/0a2e1a/6bff9d.png?text=%E2%9D%A4%EF%B8%8F",
-    "dislike": "https://placehold.co/600x200/2e0a0a/ff6b6b.png?text=%F0%9F%91%8E",
-    "menu": "https://placehold.co/600x300/0a0a1a/c97b3d.png?text=Souldawn+Dating",
-    "deck": "https://placehold.co/600x800/1a1a2e/e0e0e0.png?text=Profile+Photo",
+    "welcome": "https://placehold.co/900x600/0b0a12/ff3d71.png?text=SOULDAWN",
+    "match": "https://placehold.co/900x600/0b0a12/ff3d71.png?text=%D0%92%D0%B7%D0%B0%D0%B8%D0%BC%D0%BD%D0%BE!",
+    "profile": "https://placehold.co/900x600/0b0a12/ffc46b.png?text=%D0%9C%D0%BE%D1%8F+%D0%B0%D0%BD%D0%BA%D0%B5%D1%82%D0%B0",
+    "like": "https://placehold.co/900x300/0b0a12/2ee6a8.png?text=%E2%9D%A4%EF%B8%8F",
+    "dislike": "https://placehold.co/900x300/0b0a12/8a8399.png?text=%F0%9F%91%8E",
+    "menu": "https://placehold.co/900x450/0b0a12/ff3d71.png?text=SOULDAWN",
+    "deck": "https://placehold.co/900x1200/191725/8a8399.png?text=%D0%A4%D0%BE%D1%82%D0%BE",
 }
 
 

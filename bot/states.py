@@ -2,11 +2,13 @@ from aiogram.fsm.state import StatesGroup, State
 
 
 class RegistrationStates(StatesGroup):
-    """FSM для создания анкеты.
+    """Анкета за минимум шагов, как в «Дайвинчике»:
+    имя → возраст → пол → кого ищем → город → фото → о себе.
 
-    Порядок шагов — минимум трения (Davinchik-style):
-    имя → возраст → пол → кого ищем → город → фото → био (необязательно).
+    Интересы в боте намеренно не спрашиваем: это лишний шаг, на котором
+    люди бросают регистрацию. Их можно добавить позже в мини-аппе.
     """
+
     waiting_name = State()
     waiting_age = State()
     waiting_gender = State()
@@ -17,11 +19,19 @@ class RegistrationStates(StatesGroup):
 
 
 class DatingStates(StatesGroup):
-    """FSM для просмотра анкет."""
+    """Просмотр анкет."""
+
     viewing_profile = State()
 
 
 class ChatStates(StatesGroup):
-    """FSM для чата с мэтчем."""
+    """Переписка с мэтчем."""
+
     in_chat = State()
     waiting_message = State()
+
+
+class DeleteStates(StatesGroup):
+    """Удаление аккаунта — подтверждение в два шага."""
+
+    confirming = State()

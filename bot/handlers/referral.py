@@ -4,6 +4,7 @@ import logging
 from urllib.parse import quote
 
 from aiogram import Router, F
+from aiogram.filters import Command, StateFilter
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import BOT_USERNAME, REFERRAL_MIN_INVITES, REFERRAL_BOOST_PERCENT
@@ -65,7 +66,7 @@ async def show_referral(callback: CallbackQuery):
     )
 
 
-@router.message(F.text == "/invite")
+@router.message(StateFilter("*"), Command("invite"))
 async def invite_command(message: Message):
     db_user = await get_or_create_user(
         message.from_user.id,

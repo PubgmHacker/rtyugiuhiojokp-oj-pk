@@ -11,10 +11,12 @@ from config import BANNERS, SITE_URL
 from database import (
     get_or_create_user, get_profile, get_deck_profiles,
     create_like, check_mutual_like, create_match, get_user_by_id,
+    create_report,
 )
-from keyboards import dating_action_kb, main_kb, profile_kb
+from keyboards import dating_action_kb, main_kb, profile_kb, report_reasons_kb
 from states import DatingStates
 from texts import profile_card, no_more_profiles, match_notification
+import texts as T
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -215,3 +217,70 @@ async def _show_next_from_deck(message: Message, user_id: str, state: FSMContext
     else:
         # Need to fetch more
         await _show_next_profile(message, 0, user_id, state)
+
+
+# ── Жалоба на анкету (требование App Store: report в один тап) ───
+
+@router.callback_query(F.data.startswith("report:send:"))
+async def send_report(callback: CallbackQuery, state: FSMContext):
+    """Принять жалобу с выбранной причиной и показать следующую анкету."""
+    parts = callback.data.split(":")
+    if len(parts) < 4:
+        await callback.answer()
+        return
+    target_id, reason = parts[2], parts[3]
+
+    try:
+        db_user = await get_or_create_user(callback.from_user.id, "", "")
+        await create_report(db_user["id"], target_id, reason)
+    except Exception as e:
+        logger.warning(f"Не удалось сохранить жалобу: {e}")
+
+    await callback.answer("Жалоба отправлена")
+    try:
+        await callback.message.delete()
+    except Exception:
+        # Сообщение могло быть уже удалено или слишком старое
+        pass
+    await callback.message.answer(T.REPORT_SENT)
+
+    try:
+        db_user = await get_or_create_user(callback.from_user.id, "", "")
+        await _show_next_from_deck(callback.message, db_user["id"], state)
+    except Exception as e:
+        logger.warning(f"Не удалось показать следующую анкету после жалобы: {e}")
+
+
+@router.callback_query(F.data.startswith("report:"), ~F.data.startswith("report:send:"))
+async def ask_report_reason(callback: CallbackQuery):
+    """Спросить причину жалобы."""
+    target_id = callback.data.split(":", 1)[-1]
+    await callback.answer()
+    await callback.message.answer(
+        "Что не так с этой анкетой?", reply_markup=report_reasons_kb(target_id)
+    )
+
+
+# ── Пауза просмотра ─────────────────────────────────────────────
+
+@router.callback_query(F.data == "dating:stop")
+async def stop_dating(callback: CallbackQuery, state: FSMContext):
+    """«Хватит на сегодня» — выйти из просмотра в меню."""
+    await state.clear()
+    await callback.answer()
+    await callback.message.answer(
+        "Хорошо, на сегодня достаточно 🌙\n\nЗаходите, когда захотите.",
+        reply_markup=main_kb(),
+    )
+
+
+@router.callback_query(F.data == "dating:next")
+async def next_profile(callback: CallbackQuery, state: FSMContext):
+    """Пропустить без действия — например, после отмены жалобы."""
+    await callback.answer()
+    try:
+        db_user = await get_or_create_user(callback.from_user.id, "", "")
+        await _show_next_from_deck(callback.message, db_user["id"], state)
+    except Exception as e:
+        logger.warning(f"Не удалось показать следующую анкету: {e}")
+        await callback.message.answer(T.ERROR_GENERIC)

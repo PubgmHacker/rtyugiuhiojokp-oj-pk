@@ -4,17 +4,21 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.client.default import DefaultBotProperties
+from aiogram.types import BotCommand, ErrorEvent
 from aiohttp import web
 
 from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, BANNERS, REDIS_URL
 from database import init_db, get_or_create_user, record_referral, get_user_by_id
-from handlers import registration, dating, matches, premium, referral
+from handlers import registration, dating, matches, premium, referral, account
 from keyboards import main_kb
 from middlewares.registration import RegistrationMiddleware
+from middlewares.throttle import ThrottleMiddleware
 from services.redis_subscriber import start_redis_subscriber
+import texts as T
 from texts import welcome
 
 logging.basicConfig(
@@ -25,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 async def cmd_start(message, state):
-    """Обработчик /start — главное меню (+ deep-link аргументы)."""
+    """Обработчик /start — приветствие и главное меню (+ deep-link аргументы)."""
     await state.clear()
 
     db_user = await get_or_create_user(
@@ -85,6 +89,34 @@ async def _handle_referral(message, db_user: dict, referrer_id: str):
         logger.warning(f"Referral processing error: {e}")
 
 
+async def on_error(event: ErrorEvent) -> bool:
+    """Глобальный обработчик ошибок.
+
+    Без него исключение в обработчике оставляет человека без ответа —
+    выглядит как «бот сломался и молчит».
+    """
+    logger.exception(f"Необработанная ошибка: {event.exception}")
+
+    update = event.update
+    target = None
+    if getattr(update, "message", None):
+        target = update.message
+    elif getattr(update, "callback_query", None):
+        cb = update.callback_query
+        try:
+            await cb.answer()
+        except Exception:
+            pass
+        target = cb.message
+
+    if target is not None:
+        try:
+            await target.answer(T.ERROR_GENERIC)
+        except Exception:
+            pass
+    return True
+
+
 async def health_handler(request):
     """HTTP health endpoint for Railway."""
     return web.json_response({
@@ -133,14 +165,21 @@ async def main():
     dp = Dispatcher(storage=storage)
 
     # Middleware
+    # Троттлинг стоит первым: отсекает флуд до любой работы с БД
+    dp.message.outer_middleware(ThrottleMiddleware())
+    dp.callback_query.outer_middleware(ThrottleMiddleware())
     dp.message.outer_middleware(RegistrationMiddleware())
     dp.callback_query.outer_middleware(RegistrationMiddleware())
 
+    # Ошибка в одном обработчике не должна оставлять человека без ответа
+    dp.errors.register(on_error)
+
     # Handlers
-    dp.message.register(
-        cmd_start,
-        lambda m: bool(m.text) and (m.text.startswith("/start") or m.text == "/help"),
-    )
+    # /start работает из любого состояния FSM, иначе можно застрять
+    dp.message.register(cmd_start, StateFilter("*"), Command("start"))
+    # account держим до остальных роутеров: его команды (/menu, /cancel,
+    # /delete) должны перехватываться раньше шагов анкеты
+    dp.include_router(account.router)
     dp.include_router(premium.router)
     dp.include_router(referral.router)
     dp.include_router(registration.router)
@@ -148,12 +187,18 @@ async def main():
     dp.include_router(matches.router)
 
     # Set bot commands
-    await bot.set_my_commands([
-        {"command": "start", "description": "Главное меню"},
-        {"command": "premium", "description": "⭐ Premium-подписка"},
-        {"command": "invite", "description": "🎁 Пригласить друзей (буст анкеты)"},
-        {"command": "help", "description": "Помощь"},
-    ])
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="profile", description="Моя анкета"),
+            BotCommand(command="premium", description="Premium-подписка"),
+            BotCommand(command="invite", description="Пригласить друзей"),
+            BotCommand(command="pause", description="Скрыть анкету из поиска"),
+            BotCommand(command="resume", description="Вернуть анкету в поиск"),
+            BotCommand(command="delete", description="Удалить аккаунт"),
+            BotCommand(command="help", description="Помощь"),
+        ]
+    )
     if ADMIN_IDS:
         for admin_id in ADMIN_IDS:
             try:

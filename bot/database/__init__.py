@@ -17,6 +17,10 @@ from database.connection import (
     activate_premium,
     record_referral,
     get_referral_count,
+    set_profile_hidden,
+    is_profile_hidden,
+    delete_user_account,
+    create_report,
 )
 from database.models import Base, User, Profile, Like, Match, Message, Referral, Subscription
 
@@ -39,4 +43,8 @@ __all__ = [
     "activate_premium",
     "record_referral",
     "get_referral_count",
+    "set_profile_hidden",
+    "is_profile_hidden",
+    "delete_user_account",
+    "create_report",
 ]

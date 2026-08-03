@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Router, F
+from aiogram.filters import Command, StateFilter
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -86,7 +87,7 @@ async def premium_from_menu(callback: CallbackQuery):
     await send_premium_offer(callback.message, db_user["id"])
 
 
-@router.message(F.text == "/premium")
+@router.message(StateFilter("*"), Command("premium"))
 async def premium_command(message: Message):
     db_user = await get_or_create_user(
         message.from_user.id,

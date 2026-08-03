@@ -9,7 +9,17 @@ from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
-from database.models import Base, User, Profile, Like, Match, Message, Referral, Subscription
+from database.models import (
+    Base,
+    User,
+    Profile,
+    Like,
+    Match,
+    Message,
+    Referral,
+    Report,
+    Subscription,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +199,116 @@ async def get_referral_count(user_id: str) -> int:
             select(func.count(Referral.id)).where(Referral.referrer_id == user_id)
         )
         return result.scalar() or 0
+
+
+# ════════════════════════════════════════════════════════════════
+#  ПАУЗА И УДАЛЕНИЕ АККАУНТА
+# ════════════════════════════════════════════════════════════════
+
+async def set_profile_hidden(user_id: str, hidden: bool) -> None:
+    """Скрыть анкету из поиска или вернуть её.
+
+    Используем то же поле, что и режим инкогнито: выборка деки уже
+    фильтрует по нему, отдельный флаг заводить не нужно.
+    """
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Profile).where(Profile.user_id == user_id)
+            )
+            profile = result.scalar_one_or_none()
+            if profile:
+                profile.is_incognito = hidden
+
+
+async def is_profile_hidden(user_id: str) -> bool:
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(Profile.is_incognito).where(Profile.user_id == user_id)
+        )
+        return bool(result.scalar())
+
+
+async def delete_user_account(user_id: str) -> bool:
+    """Полностью удалить пользователя и все его данные.
+
+    Обязательная возможность по требованиям App Store (5.1.1(v)).
+    Связанные записи удаляются каскадом на уровне БД.
+    """
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+            await session.delete(user)
+    return True
+
+
+# ════════════════════════════════════════════════════════════════
+#  ЖАЛОБЫ
+# ════════════════════════════════════════════════════════════════
+
+async def create_report(
+    reporter_id: str, reported_id: str, reason: str, description: str = ""
+) -> bool:
+    """Создать жалобу с той же эскалацией, что в API.
+
+    Порог считается по числу РАЗНЫХ жалобщиков, иначе один человек мог бы
+    забанить другого повторными обращениями: 3+ — анкета скрывается из
+    выдачи до решения модератора, 5+ — автобан.
+    """
+    if reporter_id == reported_id:
+        return False
+
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            # Повторную жалобу от того же человека не дублируем
+            existing = await session.execute(
+                select(Report).where(
+                    Report.reporter_id == reporter_id,
+                    Report.reported_id == reported_id,
+                    Report.status == "pending",
+                )
+            )
+            if existing.scalar_one_or_none() is None:
+                session.add(
+                    Report(
+                        reporter_id=reporter_id,
+                        reported_id=reported_id,
+                        reason=reason,
+                        description=description[:500],
+                    )
+                )
+                await session.flush()
+
+            counted = await session.execute(
+                select(func.count(func.distinct(Report.reporter_id))).where(
+                    Report.reported_id == reported_id,
+                    Report.status == "pending",
+                )
+            )
+            distinct_reporters = counted.scalar() or 0
+
+            if distinct_reporters >= 5:
+                target = await session.execute(
+                    select(User).where(User.id == reported_id)
+                )
+                user = target.scalar_one_or_none()
+                if user:
+                    user.is_banned = True
+            elif distinct_reporters >= 3:
+                target = await session.execute(
+                    select(Profile).where(Profile.user_id == reported_id)
+                )
+                profile = target.scalar_one_or_none()
+                if profile:
+                    profile.is_incognito = True
+    return True
 
 
 # ════════════════════════════════════════════════════════════════
