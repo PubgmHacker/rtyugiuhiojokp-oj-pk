@@ -49,3 +49,13 @@ redis_data/
 # ── Build artifacts ────────────────────────────────────────────
 *.tar.gz
 *.zip
+
+# ── iOS / Xcode ────────────────────────────────────────────────
+build/
+*.xcarchive
+*.ipa
+*.dSYM.zip
+ExportOptions.plist
+web/ios/App/.swiftpm/
+web/ios/App/App.xcodeproj/xcuserdata/
+web/ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/

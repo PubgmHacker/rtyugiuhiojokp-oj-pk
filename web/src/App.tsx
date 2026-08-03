@@ -1,64 +1,126 @@
-import { useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from "react-router-dom";
+import { useEffect, lazy, Suspense } from "react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+  Link,
+} from "react-router-dom";
 import { motion } from "framer-motion";
 import { Flame, MessageCircle, User, Sparkles } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
-import Login from "./pages/Login";
-import Onboarding from "./pages/Onboarding";
+import { initNative } from "./lib/native";
+import { haptic } from "./lib/haptics";
+import { Spinner } from "./components/ui";
+
+// Discover — стартовый экран, грузим сразу; остальное по требованию,
+// иначе весь интерфейс приезжает одним куском при первом открытии
 import Discover from "./pages/Discover";
-import Matches from "./pages/Matches";
-import Likes from "./pages/Likes";
-import Chat from "./pages/Chat";
-import Profile from "./pages/Profile";
-import AdminDashboard from "./pages/AdminDashboard";
-import Landing from "./pages/Landing";
+import Login from "./pages/Login";
+
+const Landing = lazy(() => import("./pages/Landing"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Matches = lazy(() => import("./pages/Matches"));
+const Likes = lazy(() => import("./pages/Likes"));
+const Chat = lazy(() => import("./pages/Chat"));
+const Profile = lazy(() => import("./pages/Profile"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+
+const NAV_ITEMS = [
+  { path: "/discover", icon: Flame, label: "Поиск" },
+  { path: "/likes", icon: Sparkles, label: "Лайки" },
+  { path: "/matches", icon: MessageCircle, label: "Чаты" },
+  { path: "/profile", icon: User, label: "Профиль" },
+];
 
 function BottomNav() {
-  const location = useLocation();
-  const currentPath = location.pathname;
-
-  const navItems = [
-    { path: "/discover", icon: Flame, label: "Поиск" },
-    { path: "/likes", icon: Sparkles, label: "Лайки" },
-    { path: "/matches", icon: MessageCircle, label: "Мэтчи" },
-    { path: "/profile", icon: User, label: "Профиль" },
-  ];
+  const { pathname } = useLocation();
+  const unreadLikes = useStore((s) => s.unreadLikes);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 flex items-center justify-around py-2 bg-bg/95 backdrop-blur-lg border-t border-surface safe-bottom z-40">
-      {navItems.map((item) => {
-        const isActive = currentPath.startsWith(item.path);
-        return (
-          <Link
-            key={item.path}
-            to={item.path}
-            className="flex flex-col items-center gap-0.5 px-6 py-1 transition"
-          >
-            <motion.div animate={isActive ? { scale: 1.1 } : { scale: 1 }}>
-              <item.icon
-                size={24}
-                className={isActive ? "text-accent" : "text-text-muted"}
-                fill={isActive && item.path === "/discover" ? "currentColor" : "none"}
-              />
-            </motion.div>
-            <span className={`text-xs ${isActive ? "text-accent font-medium" : "text-text-muted"}`}>
-              {item.label}
-            </span>
-          </Link>
-        );
-      })}
+    <nav
+      aria-label="Основная навигация"
+      className="fixed bottom-0 left-0 right-0 z-40 chrome
+                 border-t border-hairline/70 safe-bottom safe-x"
+    >
+      <div className="flex items-stretch justify-around max-w-[520px] mx-auto">
+        {NAV_ITEMS.map((item) => {
+          const isActive = pathname.startsWith(item.path);
+          const badge = item.path === "/likes" ? unreadLikes : 0;
+
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              onClick={() => haptic("select")}
+              aria-current={isActive ? "page" : undefined}
+              className="relative flex-1 flex flex-col items-center justify-center
+                         gap-1 pt-2.5 pb-1.5 tap-target"
+            >
+              {isActive && (
+                <motion.span
+                  layoutId="nav-indicator"
+                  className="absolute top-0 h-[2.5px] w-8 rounded-full bg-dawn"
+                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                />
+              )}
+
+              <div className="relative">
+                <motion.div
+                  animate={{ scale: isActive ? 1.06 : 1, y: isActive ? -1 : 0 }}
+                  transition={{ type: "spring", stiffness: 480, damping: 26 }}
+                >
+                  <item.icon
+                    size={23}
+                    strokeWidth={isActive ? 2.4 : 1.9}
+                    className={isActive ? "text-accent" : "text-text-faint"}
+                    fill={isActive && item.path === "/discover" ? "currentColor" : "none"}
+                  />
+                </motion.div>
+
+                {badge > 0 && (
+                  <span
+                    className="absolute -top-1 -right-2 min-w-[17px] h-[17px] px-1
+                               rounded-full bg-dawn text-white text-[10px] font-bold
+                               flex items-center justify-center"
+                  >
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
+              </div>
+
+              <span
+                className={`text-[10.5px] font-medium tracking-[-0.01em] ${
+                  isActive ? "text-accent" : "text-text-faint"
+                }`}
+              >
+                {item.label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }
 
-function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { token } = useStore();
+function ScreenFallback() {
+  return (
+    <div className="flex-1 min-h-[60dvh] flex items-center justify-center text-accent">
+      <Spinner size={26} />
+    </div>
+  );
+}
+
+function Protected({ children, nav = true }: { children: React.ReactNode; nav?: boolean }) {
+  const token = useStore((s) => s.token);
   if (!token) return <Navigate to="/login" replace />;
   return (
-    <div className="min-h-screen pb-20">
-      {children}
-      <BottomNav />
+    <div className={`min-h-screen-safe ${nav ? "pb-[68px]" : ""}`}>
+      <Suspense fallback={<ScreenFallback />}>{children}</Suspense>
+      {nav && <BottomNav />}
     </div>
   );
 }
@@ -68,7 +130,7 @@ export default function App() {
 
   useEffect(() => {
     initTelegram();
-    // Restore user from localStorage
+    initNative();
     const saved = localStorage.getItem("sd_user");
     if (saved) {
       try {
@@ -77,32 +139,36 @@ export default function App() {
         localStorage.removeItem("sd_user");
       }
     }
-  }, []);
+  }, [setUser]);
 
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Public */}
-        <Route path="/" element={<Landing />} />
-        <Route
-          path="/login"
-          element={token ? <Navigate to={isOnboarded ? "/discover" : "/onboarding"} /> : <Login />}
-        />
+      <Suspense fallback={<ScreenFallback />}>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route
+            path="/login"
+            element={
+              token ? (
+                <Navigate to={isOnboarded ? "/discover" : "/onboarding"} replace />
+              ) : (
+                <Login />
+              )
+            }
+          />
 
-        {/* Protected */}
-        <Route path="/onboarding" element={<ProtectedLayout><Onboarding /></ProtectedLayout>} />
-        <Route path="/discover" element={<ProtectedLayout><Discover /></ProtectedLayout>} />
-        <Route path="/matches" element={<ProtectedLayout><Matches /></ProtectedLayout>} />
-        <Route path="/likes" element={<ProtectedLayout><Likes /></ProtectedLayout>} />
-        <Route path="/chat/:matchId" element={<ProtectedLayout><Chat /></ProtectedLayout>} />
-        <Route path="/profile" element={<ProtectedLayout><Profile /></ProtectedLayout>} />
+          <Route path="/onboarding" element={<Protected nav={false}><Onboarding /></Protected>} />
+          <Route path="/discover" element={<Protected><Discover /></Protected>} />
+          <Route path="/matches" element={<Protected><Matches /></Protected>} />
+          <Route path="/likes" element={<Protected><Likes /></Protected>} />
+          {/* В чате нижняя навигация мешает полю ввода */}
+          <Route path="/chat/:matchId" element={<Protected nav={false}><Chat /></Protected>} />
+          <Route path="/profile" element={<Protected><Profile /></Protected>} />
+          <Route path="/admin" element={<Protected nav={false}><AdminDashboard /></Protected>} />
 
-        {/* Admin */}
-        <Route path="/admin" element={<ProtectedLayout><AdminDashboard /></ProtectedLayout>} />
-
-        {/* Redirect */}
-        <Route path="*" element={<Navigate to={token ? "/discover" : "/"} />} />
-      </Routes>
+          <Route path="*" element={<Navigate to={token ? "/discover" : "/"} replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

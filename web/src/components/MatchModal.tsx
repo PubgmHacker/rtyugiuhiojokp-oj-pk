@@ -1,5 +1,10 @@
+import { useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Heart, Sparkles, MessageCircle } from "lucide-react";
+import { haptic } from "../lib/haptics";
+import { Button } from "./ui";
+import { useStore } from "../lib/store";
 
 interface MatchModalProps {
   data: {
@@ -12,106 +17,186 @@ interface MatchModalProps {
   onClose: () => void;
 }
 
+/** Разлетающиеся сердечки: позиции фиксируем один раз, чтобы они
+ *  не прыгали при каждой перерисовке. */
+const CONFETTI = Array.from({ length: 14 }, (_, i) => ({
+  id: i,
+  x: (i % 7) * 56 - 168 + (i % 3) * 14,
+  size: 14 + ((i * 7) % 22),
+  delay: (i % 5) * 0.18,
+  duration: 2.4 + (i % 4) * 0.45,
+  rotate: ((i % 5) - 2) * 26,
+}));
+
 export default function MatchModal({ data, onClose }: MatchModalProps) {
+  const navigate = useNavigate();
+  const me = useStore((s) => s.user);
+  const myPhoto = me?.photos?.[0];
+
+  const isOpen = !!data;
+
+  // Закрытие по Escape — привычно на вебе и в Telegram Desktop
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
+  const confetti = useMemo(() => CONFETTI, []);
+
   return (
     <AnimatePresence>
       {data && (
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Взаимная симпатия"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
+          transition={{ duration: 0.22 }}
           onClick={onClose}
+          className="fixed inset-0 z-50 flex items-center justify-center p-6
+                     bg-black/75 backdrop-blur-xl safe-top safe-bottom"
         >
-          {/* Floating hearts */}
-          {[...Array(6)].map((_, i) => (
-            <motion.div
-              key={i}
-              className="absolute text-accent"
-              initial={{
-                x: (Math.random() - 0.5) * 300,
-                y: 200,
-                opacity: 0,
-              }}
-              animate={{
-                y: -300,
-                opacity: [0, 1, 0],
-                rotate: (Math.random() - 0.5) * 60,
-              }}
-              transition={{
-                duration: 2 + Math.random(),
-                repeat: Infinity,
-                delay: i * 0.3,
-              }}
-            >
-              <Heart size={24 + Math.random() * 20} fill="currentColor" />
-            </motion.div>
-          ))}
+          {/* Сердечки на фоне */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {confetti.map((c) => (
+              <motion.div
+                key={c.id}
+                className="absolute left-1/2 bottom-0 text-accent"
+                initial={{ x: c.x, y: 40, opacity: 0, rotate: 0 }}
+                animate={{
+                  y: -window.innerHeight * 0.85,
+                  opacity: [0, 0.9, 0],
+                  rotate: c.rotate,
+                }}
+                transition={{
+                  duration: c.duration,
+                  repeat: Infinity,
+                  delay: c.delay,
+                  ease: "easeOut",
+                }}
+              >
+                <Heart size={c.size} fill="currentColor" />
+              </motion.div>
+            ))}
+          </div>
 
           <motion.div
-            initial={{ scale: 0.5, opacity: 0, y: 50 }}
+            initial={{ scale: 0.86, opacity: 0, y: 32 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.5, opacity: 0 }}
-            transition={{ type: "spring", damping: 15 }}
-            className="relative bg-gradient-to-b from-[#1a1a2e] to-[#0a0a1a] rounded-3xl p-8 max-w-sm w-full text-center border border-accent/30"
+            exit={{ scale: 0.9, opacity: 0, y: 16 }}
+            transition={{ type: "spring", stiffness: 340, damping: 26 }}
             onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-[360px] rounded-[var(--radius-sheet)]
+                       bg-bg-elevated border border-hairline card-shadow
+                       px-6 pt-8 pb-6 text-center"
           >
-            <motion.div
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ repeat: Infinity, duration: 1.2 }}
-              className="flex justify-center mb-4"
-            >
-              <div className="w-20 h-20 rounded-full bg-accent/20 flex items-center justify-center">
-                <Heart className="text-accent heart-beat" size={40} fill="currentColor" />
-              </div>
-            </motion.div>
+            {/* Две аватарки внахлёст */}
+            <div className="flex items-center justify-center mb-6">
+              <Avatar src={myPhoto} fallback={me?.display_name} className="-mr-5" />
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.18, type: "spring", stiffness: 480, damping: 18 }}
+                className="relative z-10 w-12 h-12 rounded-full bg-dawn
+                           flex items-center justify-center glow-rose"
+              >
+                <Heart size={22} fill="#fff" className="text-white heart-beat" />
+              </motion.div>
+              <Avatar src={data.partnerPhoto} fallback={data.partnerName} className="-ml-5" />
+            </div>
 
-            <h2 className="text-3xl font-bold mb-1 bg-gradient-to-r from-accent to-warn bg-clip-text text-transparent">
-              Это мэтч!
+            <h2 className="text-[30px] font-extrabold tracking-[-0.03em] text-gradient mb-2">
+              Взаимно!
             </h2>
-            <p className="text-lg mb-6 text-text-muted">
-              Вы понравились друг другу с <span className="text-accent font-semibold">{data.partnerName}</span>
+            <p className="text-[15px] text-text-secondary leading-relaxed mb-6">
+              Вы с{" "}
+              <span className="text-text font-semibold">{data.partnerName}</span>{" "}
+              понравились друг другу
             </p>
 
-            {/* Partner photo */}
-            {data.partnerPhoto && (
-              <div className="flex justify-center mb-6">
-                <img
-                  src={data.partnerPhoto}
-                  alt={data.partnerName}
-                  className="w-32 h-32 rounded-full object-cover border-4 border-accent/50"
-                />
-              </div>
-            )}
-
-            {/* AI score */}
             {data.score != null && (
-              <div className="mb-6 p-4 bg-accent/10 rounded-2xl">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <Sparkles size={18} className="text-warn" />
-                  <span className="font-bold text-lg">Совместимость: {data.score}/100</span>
+              <div className="mb-6 p-4 rounded-[var(--radius-tile)] bg-surface border border-hairline">
+                <div className="flex items-center justify-center gap-2 mb-1.5">
+                  <Sparkles size={16} className="text-gold" />
+                  <span className="font-bold text-[15px]">
+                    Совместимость {data.score}%
+                  </span>
                 </div>
-                {data.reason && <p className="text-sm text-text-muted italic">{data.reason}</p>}
+                {data.reason && (
+                  <p className="text-[13px] text-text-muted leading-relaxed">
+                    {data.reason}
+                  </p>
+                )}
               </div>
             )}
 
-            <div className="flex flex-col gap-3">
-              <a
-                href={data.matchId ? `/chat/${data.matchId}` : "/matches"}
-                className="w-full py-3 bg-gradient-to-r from-accent to-warn text-white font-bold rounded-full hover:opacity-90 transition"
+            <div className="flex flex-col gap-2.5">
+              <Button
+                size="lg"
+                fullWidth
+                hapticKind="success"
+                onClick={() => {
+                  onClose();
+                  navigate(data.matchId ? `/chat/${data.matchId}` : "/matches");
+                }}
               >
-                Написать сообщение
-              </a>
-              <button
-                onClick={onClose}
-                className="w-full py-3 bg-surface text-text-muted font-medium rounded-full hover:bg-surface/80 transition"
+                <MessageCircle size={18} />
+                Написать первым
+              </Button>
+              <Button
+                variant="ghost"
+                size="md"
+                fullWidth
+                onClick={() => {
+                  haptic("light");
+                  onClose();
+                }}
               >
                 Продолжить поиск
-              </button>
+              </Button>
             </div>
           </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function Avatar({
+  src,
+  fallback,
+  className = "",
+}: {
+  src?: string;
+  fallback?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`w-[84px] h-[84px] rounded-full overflow-hidden ring-dawn
+                  shrink-0 ${className}`}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          className="w-full h-full object-cover rounded-full"
+          decoding="async"
+        />
+      ) : (
+        <div
+          className="w-full h-full rounded-full flex items-center justify-center text-2xl font-bold text-white/70"
+          style={{ background: "var(--gradient-plum)" }}
+        >
+          {fallback?.[0]?.toUpperCase() ?? "?"}
+        </div>
+      )}
+    </div>
   );
 }

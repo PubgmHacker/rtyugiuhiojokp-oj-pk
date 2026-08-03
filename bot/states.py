@@ -2,15 +2,18 @@ from aiogram.fsm.state import StatesGroup, State
 
 
 class RegistrationStates(StatesGroup):
-    """FSM для создания анкеты."""
+    """FSM для создания анкеты.
+
+    Порядок шагов — минимум трения (Davinchik-style):
+    имя → возраст → пол → кого ищем → город → фото → био (необязательно).
+    """
     waiting_name = State()
-    waiting_gender = State()
     waiting_age = State()
-    waiting_city = State()
-    waiting_bio = State()
+    waiting_gender = State()
     waiting_looking_for = State()
+    waiting_city = State()
     waiting_photo = State()
-    waiting_interests = State()
+    waiting_bio = State()
 
 
 class DatingStates(StatesGroup):

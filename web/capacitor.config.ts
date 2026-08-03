@@ -1,40 +1,53 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+/**
+ * Конфигурация нативной обёртки Souldawn.
+ * Цвета синхронизированы с дизайн-системой (web/src/styles/globals.css):
+ * фон #0b0a12, акцент #ff3d71.
+ */
 const config: CapacitorConfig = {
   appId: "com.souldawn.dating",
-  appName: "Souldawn Dating",
+  appName: "Souldawn",
   webDir: "dist",
-  bundledWebRuntime: false,
+
   server: {
-    // Для разработки можно указать URL live reload:
-    // url: "http://192.168.1.100:5173",
-    // cleartext: true,
     androidScheme: "https",
     iosScheme: "https",
+    // Для live-reload при разработке на устройстве раскомментируйте
+    // и подставьте адрес машины в локальной сети:
+    // url: "http://192.168.1.100:5173",
+    // cleartext: true,
   },
+
   plugins: {
     SplashScreen: {
-      launchShowDuration: 1500,
-      backgroundColor: "#0a0a1a",
+      launchShowDuration: 1200,
+      launchAutoHide: true,
+      backgroundColor: "#0b0a12",
       showSpinner: false,
-      androidSplashResourceName: "splash",
-      androidScaleType: "CENTER_CROP",
       iosSpinnerStyle: "small",
-      iosSpinnerColor: "#ff6b9d",
+      spinnerColor: "#ff3d71",
+      splashFullScreen: true,
+      splashImmersive: true,
     },
     PushNotifications: {
       presentationOptions: ["badge", "sound", "alert"],
     },
+    Keyboard: {
+      resize: "native",
+      style: "dark",
+      resizeOnFullScreen: true,
+    },
   },
+
   ios: {
-    contentInset: "always",
-    backgroundColor: "#0a0a1a",
-    // Apple Sign-In requirement
+    // contentInset "never" вместе с safe-area в CSS: раскладку
+    // контролирует вёрстка, а не WebView
+    contentInset: "never",
+    backgroundColor: "#0b0a12",
     scrollEnabled: true,
-  },
-  android: {
-    backgroundColor: "#0a0a1a",
-    allowMixedContent: false,
+    limitsNavigationsToAppBoundDomains: true,
+    preferredContentMode: "mobile",
   },
 };
 

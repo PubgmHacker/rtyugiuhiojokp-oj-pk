@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import (
@@ -65,6 +66,8 @@ class Profile(Base):
 
 class Like(Base):
     __tablename__ = "dating_likes"
+    # Схема ДОЛЖНА совпадать с api/models/models.py — один лайк на пару пользователей
+    __table_args__ = (UniqueConstraint("liker_id", "liked_id", name="uq_like_pair"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     liker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -75,6 +78,8 @@ class Like(Base):
 
 class Match(Base):
     __tablename__ = "dating_matches"
+    # Схема ДОЛЖНА совпадать с api/models/models.py — один мэтч на пару пользователей
+    __table_args__ = (UniqueConstraint("user1_id", "user2_id", name="uq_match_pair"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user1_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -115,4 +120,48 @@ class Message(Base):
     text: Mapped[str] = mapped_column(String, default="")
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ─────────────────────────────────────────────────────────────────
+# Ниже — модели, которые бот не использует напрямую (нет CRUD-функций
+# в database/connection.py), но они объявлены в api/models/models.py.
+# Схема БД общая для api и bot (оба вызывают create_all() при старте),
+# поэтому таблицы должны быть объявлены здесь один в один с api,
+# иначе при старте бота "первым" на пустой БД эти таблицы не создадутся.
+# ─────────────────────────────────────────────────────────────────
+
+
+class Report(Base):
+    __tablename__ = "dating_reports"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    reporter_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    reported_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    reason: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SwipeSession(Base):
+    __tablename__ = "dating_swipe_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), unique=True)
+    viewed_ids: Mapped[dict | list] = mapped_column(JSON, default=list)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AiModerationLog(Base):
+    __tablename__ = "dating_ai_moderation_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    content_type: Mapped[str] = mapped_column(String)  # photo | bio | message
+    content: Mapped[str] = mapped_column(String)
+    result: Mapped[str] = mapped_column(String)  # safe | warning | blocked
+    action: Mapped[str] = mapped_column(String, default="none")  # none | warn | ban
+    reason: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

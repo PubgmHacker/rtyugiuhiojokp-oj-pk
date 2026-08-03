@@ -170,3 +170,22 @@ export async function getIcebreakers(matchId: string): Promise<string[]> {
   const { data } = await api.get(`/matches/${matchId}/icebreakers`);
   return data.icebreakers ?? [];
 }
+
+/**
+ * Полное удаление аккаунта и всех связанных данных.
+ * Обязательная возможность по требованиям App Store (Guideline 5.1.1(v)).
+ */
+export async function deleteMyAccount(): Promise<void> {
+  await api.delete("/profiles/me");
+}
+
+/** Экспорт своих данных — ожидаемая возможность для приватности. */
+export async function exportMyData(): Promise<Blob> {
+  const { data } = await api.get("/profiles/me/export", { responseType: "blob" });
+  return data;
+}
+
+/** Регистрация устройства для пуш-уведомлений в нативной обёртке. */
+export async function registerDevice(token: string, platform: string): Promise<void> {
+  await api.post("/profiles/me/devices", { token, platform });
+}

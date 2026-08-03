@@ -8,6 +8,8 @@ interface AppState {
   matches: MatchResponse[];
   isLoading: boolean;
   isOnboarded: boolean;
+  /** Счётчик для бейджа на вкладке «Лайки». */
+  unreadLikes: number;
 
   setUser: (user: UserProfile | null) => void;
   setToken: (token: string | null) => void;
@@ -18,6 +20,7 @@ interface AppState {
   addMatch: (match: MatchResponse) => void;
   setLoading: (loading: boolean) => void;
   setOnboarded: (onboarded: boolean) => void;
+  setUnreadLikes: (count: number) => void;
   logout: () => void;
 }
 
@@ -28,6 +31,7 @@ export const useStore = create<AppState>((set) => ({
   matches: [],
   isLoading: false,
   isOnboarded: false,
+  unreadLikes: 0,
 
   setUser: (user) => {
     if (user) localStorage.setItem("sd_user", JSON.stringify(user));
@@ -46,9 +50,17 @@ export const useStore = create<AppState>((set) => ({
   addMatch: (match) => set((s) => ({ matches: [match, ...s.matches] })),
   setLoading: (isLoading) => set({ isLoading }),
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
+  setUnreadLikes: (unreadLikes) => set({ unreadLikes }),
   logout: () => {
     localStorage.removeItem("sd_token");
     localStorage.removeItem("sd_user");
-    set({ user: null, token: null, deck: [], matches: [], isOnboarded: false });
+    set({
+      user: null,
+      token: null,
+      deck: [],
+      matches: [],
+      isOnboarded: false,
+      unreadLikes: 0,
+    });
   },
 }));

@@ -1,185 +1,302 @@
-import { useState, useRef } from "react";
-import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
-import { MapPin, Sparkles, X, Heart } from "lucide-react";
+import { useState, useCallback, memo } from "react";
+import {
+  motion,
+  useMotionValue,
+  useTransform,
+  useMotionTemplate,
+  type PanInfo,
+  type MotionValue,
+} from "framer-motion";
+import { MapPin, Sparkles } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
-import { hapticFeedback } from "../lib/telegram";
+import { haptic } from "../lib/haptics";
+import { VerifiedBadge } from "./ui";
+
+export type SwipeDirection = "left" | "right" | "up";
 
 interface SwipeCardProps {
   profile: DeckProfile;
-  onSwipe: (direction: "left" | "right" | "up", profile: DeckProfile) => void;
+  onSwipe: (direction: SwipeDirection, profile: DeckProfile) => void;
   isTop: boolean;
   index: number;
 }
 
-export default function SwipeCard({ profile, onSwipe, isTop, index }: SwipeCardProps) {
+/** Порог смещения и скорости, после которого жест считается свайпом. */
+const OFFSET_THRESHOLD = 92;
+const VELOCITY_THRESHOLD = 420;
+
+/** Пружина, близкая к отклику нативного iOS. */
+const SPRING = { type: "spring" as const, stiffness: 380, damping: 34, mass: 0.9 };
+
+function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
   const [photoIndex, setPhotoIndex] = useState(0);
-  const cardRef = useRef<HTMLDivElement>(null);
+  const [loadedPhotos, setLoadedPhotos] = useState<Record<number, boolean>>({});
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
 
-  const rotate = useTransform(x, [-200, 200], [-18, 18]);
-  const likeOpacity = useTransform(x, [0, 100], [0, 1]);
-  const nopeOpacity = useTransform(x, [-100, 0], [1, 0]);
-  const superOpacity = useTransform(y, [-100, 0], [1, 0]);
+  const rotate = useTransform(x, [-240, 0, 240], [-16, 0, 16]);
+  const likeOpacity = useTransform(x, [20, 110], [0, 1]);
+  const nopeOpacity = useTransform(x, [-110, -20], [1, 0]);
+  const superOpacity = useTransform(y, [-110, -20], [1, 0]);
+
+  // Подсветка карточки в сторону жеста — читаемая обратная связь
+  const glowOpacity = useTransform(x, [-160, 0, 160], [0.5, 0, 0.5]);
+  const glowColor = useTransform(x, (v: number) =>
+    v < 0 ? "var(--color-danger)" : "var(--color-success)"
+  );
+  const glowShadow = useMotionTemplate`inset 0 0 90px 12px ${glowColor}`;
 
   const photos = profile.photos?.length ? profile.photos : [];
-  const currentPhoto = photos[photoIndex] || "";
+  const hasPhotos = photos.length > 0;
 
-  const handleDragEnd = (_: unknown, info: PanInfo) => {
-    const threshold = 100;
-    const velocity = 500;
+  const handleDragEnd = useCallback(
+    (_: unknown, info: PanInfo) => {
+      const { offset, velocity } = info;
 
-    if (info.offset.x > threshold || info.velocity.x > velocity) {
-      hapticFeedback("medium");
-      onSwipe("right", profile);
-    } else if (info.offset.x < -threshold || info.velocity.x < -velocity) {
-      hapticFeedback("medium");
-      onSwipe("left", profile);
-    } else if (info.offset.y < -threshold || info.velocity.y < -velocity) {
-      hapticFeedback("heavy");
-      onSwipe("up", profile);
-    }
-  };
+      // Вертикальный жест проверяем первым: суперлайк должен быть
+      // достижим, даже если палец немного ушёл в сторону
+      if (
+        offset.y < -OFFSET_THRESHOLD &&
+        Math.abs(offset.y) > Math.abs(offset.x) &&
+        velocity.y < 0
+      ) {
+        haptic("heavy");
+        onSwipe("up", profile);
+        return;
+      }
+      if (offset.x > OFFSET_THRESHOLD || velocity.x > VELOCITY_THRESHOLD) {
+        haptic("medium");
+        onSwipe("right", profile);
+        return;
+      }
+      if (offset.x < -OFFSET_THRESHOLD || velocity.x < -VELOCITY_THRESHOLD) {
+        haptic("light");
+        onSwipe("left", profile);
+      }
+    },
+    [onSwipe, profile]
+  );
 
-  const nextPhoto = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (photoIndex < photos.length - 1) setPhotoIndex(photoIndex + 1);
-  };
+  const showPhoto = useCallback(
+    (next: number) => {
+      if (next < 0 || next >= photos.length || next === photoIndex) return;
+      haptic("select");
+      setPhotoIndex(next);
+    },
+    [photoIndex, photos.length]
+  );
 
-  const prevPhoto = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (photoIndex > 0) setPhotoIndex(photoIndex - 1);
-  };
-
+  /* ── Карточки под верхней: только фон, без интерактива ────── */
   if (!isTop) {
-    // Stacked background cards
     return (
       <motion.div
-        className="absolute inset-0 rounded-3xl overflow-hidden bg-surface"
-        style={{
-          zIndex: 9 - index, // ближе к верху деки — выше в стеке
-          scale: 1 - index * 0.05,
-          translateY: index * 12,
-        }}
+        aria-hidden
+        className="absolute inset-0 rounded-[var(--radius-card)] overflow-hidden bg-surface-2"
+        initial={false}
+        animate={{ scale: 1 - index * 0.045, y: index * 14, opacity: 1 - index * 0.25 }}
+        transition={SPRING}
+        style={{ zIndex: 10 - index }}
       >
-        {currentPhoto && (
-          <img src={currentPhoto} alt={profile.display_name} className="w-full h-full object-cover" />
+        {hasPhotos && (
+          <img
+            src={photos[0]}
+            alt=""
+            className="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
+          />
         )}
+        <div className="absolute inset-0 bg-bg/45" />
       </motion.div>
     );
   }
 
+  const currentPhoto = photos[photoIndex];
+
   return (
     <motion.div
-      ref={cardRef}
-      className="absolute inset-0 rounded-3xl overflow-hidden bg-surface swipe-card-glow cursor-grab active:cursor-grabbing select-none"
-      style={{ x, y, rotate, zIndex: 10 }}
-      drag={isTop}
+      className="absolute inset-0 rounded-[var(--radius-card)] overflow-hidden
+                 bg-surface-2 swipe-card-glow cursor-grab active:cursor-grabbing"
+      style={{ x, y, rotate, zIndex: 20 }}
+      drag
+      dragElastic={0.62}
       dragSnapToOrigin
+      dragTransition={{ bounceStiffness: 460, bounceDamping: 38 }}
       onDragEnd={handleDragEnd}
-      whileTap={{ cursor: "grabbing" }}
+      initial={{ scale: 0.96, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0.94, opacity: 0, transition: { duration: 0.18 } }}
+      transition={SPRING}
     >
-      {/* Photo */}
+      {/* Свечение по направлению жеста */}
+      <motion.div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none rounded-[var(--radius-card)] z-30"
+        style={{ opacity: glowOpacity, boxShadow: glowShadow }}
+      />
+
+      {/* Фото */}
       {currentPhoto ? (
-        <img
-          src={currentPhoto}
-          alt={profile.display_name}
-          className="w-full h-full object-cover pointer-events-none"
-          draggable={false}
-        />
+        <>
+          {!loadedPhotos[photoIndex] && <div className="absolute inset-0 skeleton" />}
+          <img
+            key={currentPhoto}
+            src={currentPhoto}
+            alt={profile.display_name}
+            onLoad={() => setLoadedPhotos((m) => ({ ...m, [photoIndex]: true }))}
+            className="w-full h-full object-cover pointer-events-none select-none"
+            draggable={false}
+            decoding="async"
+          />
+        </>
       ) : (
-        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1a1a2e] to-[#0a0a1a]">
-          <div className="text-6xl opacity-30">👤</div>
+        <div
+          className="w-full h-full flex items-center justify-center"
+          style={{ background: "var(--gradient-plum)" }}
+        >
+          <span className="text-[64px] font-extrabold text-white/25">
+            {profile.display_name?.[0]?.toUpperCase() ?? "?"}
+          </span>
         </div>
       )}
 
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+      {/* Затемнение под текстом */}
+      <div className="absolute inset-0 bg-scrim pointer-events-none" />
 
-      {/* Photo navigation */}
+      {/* Индикатор фото + зоны перелистывания */}
       {photos.length > 1 && (
         <>
-          <div className="absolute top-2 left-0 right-0 flex gap-1 px-3 pointer-events-none">
+          <div className="absolute top-3 left-0 right-0 flex gap-1.5 px-4 z-20 pointer-events-none">
             {photos.map((_, i) => (
               <div
                 key={i}
-                className={`h-1 flex-1 rounded-full transition-all ${
-                  i === photoIndex ? "bg-white" : "bg-white/30"
+                className={`h-[3px] flex-1 rounded-full transition-all duration-300 ${
+                  i === photoIndex ? "bg-white" : "bg-white/25"
                 }`}
               />
             ))}
           </div>
-          <div className="absolute inset-0 flex">
-            <div className="flex-1" onClick={prevPhoto} />
-            <div className="flex-1" onClick={nextPhoto} />
+          <div className="absolute inset-0 flex z-10">
+            <button
+              aria-label="Предыдущее фото"
+              className="flex-1"
+              onClick={() => showPhoto(photoIndex - 1)}
+            />
+            <button
+              aria-label="Следующее фото"
+              className="flex-1"
+              onClick={() => showPhoto(photoIndex + 1)}
+            />
           </div>
         </>
       )}
 
-      {/* LIKE / NOPE / SUPER overlays */}
-      <motion.div
-        className="absolute top-12 left-6 border-4 border-success rounded-2xl px-4 py-2 rotate-[-20deg] pointer-events-none"
-        style={{ opacity: likeOpacity }}
-      >
-        <span className="text-success text-3xl font-black tracking-wider">LIKE</span>
-      </motion.div>
+      {/* Штампы решения */}
+      <Stamp
+        opacity={likeOpacity}
+        tone="success"
+        text="ЛАЙК"
+        className="top-14 left-6 -rotate-[18deg]"
+      />
+      <Stamp
+        opacity={nopeOpacity}
+        tone="danger"
+        text="НЕТ"
+        className="top-14 right-6 rotate-[18deg]"
+      />
+      <Stamp
+        opacity={superOpacity}
+        tone="info"
+        text="СУПЕР"
+        className="top-1/3 left-1/2 -translate-x-1/2"
+      />
 
-      <motion.div
-        className="absolute top-12 right-6 border-4 border-danger rounded-2xl px-4 py-2 rotate-[20deg] pointer-events-none"
-        style={{ opacity: nopeOpacity }}
-      >
-        <span className="text-danger text-3xl font-black tracking-wider">NOPE</span>
-      </motion.div>
-
-      <motion.div
-        className="absolute top-12 left-1/2 -translate-x-1/2 border-4 border-warn rounded-2xl px-4 py-2 pointer-events-none"
-        style={{ opacity: superOpacity }}
-      >
-        <span className="text-warn text-2xl font-black">SUPER</span>
-      </motion.div>
-
-      {/* Info */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 text-white pointer-events-none">
-        <div className="flex items-end gap-3 mb-2">
-          <h2 className="text-3xl font-bold">{profile.display_name}</h2>
-          {profile.age && <span className="text-2xl font-light opacity-90">{profile.age}</span>}
-        </div>
-
-        {profile.city && (
-          <div className="flex items-center gap-1 text-sm opacity-80 mb-2">
-            <MapPin size={14} />
-            <span>
-              {profile.city}
-              {profile.distance != null && ` • ${profile.distance} км`}
+      {/* Информация о профиле */}
+      <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 z-20 pointer-events-none">
+        {profile.match_score != null && (
+          <div className="inline-flex items-center gap-1.5 mb-3 px-2.5 py-1 rounded-full glass-strong">
+            <Sparkles size={13} className="text-gold" />
+            <span className="text-[12px] font-semibold">
+              {profile.match_score}% совпадение
             </span>
           </div>
         )}
 
-        {profile.ai_bio && (
-          <div className="flex items-start gap-1 text-sm mb-2 text-accent">
-            <Sparkles size={14} className="mt-0.5 shrink-0" />
-            <span className="italic">{profile.ai_bio}</span>
+        <div className="flex items-center gap-2 mb-1.5">
+          <h2 className="text-[30px] font-extrabold tracking-[-0.03em] leading-none text-white">
+            {profile.display_name}
+          </h2>
+          {profile.age != null && (
+            <span className="text-[26px] font-light text-white/85 leading-none">
+              {profile.age}
+            </span>
+          )}
+        </div>
+
+        {(profile.city || profile.distance != null) && (
+          <div className="flex items-center gap-1.5 text-[13px] text-white/75 mb-2.5">
+            <MapPin size={13} className="shrink-0" />
+            <span className="truncate">
+              {profile.city}
+              {profile.distance != null && ` · ${profile.distance} км`}
+            </span>
           </div>
         )}
 
         {profile.bio && (
-          <p className="text-sm opacity-90 line-clamp-2 mb-2">{profile.bio}</p>
+          <p className="text-[14px] leading-snug text-white/90 line-clamp-2 mb-3">
+            {profile.bio}
+          </p>
         )}
 
         {profile.interests?.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {profile.interests.slice(0, 5).map((interest, i) => (
+            {profile.interests.slice(0, 4).map((interest) => (
               <span
-                key={i}
-                className="text-xs px-2 py-1 rounded-full bg-white/20 backdrop-blur-sm"
+                key={interest}
+                className="text-[12px] px-2.5 py-1 rounded-full glass font-medium"
               >
                 {interest}
               </span>
             ))}
+            {profile.interests.length > 4 && (
+              <span className="text-[12px] px-2.5 py-1 rounded-full glass font-medium">
+                +{profile.interests.length - 4}
+              </span>
+            )}
           </div>
         )}
       </div>
     </motion.div>
   );
 }
+
+/* ── Штамп решения поверх карточки ──────────────────────────── */
+
+function Stamp({
+  opacity,
+  tone,
+  text,
+  className,
+}: {
+  opacity: MotionValue<number>;
+  tone: "success" | "danger" | "info";
+  text: string;
+  className: string;
+}) {
+  const color = `var(--color-${tone})`;
+  return (
+    <motion.div
+      aria-hidden
+      style={{ opacity, borderColor: color, color }}
+      className={`absolute z-30 border-[3px] rounded-2xl px-4 py-1.5 pointer-events-none ${className}`}
+    >
+      <span className="text-[26px] font-black tracking-[0.06em]">{text}</span>
+    </motion.div>
+  );
+}
+
+/* Карточки перерисовываются часто во время перетаскивания —
+   мемоизация заметно снижает нагрузку */
+export default memo(SwipeCardImpl);

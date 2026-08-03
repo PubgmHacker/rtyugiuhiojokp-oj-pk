@@ -1,68 +1,392 @@
 @import "tailwindcss";
 
-/* ── SOULDAWN DATING — Global Styles ─────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   SOULDAWN — Design System 2026
+   Тёмная база + «рассветный» градиент + Liquid Glass поверхности.
+   Экраны берут значения отсюда, без хардкода цветов в компонентах.
+   ═══════════════════════════════════════════════════════════════ */
 
 @theme {
-  --color-bg: #0a0a1a;
-  --color-bg-secondary: #12122a;
-  --color-surface: #1a1a2e;
-  --color-accent: #ff6b9d;
-  --color-accent-secondary: #c97b3d;
-  --color-text: #f0f0f5;
-  --color-text-muted: #8a8a9a;
-  --color-success: #6bff9d;
-  --color-danger: #ff6b6b;
-  --color-warn: #ffd93d;
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-display: "Oswald", system-ui, sans-serif;
+  /* ── Фон и поверхности ──────────────────────────────────── */
+  --color-bg: #0b0a12;
+  --color-bg-elevated: #12111c;
+  --color-surface: #191725;
+  --color-surface-2: #221f31;
+  --color-surface-3: #2c2840;
+  --color-hairline: #302c44;
+
+  /* ── Бренд: рассвет ─────────────────────────────────────── */
+  --color-rose: #ff3d71;
+  --color-coral: #ff7a5c;
+  --color-gold: #ffc46b;
+  --color-plum: #a855f7;
+
+  --color-accent: #ff3d71;
+  --color-accent-soft: #ff5c8a;
+  --color-accent-deep: #e01f56;
+
+  /* ── Текст ──────────────────────────────────────────────── */
+  --color-text: #f7f5fa;
+  --color-text-secondary: #b8b2c7;
+  --color-text-muted: #8a8399;
+  --color-text-faint: #5f5973;
+  --color-on-accent: #ffffff;
+
+  /* ── Семантика ──────────────────────────────────────────── */
+  --color-success: #2ee6a8;
+  --color-danger: #ff4d5e;
+  --color-warn: #ffc46b;
+  --color-info: #4da3ff;
+  --color-verified: #4da3ff;
+
+  /* Совместимость со экранами, ещё не переведёнными на новые токены */
+  --color-bg-secondary: #12111c;
+  --color-accent-secondary: #ff7a5c;
+
+  /* ── Типографика ────────────────────────────────────────── */
+  --font-sans: "Inter var", "Inter", -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", system-ui, sans-serif;
+  --font-display: "Inter var", "Inter", -apple-system, BlinkMacSystemFont,
+    "SF Pro Display", system-ui, sans-serif;
+
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.035em;
+  --text-display--font-weight: 800;
+
+  --text-title: 1.75rem;
+  --text-title--line-height: 1.15;
+  --text-title--letter-spacing: -0.025em;
+  --text-title--font-weight: 700;
+
+  --text-heading: 1.25rem;
+  --text-heading--line-height: 1.25;
+  --text-heading--letter-spacing: -0.015em;
+
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.35;
+
+  /* ── Радиусы ────────────────────────────────────────────── */
+  --radius-card: 28px;
+  --radius-sheet: 26px;
+  --radius-tile: 18px;
+
+  /* ── Тени ───────────────────────────────────────────────── */
+  --shadow-card: 0 24px 64px -16px rgb(0 0 0 / 0.75),
+    0 2px 8px -2px rgb(0 0 0 / 0.5);
+  --shadow-float: 0 8px 28px -6px rgb(0 0 0 / 0.6);
+  --shadow-glow-rose: 0 20px 60px -18px rgb(255 61 113 / 0.55);
+
+  /* ── Тайминги (iOS-подобная плавность) ──────────────────── */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
 }
+
+/* ── Градиенты и стеклянные поверхности ───────────────────── */
+:root {
+  --gradient-dawn: linear-gradient(
+    135deg,
+    #ff3d71 0%,
+    #ff5c7a 38%,
+    #ff7a5c 70%,
+    #ffc46b 100%
+  );
+  --gradient-dawn-soft: linear-gradient(135deg, #ff3d71 0%, #ff7a5c 100%);
+  --gradient-plum: linear-gradient(135deg, #a855f7 0%, #ff3d71 100%);
+  --gradient-scrim: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.92) 0%,
+    rgb(0 0 0 / 0.72) 22%,
+    rgb(0 0 0 / 0.28) 48%,
+    transparent 72%
+  );
+
+  --glass-bg: rgb(255 255 255 / 0.07);
+  --glass-bg-strong: rgb(255 255 255 / 0.12);
+  --glass-border: rgb(255 255 255 / 0.1);
+  --glass-blur: 24px;
+
+  color-scheme: dark;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   БАЗА
+   ═══════════════════════════════════════════════════════════════ */
 
 * {
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   margin: 0;
   padding: 0;
-  height: 100%;
+  min-height: 100%;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
-  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   overflow-x: hidden;
+  user-select: none;
+  /* Намёк на рассвет за тёмной сценой */
+  background-image:
+    radial-gradient(
+      120% 70% at 50% -10%,
+      rgb(255 61 113 / 0.16) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      90% 60% at 100% 0%,
+      rgb(168 85 247 / 0.1) 0%,
+      transparent 55%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
-/* Hide scrollbar but keep scroll */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+input,
+textarea,
+[contenteditable],
+.selectable {
+  user-select: text;
 }
-.no-scrollbar {
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* iOS зумит при фокусе, если шрифт мельче 16px */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1rem);
+  }
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   УТИЛИТЫ
+   ═══════════════════════════════════════════════════════════════ */
+
+@utility text-gradient {
+  background: var(--gradient-dawn);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+@utility bg-dawn {
+  background: var(--gradient-dawn);
+}
+
+@utility bg-dawn-soft {
+  background: var(--gradient-dawn-soft);
+}
+
+@utility bg-plum {
+  background: var(--gradient-plum);
+}
+
+@utility bg-scrim {
+  background: var(--gradient-scrim);
+}
+
+@utility glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+}
+
+@utility glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+}
+
+/* Панель поверх контента (навбар, хедер) */
+@utility chrome {
+  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+@utility card-shadow {
+  box-shadow: var(--shadow-card);
+}
+
+@utility float-shadow {
+  box-shadow: var(--shadow-float);
+}
+
+@utility glow-rose {
+  box-shadow: var(--shadow-glow-rose);
+}
+
+/* Градиентная обводка для аватаров и премиум-бейджей */
+@utility ring-dawn {
+  background:
+    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
+    var(--gradient-dawn) border-box;
+  border: 2px solid transparent;
+}
+
+@utility no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
-/* Swipe card glow */
-.swipe-card-glow {
-  box-shadow: 0 20px 60px -10px rgba(255, 107, 157, 0.3);
+/* Минимальный тач-таргет 44×44 — требование Apple HIG */
+@utility tap-target {
+  min-width: 44px;
+  min-height: 44px;
 }
 
-/* Match modal animation */
+/* ── Safe area (iOS / Telegram Mini App) ──────────────────── */
+
+@utility safe-top {
+  padding-top: max(env(safe-area-inset-top), 0.5rem);
+}
+
+@utility safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+
+@utility safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+@utility h-screen-safe {
+  height: 100dvh;
+}
+
+@utility min-h-screen-safe {
+  min-height: 100dvh;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   АНИМАЦИИ
+   ═══════════════════════════════════════════════════════════════ */
+
 @keyframes heart-beat {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-}
-.heart-beat {
-  animation: heart-beat 1s ease-in-out infinite;
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  15% {
+    transform: scale(1.18);
+  }
+  30% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.12);
+  }
 }
 
-/* Safe area for iOS */
-.safe-top {
-  padding-top: env(safe-area-inset-top);
+@keyframes shimmer {
+  0% {
+    background-position: -180% 0;
+  }
+  100% {
+    background-position: 180% 0;
+  }
 }
-.safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+
+@keyframes float-up {
+  0% {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.heart-beat {
+  animation: heart-beat 1.4s var(--ease-out-soft) infinite;
+}
+
+.float-up {
+  animation: float-up 0.45s var(--ease-out-soft) both;
+}
+
+.pulse-ring {
+  animation: pulse-ring 1.6s var(--ease-out-soft) infinite;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--color-surface-2) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 180% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Свечение под карточкой деки */
+.swipe-card-glow {
+  box-shadow: var(--shadow-glow-rose), var(--shadow-card);
+}
+
+/* Уважаем системную настройку «уменьшить движение» */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, RotateCcw } from "lucide-react";
-import type { DeckProfile } from "../lib/api";
+import { X, Heart, Star, RotateCcw, SlidersHorizontal } from "lucide-react";
+import type { DeckProfile, MatchResponse } from "../lib/api";
 import { likeProfile, getDeck, resetDeck } from "../lib/api";
 import { useStore } from "../lib/store";
-import { hapticFeedback } from "../lib/telegram";
-import SwipeCard from "./SwipeCard";
+import { haptic } from "../lib/haptics";
+import SwipeCard, { type SwipeDirection } from "./SwipeCard";
 import MatchModal from "./MatchModal";
+import { Button, IconButton, EmptyState, Skeleton } from "./ui";
 
 interface MatchData {
   partnerName: string;
@@ -16,193 +17,233 @@ interface MatchData {
   matchId?: string;
 }
 
-export default function SwipeDeck() {
+/** Сколько карточек держим в стеке визуально. */
+const VISIBLE_CARDS = 3;
+/** Ниже этого порога подгружаем следующую порцию. */
+const PREFETCH_AT = 4;
+
+export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => void }) {
   const { deck, setDeck, addDeck, removeDeckProfile, addMatch } = useStore();
   const [matchData, setMatchData] = useState<MatchData | null>(null);
-  const [isAnimatingOut, setIsAnimatingOut] = useState(false);
-  const [lastSwiped, setLastSwiped] = useState<{ profile: DeckProfile; direction: string } | null>(null);
+  const [lastSwiped, setLastSwiped] = useState<DeckProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isExhausted, setIsExhausted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadingRef = useRef(false);
+  // Блокируем повторный свайп, пока текущий не обработан — иначе
+  // быстрые тапы отправляют лайк за уже удалённую карточку
+  const busyRef = useRef(false);
 
-  // Подгрузка с дедупом: не затирает текущую деку (важно — сервер
-  // кеширует показанные анкеты и повторный запрос может вернуть пусто)
-  const loadDeck = async () => {
+  const loadDeck = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
+    setError(null);
     try {
       const profiles = await getDeck(10);
       const existing = new Set(useStore.getState().deck.map((p) => p.id));
       const fresh = profiles.filter((p) => !existing.has(p.id));
-      if (fresh.length) addDeck(fresh);
-    } catch (e) {
-      console.error("Failed to load deck:", e);
+      if (fresh.length) {
+        addDeck(fresh);
+        setIsExhausted(false);
+      } else if (!existing.size) {
+        setIsExhausted(true);
+      }
+    } catch {
+      setError("Не удалось загрузить анкеты");
     } finally {
       loadingRef.current = false;
+      setIsLoading(false);
     }
-  };
+  }, [addDeck]);
 
-  // Кнопка «Обновить»: сбрасываем кеш просмотренных и грузим заново
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
+    setIsLoading(true);
+    setIsExhausted(false);
     try {
       await resetDeck();
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // Сброс серверного кеша не критичен — всё равно пробуем загрузить
     }
     await loadDeck();
-  };
+  }, [loadDeck]);
 
-  // Load on mount + preload when running low
   useEffect(() => {
-    if (deck.length <= 3) {
-      loadDeck();
-    }
-  }, [deck.length]);
+    if (deck.length < PREFETCH_AT) loadDeck();
+  }, [deck.length, loadDeck]);
 
   const handleSwipe = useCallback(
-    async (direction: "left" | "right" | "up", profile: DeckProfile) => {
-      if (isAnimatingOut) return;
-      setIsAnimatingOut(true);
+    async (direction: SwipeDirection, profile: DeckProfile) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
 
-      setLastSwiped({ profile, direction });
+      const type =
+        direction === "left" ? "pass" : direction === "up" ? "superlike" : "like";
 
-      const likeType = direction === "left" ? "pass" : direction === "up" ? "superlike" : "like";
+      // Оптимистично убираем карточку — интерфейс не должен ждать сеть
+      removeDeckProfile(profile.id);
+      setLastSwiped(profile);
 
-      // Optimistic removal
-      setTimeout(() => {
-        removeDeckProfile(profile.id);
-        setIsAnimatingOut(false);
-      }, 300);
-
-      // Send to API
-      if (likeType !== "pass") {
-        try {
-          const result = await likeProfile(profile.id, likeType as "like" | "superlike");
-          if (result.matched && result.match) {
-            hapticFeedback("success");
-            setMatchData({
-              partnerName: profile.display_name,
-              partnerPhoto: profile.photos?.[0],
-              score: result.match.match_score ?? undefined,
-              reason: result.match.ai_reason ?? undefined,
-              matchId: result.match.id,
-            });
-            addMatch(result.match);
-          }
-        } catch (e) {
-          console.error("Like failed:", e);
+      try {
+        const result = await likeProfile(profile.id, type);
+        if (result.matched && result.match) {
+          haptic("success");
+          setMatchData({
+            partnerName: profile.display_name,
+            partnerPhoto: profile.photos?.[0],
+            score: result.match.match_score ?? undefined,
+            reason: result.match.ai_reason ?? undefined,
+            matchId: result.match.id,
+          });
+          addMatch(result.match as MatchResponse);
         }
-      } else {
-        // Still register the pass
-        try {
-          await likeProfile(profile.id, "pass");
-        } catch (e) {
-          console.error("Pass failed:", e);
-        }
+      } catch {
+        // Сеть подвела — возвращаем карточку, чтобы решение не потерялось
+        haptic("error");
+        setDeck([profile, ...useStore.getState().deck]);
+        setLastSwiped(null);
+        setError("Нет связи — попробуйте ещё раз");
+      } finally {
+        busyRef.current = false;
       }
     },
-    [isAnimatingOut, removeDeckProfile, addMatch]
+    [addMatch, removeDeckProfile, setDeck]
   );
 
-  // Button handlers
-  const handleButtonSwipe = (direction: "left" | "right" | "up") => {
-    const topProfile = deck[0];
-    if (topProfile) handleSwipe(direction, topProfile);
-  };
+  const handleButton = useCallback(
+    (direction: SwipeDirection) => {
+      const top = deck[0];
+      if (top) handleSwipe(direction, top);
+    },
+    [deck, handleSwipe]
+  );
 
-  const handleRewind = () => {
-    // Во время 300мс-анимации свайпа карта ещё в деке — вернём дубликат
-    if (isAnimatingOut || !lastSwiped) return;
-    setDeck([lastSwiped.profile, ...deck.filter((p) => p.id !== lastSwiped.profile.id)]);
+  const handleRewind = useCallback(() => {
+    if (!lastSwiped || busyRef.current) return;
+    haptic("light");
+    const current = useStore.getState().deck;
+    setDeck([lastSwiped, ...current.filter((p) => p.id !== lastSwiped.id)]);
     setLastSwiped(null);
-    hapticFeedback("light");
-  };
+  }, [lastSwiped, setDeck]);
 
-  if (deck.length === 0) {
+  /* ── Первая загрузка ───────────────────────────────────────── */
+  if (isLoading && deck.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <motion.div
-          animate={{ scale: [1, 1.1, 1] }}
-          transition={{ repeat: Infinity, duration: 2 }}
-          className="text-6xl mb-4"
-        >
-          💔
-        </motion.div>
-        <h2 className="text-xl font-bold mb-2">Анкеты закончились</h2>
-        <p className="text-text-muted mb-6">Попробуйте обновить позже или измените настройки поиска</p>
-        <button
-          onClick={handleRefresh}
-          className="px-6 py-3 bg-accent text-white rounded-full font-semibold hover:bg-accent/90 transition"
-        >
-          Обновить
-        </button>
+      <div className="flex-1 flex flex-col px-4 pt-2 pb-4 max-w-[440px] mx-auto w-full">
+        <Skeleton className="flex-1 rounded-[var(--radius-card)]" />
+        <div className="flex items-center justify-center gap-4 mt-5">
+          {[44, 60, 44, 60, 44].map((s, i) => (
+            <Skeleton key={i} className="rounded-full" style={{ width: s, height: s }} />
+          ))}
+        </div>
       </div>
     );
   }
 
+  /* ── Анкеты закончились ────────────────────────────────────── */
+  if (deck.length === 0) {
+    return (
+      <EmptyState
+        emoji={isExhausted ? "🌅" : "💔"}
+        title={isExhausted ? "На сегодня всё" : "Анкеты закончились"}
+        description={
+          isExhausted
+            ? "Ты посмотрел всех, кто подходит. Заходи позже — или расширь настройки поиска, чтобы увидеть больше людей."
+            : "Попробуй обновить или изменить настройки поиска."
+        }
+        action={
+          <div className="flex flex-col gap-3 w-full max-w-[280px]">
+            <Button onClick={handleRefresh} size="lg" fullWidth>
+              Обновить
+            </Button>
+            {onOpenFilters && (
+              <Button onClick={onOpenFilters} variant="secondary" size="lg" fullWidth>
+                <SlidersHorizontal size={17} />
+                Настройки поиска
+              </Button>
+            )}
+          </div>
+        }
+      />
+    );
+  }
+
+  const visible = deck.slice(0, VISIBLE_CARDS);
+
   return (
-    <div className="flex-1 flex flex-col px-4 py-4 max-w-md mx-auto w-full">
-      {/* Card stack */}
-      <div className="relative flex-1 mb-4">
-        <AnimatePresence>
-          {deck.slice(0, 3).map((profile, idx) => (
-            <SwipeCard
-              key={profile.id}
-              profile={profile}
-              onSwipe={handleSwipe}
-              isTop={idx === 0}
-              index={idx}
-            />
-          ))}
+    <div className="flex-1 flex flex-col px-4 pt-2 pb-3 max-w-[440px] mx-auto w-full min-h-0">
+      {/* Стек карточек */}
+      <div className="relative flex-1 min-h-0">
+        <AnimatePresence initial={false}>
+          {visible
+            // Верхняя карточка рисуется последней, чтобы лежать поверх стека
+            .slice()
+            .reverse()
+            .map((profile) => {
+              const idx = visible.indexOf(profile);
+              return (
+                <SwipeCard
+                  key={profile.id}
+                  profile={profile}
+                  onSwipe={handleSwipe}
+                  isTop={idx === 0}
+                  index={idx}
+                />
+              );
+            })}
         </AnimatePresence>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex items-center justify-center gap-3 sm:gap-4 safe-bottom">
-        <ActionButton onClick={handleRewind} disabled={!lastSwiped} className="bg-surface text-warn" size="sm">
+      {/* Ошибка сети */}
+      <AnimatePresence>
+        {error && (
+          <motion.button
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            onClick={() => setError(null)}
+            className="mt-3 mx-auto px-4 py-2 rounded-full bg-danger/15 border border-danger/30
+                       text-danger text-[13px] font-medium"
+          >
+            {error} · закрыть
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Кнопки действий */}
+      <div className="flex items-center justify-center gap-3.5 pt-4">
+        <IconButton
+          label="Вернуть предыдущую анкету"
+          onClick={handleRewind}
+          disabled={!lastSwiped}
+          size={46}
+          tone="warn"
+        >
           <RotateCcw size={20} />
-        </ActionButton>
+        </IconButton>
 
-        <ActionButton onClick={() => handleButtonSwipe("left")} className="bg-surface text-danger" size="md">
-          <X size={28} strokeWidth={3} />
-        </ActionButton>
+        <IconButton label="Пропустить" onClick={() => handleButton("left")} size={62} tone="danger">
+          <X size={29} strokeWidth={2.6} />
+        </IconButton>
 
-        <ActionButton onClick={() => handleButtonSwipe("up")} className="bg-surface text-warn" size="sm">
-          <Star size={22} fill="currentColor" />
-        </ActionButton>
+        <IconButton label="Суперлайк" onClick={() => handleButton("up")} size={46} tone="info">
+          <Star size={20} fill="currentColor" />
+        </IconButton>
 
-        <ActionButton onClick={() => handleButtonSwipe("right")} className="bg-surface text-success" size="md">
-          <Heart size={26} fill="currentColor" />
-        </ActionButton>
+        <IconButton label="Лайк" onClick={() => handleButton("right")} size={62} tone="success">
+          <Heart size={27} fill="currentColor" />
+        </IconButton>
+
+        {onOpenFilters ? (
+          <IconButton label="Настройки поиска" onClick={onOpenFilters} size={46}>
+            <SlidersHorizontal size={19} />
+          </IconButton>
+        ) : (
+          <span className="w-[46px]" aria-hidden />
+        )}
       </div>
 
-      {/* Match modal */}
       <MatchModal data={matchData} onClose={() => setMatchData(null)} />
     </div>
-  );
-}
-
-function ActionButton({
-  children,
-  onClick,
-  disabled,
-  className = "",
-  size = "md",
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  className?: string;
-  size?: "sm" | "md";
-}) {
-  const sizeClass = size === "md" ? "w-14 h-14" : "w-11 h-11";
-  return (
-    <motion.button
-      whileTap={{ scale: 0.85 }}
-      onClick={onClick}
-      disabled={disabled}
-      className={`${sizeClass} ${className} rounded-full flex items-center justify-center shadow-lg disabled:opacity-30 transition border-2 border-white/10`}
-    >
-      {children}
-    </motion.button>
   );
 }

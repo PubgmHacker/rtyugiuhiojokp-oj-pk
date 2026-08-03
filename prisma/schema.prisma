@@ -15,33 +15,39 @@ datasource db {
 // ════════════════════════════════════════════════════════════════
 
 model User {
-  @@map("dating_users")
 
-  id          String   @id @default(cuid())
-  telegramId  BigInt?  @unique          // Telegram user ID
-  phone       String?                   // Телефон (SMS auth — позже)
-  role        String   @default("user") // user | admin | owner
-  isBanned    Boolean  @default(false)
-  isVerified  Boolean  @default(false) // Верифицирован через Telegram Premium / Apple
-  lastSeenAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String    @id @default(cuid())
+  telegramId BigInt?   @unique // Telegram user ID
+  phone      String? // Телефон (SMS auth — позже)
+  role       String    @default("user") // user | admin | owner
+  isBanned   Boolean   @default(false)
+  isVerified Boolean   @default(false) // Верифицирован через Telegram Premium / Apple
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   // Relations
-  profile     Profile?
-  likesGiven  Like[]   @relation("LikesGiven")
-  likesReceived Like[] @relation("LikesReceived")
-  matches1    Match[]  @relation("Matches1")
-  matches2    Match[]  @relation("Matches2")
-  messages    Message[]
-  reportsMade Report[] @relation("ReportsMade")
-  reportsReceived Report[] @relation("ReportsReceived")
-  subscription Subscription?
-  moderationLogs AiModerationLog[]
-  swipeSessions SwipeSession[]
+  profile         Profile?
+  likesGiven      Like[]            @relation("LikesGiven")
+  likesReceived   Like[]            @relation("LikesReceived")
+  matches1        Match[]           @relation("Matches1")
+  matches2        Match[]           @relation("Matches2")
+  messages        Message[]
+  reportsMade     Report[]          @relation("ReportsMade")
+  reportsReceived Report[]          @relation("ReportsReceived")
+  subscription    Subscription?
+  moderationLogs  AiModerationLog[]
+  swipeSessions   SwipeSession[]
+  referralsMade   Referral[]        @relation("ReferralsMade") // кого пригласил этот пользователь
+  referralInvited Referral?         @relation("ReferralInvited") // кем приглашён сам (не более одного раза)
+  boosts          Boost[]
+  devices         Device[]
+  analyticsEvents AnalyticsEvent[]
 
   @@index([telegramId])
   @@index([isBanned])
+  @@index([lastSeenAt]) // 2026: сортировка/фильтр "активные недавно" в деке и админке
+  @@map("dating_users")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -49,33 +55,34 @@ model User {
 // ════════════════════════════════════════════════════════════════
 
 model Profile {
-  @@map("dating_profiles")
 
-  userId             String   @id // 1:1 с User
-  displayName        String   @default("")
-  bio                String   @default("")   // до 500 символов
-  gender             String   @default("other") // male | female | other
-  birthDate          DateTime?               // для возраста
-  city               String   @default("")
+  userId             String    @id // 1:1 с User
+  displayName        String    @default("")
+  bio                String    @default("") // до 500 символов
+  gender             String    @default("other") // male | female | other
+  birthDate          DateTime? // для возраста
+  city               String    @default("")
   latitude           Float?
   longitude          Float?
-  photos             String   @default("[]") // JSON array of R2 URLs (max 6)
-  interests          String   @default("[]") // JSON array строк
-  aiBio              String?                // AI-сгенерированное описание
-  verificationStatus String   @default("none") // none | pending | verified
-  isIncognito        Boolean  @default(false) // Premium: скрыть из поисковых
-  lookingFor         String   @default("any") // male | female | other | any
-  ageMin             Int      @default(18)
-  ageMax             Int      @default(99)
-  distanceMax        Int      @default(100) // км
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  photos             String    @default("[]") // JSON array of R2 URLs (max 6)
+  interests          String    @default("[]") // JSON array строк
+  aiBio              String? // AI-сгенерированное описание
+  verificationStatus String    @default("none") // none | pending | verified
+  isIncognito        Boolean   @default(false) // Premium: скрыть из поисковых
+  lookingFor         String    @default("any") // male | female | other | any
+  ageMin             Int       @default(18)
+  ageMax             Int       @default(99)
+  distanceMax        Int       @default(100) // км
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([gender])
   @@index([city])
   @@index([lookingFor])
+  @@index([latitude, longitude]) // 2026: geo-фильтр деки (haversine в api/services/matching.py)
+  @@map("dating_profiles")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -83,7 +90,6 @@ model Profile {
 // ════════════════════════════════════════════════════════════════
 
 model Like {
-  @@map("dating_likes")
 
   id        String   @id @default(cuid())
   likerId   String
@@ -91,13 +97,14 @@ model Like {
   type      String   @default("like") // like | superlike | pass
   createdAt DateTime @default(now())
 
-  liker  User @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
-  liked  User @relation("LikesReceived", fields: [likedId], references: [id], onDelete: Cascade)
+  liker User @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
+  liked User @relation("LikesReceived", fields: [likedId], references: [id], onDelete: Cascade)
 
   @@unique([likerId, likedId]) // Один лайк на пользователя
   @@index([likerId])
   @@index([likedId])
   @@index([type])
+  @@map("dating_likes")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -105,13 +112,12 @@ model Like {
 // ════════════════════════════════════════════════════════════════
 
 model Match {
-  @@map("dating_matches")
 
   id         String   @id @default(cuid())
   user1Id    String
   user2Id    String
-  matchScore Int?             // AI-скоринг 0-100
-  aiReason   String?          // AI-объяснение совместимости
+  matchScore Int? // AI-скоринг 0-100
+  aiReason   String? // AI-объяснение совместимости
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
 
@@ -124,6 +130,7 @@ model Match {
   @@index([user1Id])
   @@index([user2Id])
   @@index([isActive])
+  @@map("dating_matches")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -131,22 +138,24 @@ model Match {
 // ════════════════════════════════════════════════════════════════
 
 model Message {
-  @@map("dating_messages")
 
-  id        String    @id @default(cuid())
-  matchId   String
-  senderId  String
-  text      String    @default("")
-  imageUrl  String?           // Если отправили фото
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  id            String    @id @default(cuid())
+  matchId       String
+  senderId      String
+  text          String    @default("")
+  imageUrl      String? // Если отправили фото
+  audioUrl      String? // Голосовое сообщение (R2 URL), 2026: voice messages в чате
+  audioDuration Int? // Длительность голосового в секундах (для UI-плеера)
+  readAt        DateTime?
+  createdAt     DateTime  @default(now())
 
-  match   Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  sender  User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  match  Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  sender User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([matchId])
   @@index([senderId])
   @@index([createdAt])
+  @@map("dating_messages")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -154,12 +163,11 @@ model Message {
 // ════════════════════════════════════════════════════════════════
 
 model Report {
-  @@map("dating_reports")
 
   id          String   @id @default(cuid())
   reporterId  String
   reportedId  String
-  reason      String   // spam | harassment | nudity | scam | other
+  reason      String // spam | harassment | nudity | scam | other
   description String   @default("")
   status      String   @default("pending") // pending | reviewed | resolved | dismissed
   createdAt   DateTime @default(now())
@@ -170,6 +178,7 @@ model Report {
   @@index([reporterId])
   @@index([reportedId])
   @@index([status])
+  @@map("dating_reports")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -177,17 +186,17 @@ model Report {
 // ════════════════════════════════════════════════════════════════
 
 model SwipeSession {
-  @@map("dating_swipe_sessions")
 
-  id           String   @id @default(cuid())
-  userId       String
-  viewedIds    String   @default("[]") // JSON array of viewed profile userIds
-  expiresAt    DateTime @default(now()) // Сбрасывается через 24ч
-  createdAt    DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  viewedIds String   @default("[]") // JSON array of viewed profile userIds
+  expiresAt DateTime @default(now()) // Сбрасывается через 24ч
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId])
+  @@map("dating_swipe_sessions")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -195,18 +204,19 @@ model SwipeSession {
 // ════════════════════════════════════════════════════════════════
 
 model Subscription {
-  @@map("dating_subscriptions")
 
-  id         String    @id @default(cuid())
-  userId     String    @unique
-  plan       String    @default("free") // free | premium | vip
-  stripeId   String?               // Stripe subscription ID
-  features   String   @default("[]") // JSON array: ["incognito", "see_who_liked", "ai_bio"]
-  expiresAt  DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  plan      String    @default("free") // free | premium | vip
+  stripeId  String? // Stripe subscription ID
+  features  String    @default("[]") // JSON array: ["incognito", "see_who_liked", "ai_bio"]
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("dating_subscriptions")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -214,20 +224,122 @@ model Subscription {
 // ════════════════════════════════════════════════════════════════
 
 model AiModerationLog {
-  @@map("dating_ai_moderation_logs")
 
-  id         String   @id @default(cuid())
-  userId     String
-  contentType String  // photo | bio | message
-  content    String   // URL фото или текст
-  result     String   // safe | warning | blocked
-  action     String   // none | warn | ban
-  reason     String   @default("")
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  contentType String // photo | bio | message
+  content     String // URL фото или текст
+  result      String // safe | warning | blocked
+  action      String // none | warn | ban
+  reason      String   @default("")
+  createdAt   DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([result])
   @@index([createdAt])
+  @@map("dating_ai_moderation_logs")
+}
+
+// ════════════════════════════════════════════════════════════════
+//  РЕФЕРАЛЬНАЯ ПРОГРАММА
+//  ВАЖНО: эта модель уже используется в api/models/models.py (Referral,
+//  таблица dating_referrals) и bot/database/models.py — schema.prisma
+//  просто не была синхронизирована. Приглашённый засчитывается 1 раз.
+// ════════════════════════════════════════════════════════════════
+
+model Referral {
+
+  id         String   @id @default(cuid())
+  referrerId String // кто пригласил
+  invitedId  String   @unique // кого пригласили (засчитывается 1 раз)
+  createdAt  DateTime @default(now())
+
+  referrer User @relation("ReferralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  invited  User @relation("ReferralInvited", fields: [invitedId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId])
+  @@map("dating_referrals")
+}
+
+// ════════════════════════════════════════════════════════════════
+//  БУСТ АНКЕТЫ (разовый платный подъём в выдаче) — рекомендация 2026
+//  НЕ реализовано в api/bot SQLAlchemy-моделях на момент правки —
+//  добавлено только в prisma-схему как ориентир для будущей разработки.
+//  См. рекомендацию в отчёте перед внедрением в SQLAlchemy.
+// ════════════════════════════════════════════════════════════════
+
+model Boost {
+
+  id              String   @id @default(cuid())
+  userId          String
+  status          String   @default("active") // active | expired | cancelled
+  durationMinutes Int      @default(30) // напр. буст на 30 минут
+  startedAt       DateTime @default(now())
+  expiresAt       DateTime
+  price           Int // в минимальных единицах валюты (центы/копейки) или Stars
+  currency        String   @default("stars") // stars | usdt | rub
+  paymentProvider String? // telegram_stars | cryptobot | stripe | sbp
+  paymentId       String? // внешний ID платежа/инвойса
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt]) // выборка "сейчас активные бусты" для приоритизации в деке
+  @@map("dating_boosts")
+}
+
+// ════════════════════════════════════════════════════════════════
+//  УСТРОЙСТВА (push-уведомления: iOS APNs / Web Push) — рекомендация 2026
+//  НЕ реализовано в api/bot SQLAlchemy-моделях на момент правки.
+// ════════════════════════════════════════════════════════════════
+
+model Device {
+
+  id          String   @id @default(cuid())
+  userId      String
+  platform    String // ios | android | web
+  pushToken   String // APNs device token / FCM token
+  webEndpoint String? // Web Push: endpoint URL (VAPID)
+  webP256dh   String? // Web Push: ключ p256dh
+  webAuth     String? // Web Push: ключ auth
+  appVersion  String?
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pushToken]) // не дублировать токен на одного пользователя
+  @@index([userId])
+  @@index([platform])
+  @@index([isActive])
+  @@map("dating_devices")
+}
+
+// ════════════════════════════════════════════════════════════════
+//  СОБЫТИЯ АНАЛИТИКИ — рекомендация 2026
+//  Лёгкий event-log для воронки (open → swipe → match → message → paid).
+//  Минимальный вариант уже покрыт полем User.lastSeenAt (+ индекс выше);
+//  эта модель — для продуктовой аналитики, а не просто "онлайн/оффлайн".
+//  НЕ реализовано в api/bot SQLAlchemy-моделях на момент правки.
+// ════════════════════════════════════════════════════════════════
+
+model AnalyticsEvent {
+
+  id        String   @id @default(cuid())
+  userId    String
+  eventType String // app_open | swipe | match_created | message_sent | boost_purchased | profile_view ...
+  metadata  String   @default("{}") // JSON произвольных доп. данных события
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("dating_analytics_events")
 }
