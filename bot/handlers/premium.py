@@ -321,6 +321,15 @@ async def check_crypto_payment(callback: CallbackQuery):
 
 # ── СБП (заглушка до подключения провайдера) ────────────────────
 
-@router.callback_query(F.data == "pay:sbp")
+@router.callback_query(F.data.startswith("pay:sbp"))
 async def pay_sbp(callback: CallbackQuery):
-    await callback.answer("🏦 Оплата по СБП скоро появится!", show_alert=True)
+    """Заглушка до подключения платёжного провайдера.
+
+    Фильтр по префиксу, а не по точному совпадению: кнопка передаёт код
+    тарифа (`pay:sbp:plus_1m`), и точное сравнение делало бы её мёртвой —
+    нажатие не обрабатывалось бы вовсе, и Telegram показывал бы «часики».
+    """
+    await callback.answer(
+        "🏦 Оплата по СБП скоро появится. Пока доступны Stars и криптовалюта.",
+        show_alert=True,
+    )

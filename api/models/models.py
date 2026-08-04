@@ -283,6 +283,49 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Room(Base):
+    """Групповой чат по городу или интересу.
+
+    Комнаты создаём мы, а не пользователи: пользовательские комнаты — это
+    отдельный продукт с модерацией названий, владельцами и правами, а нужен
+    здесь способ познакомиться до мэтча.
+
+    Ключ `slug` — по нему комната находится в ссылке и в тестах; название
+    можно переписать, не ломая ссылки.
+    """
+
+    __tablename__ = "dating_rooms"
+    __table_args__ = (UniqueConstraint("slug", name="uq_room_slug"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    slug: Mapped[str] = mapped_column(String)
+    title: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(String, default="")
+    #: Комната привязана к городу («Москва») или пуста — тогда она общая.
+    city: Mapped[str] = mapped_column(String, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RoomMessage(Base):
+    """Сообщение в групповом чате.
+
+    Отдельно от `Message`: то привязано к мэтчу и имеет отметку прочтения на
+    двоих, а здесь читателей много и отметка прочтения смысла не имеет.
+    """
+
+    __tablename__ = "dating_room_messages"
+    __table_args__ = (Index("ix_room_message_created", "room_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    room_id: Mapped[str] = mapped_column(String, ForeignKey("dating_rooms.id", ondelete="CASCADE"))
+    sender_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    text: Mapped[str] = mapped_column(String)
+    #: Снято модератором. Не удаляем: по жалобе нужно понимать, за что снято.
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PhotoRating(Base):
     """Оценка чужого фото по шкале 1–5.
 

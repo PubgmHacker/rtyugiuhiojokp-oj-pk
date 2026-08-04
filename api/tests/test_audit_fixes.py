@@ -2006,3 +2006,116 @@ def test_очередь_не_сравнивает_json_в_sql():
     исходник = inspect.getsource(photo_ratings.get_rating_queue)
     assert "Profile.photos !=" not in исходник
     assert "if as_list(p.photos)" in исходник
+
+
+def test_каждая_кнопка_бота_имеет_обработчик():
+    """Кнопка без хендлера — самый незаметный вид поломки: Telegram показывает
+    «часики» и ничего не происходит, в логах тоже пусто.
+
+    Так и случилось с СБП: кнопка стала передавать код тарифа
+    (`pay:sbp:plus_1m`), а хендлер сравнивал строку целиком с `pay:sbp`.
+    """
+    import re
+    from pathlib import Path
+
+    бот = Path(__file__).resolve().parents[2] / "bot"
+    исходники = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in [бот / "keyboards.py", *sorted((бот / "handlers").glob("*.py"))]
+    )
+
+    # Что кнопки отправляют: у параметризованных берём часть до подстановки
+    отправляют = set()
+    for значение in re.findall(r'callback_data=f?"([^"]*)"', исходники):
+        отправляют.add(значение.split("{")[0])
+
+    # Что хендлеры принимают
+    точные = set(re.findall(r'F\.data == "([^"]*)"', исходники))
+    префиксы = set(re.findall(r'F\.data\.startswith\("([^"]*)"\)', исходники))
+
+    непокрытые = {
+        значение
+        for значение in отправляют
+        if значение not in точные
+        and not any(значение.startswith(p) or p.startswith(значение) for p in префиксы)
+    }
+    assert not непокрытые, f"кнопки без обработчика: {sorted(непокрытые)}"
+
+
+# ════════════════════════════════════════════════════════════════
+#  Групповые чаты по интересам
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_комнат(openapi):
+    paths = openapi["paths"]
+    assert "/api/rooms" in paths
+    assert "/api/rooms/{room_id}/messages" in paths
+    assert "post" in paths["/api/rooms/{room_id}/messages"]
+
+
+def test_сообщение_комнаты_модерируется_до_публикации():
+    """В личке собеседника можно заблокировать, а в общем чате грубость
+    видят все."""
+    import inspect
+
+    from routers import rooms
+
+    исходник = inspect.getsource(rooms.send_room_message)
+    assert "moderate_text(text)" in исходник
+    # Проверка идёт до создания записи
+    assert исходник.index("moderate_text") < исходник.index("session.add")
+
+
+def test_антифлуд_в_комнате_отдельно_от_общего_лимита():
+    """Общий лимит по пути не мешает залить одну комнату подряд."""
+    import inspect
+
+    from routers import rooms
+
+    assert 1 <= rooms.FLOOD_PER_MINUTE <= 60
+    исходник = inspect.getsource(rooms.send_room_message)
+    assert "timedelta(minutes=1)" in исходник
+    assert "429" in исходник
+
+
+def test_заблокированные_не_видны_в_комнате():
+    """Человек заблокировал обидчика именно чтобы его не видеть, и общий чат
+    не исключение."""
+    import inspect
+
+    from routers import rooms
+
+    исходник = inspect.getsource(rooms.get_room_messages)
+    assert "Block.blocker_id == user.id" in исходник
+    assert "Block.blocked_id == user.id" in исходник
+
+
+def test_скрытые_сообщения_не_отдаются():
+    import inspect
+
+    from routers import rooms
+
+    assert "RoomMessage.is_hidden == False" in inspect.getsource(rooms.get_room_messages)
+
+
+def test_стартовые_комнаты_создаются_миграцией():
+    """Пустой экран на первом открытии выглядит как поломка."""
+    from pathlib import Path
+
+    миграция = (
+        Path(__file__).resolve().parents[1]
+        / "migrations" / "versions" / "b7e14c630f92_rooms.py"
+    ).read_text(encoding="utf-8")
+
+    assert "bulk_insert" in миграция
+    # Комнат должно быть несколько, иначе выбирать не из чего
+    assert миграция.count('", "') >= 5
+
+
+def test_сообщения_комнат_отдельно_от_личных():
+    """В личке отметка прочтения на двоих, в групповом чате она бессмысленна."""
+    from models.models import Message, RoomMessage
+
+    assert "read_at" in Message.__table__.columns
+    assert "read_at" not in RoomMessage.__table__.columns
+    assert "match_id" not in RoomMessage.__table__.columns

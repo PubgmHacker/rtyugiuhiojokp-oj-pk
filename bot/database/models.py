@@ -214,6 +214,36 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Room(Base):
+    """Групповой чат — см. api/models/models.py. Бот в комнаты не пишет, но
+    обе схемы создают таблицы в одной БД."""
+
+    __tablename__ = "dating_rooms"
+    __table_args__ = (UniqueConstraint("slug", name="uq_room_slug"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    slug: Mapped[str] = mapped_column(String)
+    title: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(String, default="")
+    city: Mapped[str] = mapped_column(String, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RoomMessage(Base):
+    """Сообщение в групповом чате — см. api/models/models.py."""
+
+    __tablename__ = "dating_room_messages"
+    __table_args__ = (Index("ix_room_message_created", "room_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    room_id: Mapped[str] = mapped_column(String, ForeignKey("dating_rooms.id", ondelete="CASCADE"))
+    sender_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    text: Mapped[str] = mapped_column(String)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PhotoRating(Base):
     """Оценка фото 1-5 — см. api/models/models.py. Бот оценки не принимает,
     но обе схемы создают таблицы в одной БД."""

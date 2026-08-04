@@ -239,6 +239,42 @@ class ReelsOut(BaseModel):
     next_before: Optional[str] = None
 
 
+class RoomOut(BaseModel):
+    """Комната в списке."""
+
+    id: str
+    slug: str
+    title: str
+    description: str = ""
+    city: str = ""
+    #: Сообщений за сутки — по нему видно, где сейчас живо.
+    messages_today: int = 0
+
+
+class RoomsOut(BaseModel):
+    rooms: list[RoomOut] = Field(default_factory=list)
+
+
+class RoomMessageOut(BaseModel):
+    id: str
+    sender_id: str
+    sender_name: str = ""
+    sender_photo: str = ""
+    text: str
+    is_mine: bool = False
+    created_at: Optional[datetime] = None
+
+
+class RoomMessages(BaseModel):
+    messages: list[RoomMessageOut] = Field(default_factory=list)
+    next_before: Optional[str] = None
+
+
+class RoomSend(BaseModel):
+    #: Лимит короче, чем в личке: простыни в общем чате читать невозможно.
+    text: str = Field(min_length=1, max_length=500)
+
+
 class PhotoRatingTarget(BaseModel):
     """Чьё фото показать на оценку."""
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import { Users, ChevronRight } from "lucide-react";
 import { getMatches } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
@@ -108,6 +109,21 @@ export default function Matches() {
         title="Чаты"
         subtitle={`${matches.length} ${plural(matches.length, "совпадение", "совпадения", "совпадений")}`}
       />
+
+      {/* Комнаты по интересам: в общий чат написать проще, чем первым в личку,
+          поэтому вход в них живёт рядом со списком переписок */}
+      <Link
+        to="/rooms"
+        onClick={() => haptic("light")}
+        className="mx-4 mt-3 flex items-center gap-3 px-4 py-3
+                   rounded-[var(--radius-tile)] bg-surface-2 border border-hairline"
+      >
+        <Users size={18} className="text-accent shrink-0" />
+        <span className="flex-1 text-[14.5px] font-semibold">
+          Чаты по интересам
+        </span>
+        <ChevronRight size={17} className="text-text-faint shrink-0" />
+      </Link>
 
       {/* ── Новые мэтчи ────────────────────────────────────── */}
       {fresh.length > 0 && (

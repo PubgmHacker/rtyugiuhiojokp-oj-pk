@@ -312,6 +312,51 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/* ── Групповые чаты ─────────────────────────────────────────── */
+
+export interface Room {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  city: string;
+  /** Сообщений за сутки — по нему видно, где сейчас живо. */
+  messages_today: number;
+}
+
+export interface RoomMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_photo: string;
+  text: string;
+  is_mine: boolean;
+  created_at?: string | null;
+}
+
+export async function getRooms(): Promise<Room[]> {
+  const { data } = await api.get("/rooms");
+  return data.rooms;
+}
+
+export async function getRoomMessages(
+  roomId: string,
+  before?: string | null
+): Promise<{ messages: RoomMessage[]; next_before?: string | null }> {
+  const { data } = await api.get(`/rooms/${roomId}/messages`, {
+    params: before ? { before } : undefined,
+  });
+  return data;
+}
+
+export async function sendRoomMessage(
+  roomId: string,
+  text: string
+): Promise<RoomMessage> {
+  const { data } = await api.post(`/rooms/${roomId}/messages`, { text });
+  return data;
+}
+
 /* ── Оценка фото ────────────────────────────────────────────── */
 
 export interface PhotoRatingTarget {
