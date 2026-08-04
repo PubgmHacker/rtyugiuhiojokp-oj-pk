@@ -202,16 +202,6 @@ class ProcessedPayment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class SwipeSession(Base):
-    __tablename__ = "dating_swipe_sessions"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), unique=True)
-    viewed_ids: Mapped[dict | list] = mapped_column(JSON, default=list)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
 class DeviceToken(Base):
     """Токен устройства для пушей — см. api/models/models.py.
 

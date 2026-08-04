@@ -83,16 +83,6 @@ async def get_or_create_user(telegram_id: int, username: str = "", name: str = "
             return _user_to_dict(user)
 
 
-async def get_user_by_telegram_id(telegram_id: int) -> dict | None:
-    cls = _session_cls()
-    async with cls() as session:
-        result = await session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
-        user = result.scalar_one_or_none()
-        return _user_to_dict(user) if user else None
-
-
 async def get_user_by_id(user_id: str) -> dict | None:
     cls = _session_cls()
     async with cls() as session:
@@ -394,28 +384,6 @@ async def block_user(blocker_id: str, blocked_id: str) -> bool:
         return True
 
 
-async def get_blocked_ids(user_id: str) -> set[str]:
-    """Кого пользователь заблокировал и кто заблокировал его.
-
-    Блокировка действует в обе стороны, иначе обидчик продолжал бы видеть
-    анкету жертвы и мог бы связаться первым.
-    """
-    cls = _session_cls()
-    async with cls() as session:
-        result = await session.execute(
-            select(Block.blocked_id).where(Block.blocker_id == user_id)
-        )
-        ids = {row[0] for row in result.all()}
-        result = await session.execute(
-            select(Block.blocker_id).where(Block.blocked_id == user_id)
-        )
-        return ids | {row[0] for row in result.all()}
-
-
-# ════════════════════════════════════════════════════════════════
-#  PREMIUM
-# ════════════════════════════════════════════════════════════════
-
 async def get_active_subscription(user_id: str) -> dict | None:
     cls = _session_cls()
     async with cls() as session:
@@ -582,64 +550,6 @@ async def like_and_match(liker_id: str, liked_id: str, like_type: str = "like") 
                     "user2_id": match.user2_id,
                     "match_score": match.match_score,
                 },
-            }
-
-
-async def create_like(liker_id: str, liked_id: str, like_type: str = "like") -> dict:
-    cls = _session_cls()
-    async with cls() as session:
-        async with session.begin():
-            # Check existing
-            result = await session.execute(
-                select(Like).where(
-                    Like.liker_id == liker_id,
-                    Like.liked_id == liked_id,
-                )
-            )
-            existing = result.scalar_one_or_none()
-            if existing:
-                return {"already_exists": True, "type": existing.type}
-
-            like = Like(liker_id=liker_id, liked_id=liked_id, type=like_type)
-            session.add(like)
-            await session.flush()
-            return {"id": like.id, "type": like.type}
-
-
-async def check_mutual_like(liker_id: str, liked_id: str) -> dict | None:
-    """Check if liked_id previously liked liker_id."""
-    cls = _session_cls()
-    async with cls() as session:
-        result = await session.execute(
-            select(Like).where(
-                Like.liker_id == liked_id,
-                Like.liked_id == liker_id,
-                Like.type != "pass",
-            )
-        )
-        mutual = result.scalar_one_or_none()
-        return {"mutual": mutual is not None, "type": mutual.type if mutual else None} if mutual else None
-
-
-async def create_match(user_a: str, user_b: str) -> dict:
-    """Создать мэтч (пара нормализована — без дублей), вернуть его."""
-    u1, u2 = (user_a, user_b) if user_a < user_b else (user_b, user_a)
-    cls = _session_cls()
-    async with cls() as session:
-        async with session.begin():
-            result = await session.execute(
-                select(Match).where(Match.user1_id == u1, Match.user2_id == u2)
-            )
-            match = result.scalar_one_or_none()
-            if not match:
-                match = Match(user1_id=u1, user2_id=u2, is_active=True)
-                session.add(match)
-                await session.flush()
-            return {
-                "id": match.id,
-                "user1_id": match.user1_id,
-                "user2_id": match.user2_id,
-                "match_score": match.match_score,
             }
 
 

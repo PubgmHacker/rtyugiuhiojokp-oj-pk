@@ -20,7 +20,6 @@ DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://souldawn:sou
 REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6380/0")
 
 # ── API ─────────────────────────────────────────────────────────
-API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000")
 SITE_URL: str = os.getenv("SITE_URL", "http://localhost:5173")  # Web frontend
 
 # ── Premium / Payments (значения задаются в .env) ──────────────
@@ -68,6 +67,3 @@ BANNERS: dict[str, str] = {
     "deck": "https://placehold.co/900x1200/16181f/8f97a8.png?text=%D0%A4%D0%BE%D1%82%D0%BE",
 }
 
-
-def is_admin(telegram_id: int) -> bool:
-    return telegram_id in ADMIN_IDS

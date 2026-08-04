@@ -12,6 +12,7 @@ import {
   MapPin,
   Trash2,
   FileText,
+  Download,
   ChevronRight,
   AlertTriangle,
   Ban,
@@ -20,6 +21,7 @@ import {
   getMyProfile,
   updateMyProfile,
   deleteMyAccount,
+  exportMyData,
   getBlockedUsers,
   unblockUser,
   type UserProfile,
@@ -46,6 +48,7 @@ export default function Profile() {
   // не может исправить случайный тап
   const [blocked, setBlocked] = useState<UserProfile[] | null>(null);
   const [blockedOpen, setBlockedOpen] = useState(false);
+  const [exportState, setExportState] = useState<"idle" | "busy" | "fail">("idle");
 
   const load = useCallback(async () => {
     try {
@@ -68,6 +71,27 @@ export default function Profile() {
       setBlocked(await getBlockedUsers());
     } catch {
       setBlocked([]);
+    }
+  }, []);
+
+  // Выгрузка своих данных: бэкенд отдаёт JSON-файл, браузеру нужен
+  // временный object URL, иначе Blob никак не попадёт на диск.
+  const handleExport = useCallback(async () => {
+    haptic("light");
+    setExportState("busy");
+    try {
+      const blob = await exportMyData();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "souldawn-my-data.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setExportState("idle");
+    } catch {
+      setExportState("fail");
     }
   }, []);
 
@@ -440,6 +464,22 @@ export default function Profile() {
           <LogOut size={17} />
           Выйти
         </Button>
+
+        <Button
+          variant="secondary"
+          size="md"
+          fullWidth
+          disabled={exportState === "busy"}
+          onClick={handleExport}
+        >
+          {exportState === "busy" ? <Spinner size={17} /> : <Download size={17} />}
+          {exportState === "busy" ? "Готовим файл…" : "Скачать мои данные"}
+        </Button>
+        {exportState === "fail" && (
+          <p className="text-xs text-rose-400">
+            Не удалось выгрузить данные. Попробуйте позже.
+          </p>
+        )}
 
         <Button
           variant="danger"

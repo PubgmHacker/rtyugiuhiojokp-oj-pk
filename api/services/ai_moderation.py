@@ -133,3 +133,41 @@ def _keyword_filter(text: str) -> dict:
         if word in text_lower:
             return {"safe": False, "blocked": True, "reason": f"Prohibited content: {word}"}
     return {"safe": True, "blocked": False, "reason": ""}
+
+
+async def log_moderation(
+    user_id: str,
+    content_type: str,
+    content: str,
+    verdict: dict,
+) -> None:
+    """Записать вердикт модерации в журнал для админки.
+
+    Журнал — единственный способ разобрать спорную блокировку постфактум,
+    поэтому пишем и безопасные проверки тоже.
+
+    Пишем в СВОЕЙ сессии, а не в сессии запроса: при блокировке роутер бросает
+    HTTPException, зависимость делает rollback — и запись о самом интересном
+    случае исчезла бы вместе с ним. Сбой записи журнала не должен ломать
+    сценарий: пользователь не виноват, что журнал недоступен.
+    """
+    from database.connection import async_session_factory
+    from models.models import AiModerationLog
+
+    result = "blocked" if verdict.get("blocked") else ("safe" if verdict.get("safe", True) else "warning")
+    try:
+        async with async_session_factory() as session:
+            session.add(
+                AiModerationLog(
+                    user_id=user_id,
+                    content_type=content_type,
+                    # Длинные тексты режем: журналу нужен повод, а не весь контент
+                    content=(content or "")[:2000],
+                    result=result,
+                    action="none",
+                    reason=verdict.get("reason", "") or "",
+                )
+            )
+            await session.commit()
+    except Exception as e:
+        logger.error(f"Не удалось записать лог модерации: {e}")

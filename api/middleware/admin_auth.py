@@ -15,12 +15,3 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
         )
     return user
 
-
-async def require_owner(user: User = Depends(get_current_user)) -> User:
-    """FastAPI dependency: проверяет что пользователь — owner."""
-    if user.role != "owner":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Owner access required",
-        )
-    return user

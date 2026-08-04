@@ -410,24 +410,6 @@ async def list_moderation_logs(
 ):
     """Логи ИИ-модерации."""
 
-    # Create table if not exists (for backward compatibility)
-    try:
-        from sqlalchemy import text as _text
-        await session.execute(_text("""
-            CREATE TABLE IF NOT EXISTS dating_ai_moderation_logs (
-                id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id VARCHAR NOT NULL REFERENCES dating_users(id),
-                content_type VARCHAR NOT NULL,
-                content TEXT NOT NULL,
-                result VARCHAR NOT NULL,
-                action VARCHAR NOT NULL DEFAULT 'none',
-                reason VARCHAR DEFAULT '',
-                created_at TIMESTAMPTZ DEFAULT NOW()
-            )
-        """))
-    except Exception:
-        pass
-
     query = select(AiModerationLog).order_by(desc(AiModerationLog.created_at))
     if result_filter != "all":
         query = query.where(AiModerationLog.result == result_filter)

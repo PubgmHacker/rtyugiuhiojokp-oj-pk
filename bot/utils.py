@@ -3,14 +3,6 @@ from __future__ import annotations
 from aiogram.types import Message
 
 
-def brand() -> str:
-    return "Souldawn Dating 💕"
-
-
-def divider() -> str:
-    return "━━━━━━━━━━━━━━"
-
-
 async def safe_edit_text(message: Message, text: str, reply_markup=None):
     """edit_text падает на фото-сообщениях (главное меню — баннер).
 

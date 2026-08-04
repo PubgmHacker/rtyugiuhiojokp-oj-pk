@@ -216,11 +216,3 @@ def back_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[[InlineKeyboardButton(text="← Меню", callback_data="menu")]]
     )
 
-
-def skip_kb() -> InlineKeyboardMarkup:
-    """Оставлено для совместимости с прежними вызовами."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Пропустить", callback_data="reg:bio_skip")]
-        ]
-    )

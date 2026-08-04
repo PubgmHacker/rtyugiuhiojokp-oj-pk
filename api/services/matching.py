@@ -39,6 +39,54 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
     return int(R * c)
 
 
+def _compatibility(
+    my_profile: Optional[Profile],
+    other: Profile,
+    distance: Optional[int],
+    my_interests: set,
+) -> tuple[Optional[int], Optional[str]]:
+    """Процент совместимости и человеческая причина для карточки анкеты.
+
+    Считается локально по тем данным, что уже загружены: общие интересы,
+    город, расстояние. Базовые 55% — чтобы у полностью незаполненных анкет
+    не выходил обидный ноль; выше 96 не поднимаем, обещать «идеальную пару»
+    по трём полям нечестно.
+
+    Без своей анкеты сравнивать не с чем — тогда процент не показываем вовсе,
+    это честнее случайного числа.
+    """
+    if not my_profile:
+        return None, None
+
+    other_interests = set(as_list(other.interests))
+    shared = my_interests & other_interests
+    same_city = bool(
+        my_profile.city
+        and other.city
+        and my_profile.city.strip().lower() == other.city.strip().lower()
+    )
+
+    score = 55.0
+    score += min(len(shared), 5) * 6
+    if same_city:
+        score += 8
+    if distance is not None and distance <= 30:
+        score += 4
+    score = max(40.0, min(96.0, score))
+
+    if shared:
+        listed = ", ".join(sorted(shared)[:3])
+        reason = f"Общие интересы: {listed}"
+    elif same_city:
+        reason = "Вы в одном городе"
+    elif distance is not None and distance <= 30:
+        reason = f"Совсем рядом — {distance} км"
+    else:
+        reason = None
+
+    return int(round(score)), reason
+
+
 async def _sample_candidates(
     session: AsyncSession,
     exclude_ids: set[str],
@@ -156,6 +204,7 @@ async def get_deck_profiles(
     # Filter by preferences and build deck
     deck: list[DeckProfile] = []
     my_age = _calculate_age(my_profile.birth_date) if my_profile else None
+    my_interests_pre = set(as_list(my_profile.interests)) if my_profile else set()
 
     for profile in profiles:
         # Gender preference filter
@@ -188,10 +237,13 @@ async def get_deck_profiles(
             if my_profile.distance_max and distance > my_profile.distance_max:
                 continue
 
-        # AI score for sorting
-        ai_score = None
-        ai_reason = None
-        # Note: we do lightweight scoring here; full scoring happens on match
+        # Совместимость считаем на месте, без обращения к модели: дека — это
+        # десятки анкет на каждый запрос, и LLM-скоринг каждой из них стоил бы
+        # секунд ожидания и денег. Полный AI-разбор остаётся на момент мэтча,
+        # где он один и уместен (services/ai_matchmaker.py: score_match).
+        compat_score, compat_reason = _compatibility(
+            my_profile, profile, distance, my_interests_pre,
+        )
 
         deck.append(DeckProfile(
             id=profile.user_id,
@@ -203,8 +255,8 @@ async def get_deck_profiles(
             interests=as_list(profile.interests),
             ai_bio=profile.ai_bio,
             distance=distance,
-            match_score=ai_score,
-            match_reason=ai_reason,
+            match_score=compat_score,
+            match_reason=compat_reason,
         ))
 
     # Умная сортировка вместо рандома: общие интересы, город, близость,

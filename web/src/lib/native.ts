@@ -127,29 +127,6 @@ export async function getCurrentPosition(): Promise<
   }
 }
 
-/**
- * Аппаратная кнопка «назад» и возврат приложения из фона.
- * Возвращает функцию отписки.
- */
-export async function setupAppLifecycle(handlers: {
-  onResume?: () => void;
-  onPause?: () => void;
-}): Promise<() => void> {
-  if (!isNative()) return () => {};
-  try {
-    const { App } = await import("@capacitor/app");
-    const sub = await App.addListener("appStateChange", ({ isActive }) => {
-      if (isActive) handlers.onResume?.();
-      else handlers.onPause?.();
-    });
-    return () => {
-      sub.remove();
-    };
-  } catch {
-    return () => {};
-  }
-}
-
 /** Единая инициализация нативной оболочки при старте приложения. */
 export async function initNative(): Promise<void> {
   if (!isNative()) return;

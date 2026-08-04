@@ -64,24 +64,3 @@ async def delete_photo_from_r2(object_key: str):
         )
     except Exception as e:
         logger.error(f"R2 delete error: {e}")
-
-
-def get_presigned_upload_url(object_key: str, content_type: str = "image/jpeg", expires_in: int = 300) -> Optional[str]:
-    """Генерировать presigned URL для прямой загрузки с клиента."""
-    client = _get_s3_client()
-    if not client:
-        return None
-
-    try:
-        return client.generate_presigned_url(
-            "put_object",
-            Params={
-                "Bucket": settings.R2_BUCKET_NAME,
-                "Key": object_key,
-                "ContentType": content_type,
-            },
-            ExpiresIn=expires_in,
-        )
-    except Exception as e:
-        logger.error(f"Presigned URL error: {e}")
-        return None

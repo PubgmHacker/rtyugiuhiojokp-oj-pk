@@ -61,13 +61,3 @@ export function initTelegram() {
   }
 }
 
-export function hapticFeedback(type: "light" | "medium" | "heavy" | "success" | "error" | "warning") {
-  const tg = getTelegramWebApp();
-  if (!tg?.HapticFeedback) return;
-
-  if (["light", "medium", "heavy"].includes(type)) {
-    tg.HapticFeedback.impactOccurred(type);
-  } else {
-    tg.HapticFeedback.notificationOccurred(type);
-  }
-}

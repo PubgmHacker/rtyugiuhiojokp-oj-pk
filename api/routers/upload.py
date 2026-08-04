@@ -8,7 +8,7 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import User
 from services.r2_storage import upload_photo_to_r2, delete_photo_from_r2
-from services.ai_moderation import moderate_image
+from services.ai_moderation import log_moderation, moderate_image
 from services.image_sanitizer import ImageRejected, sanitize_image
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -38,6 +38,9 @@ async def upload_photo(
 
     # AI Moderation
     mod_result = await moderate_image(contents)
+    # В журнал уходит не картинка, а имя файла — читать бинарь в админке
+    # бессмысленно, а разобрать спорную блокировку по имени можно.
+    await log_moderation(user.id, "photo", file.filename or "photo", mod_result)
     if mod_result["blocked"]:
         raise HTTPException(status_code=422, detail="Image violates content policy")
 

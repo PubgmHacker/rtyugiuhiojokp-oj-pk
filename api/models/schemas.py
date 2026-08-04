@@ -10,10 +10,6 @@ from pydantic import BaseModel, Field
 #  AUTH
 # ════════════════════════════════════════════════════════════════
 
-class TelegramAuthRequest(BaseModel):
-    initData: str
-
-
 class AuthResponse(BaseModel):
     success: bool
     token: str
@@ -128,21 +124,6 @@ class DeckProfile(BaseModel):
 # ════════════════════════════════════════════════════════════════
 #  MESSAGES / CHAT
 # ════════════════════════════════════════════════════════════════
-
-class MessageOut(BaseModel):
-    id: str
-    match_id: str
-    sender_id: str
-    text: str = ""
-    image_url: Optional[str] = None
-    read_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-
-
-class SendMessage(BaseModel):
-    text: str = Field(default="", max_length=2000)
-    image_url: Optional[str] = None
-
 
 # ════════════════════════════════════════════════════════════════
 #  REPORTS

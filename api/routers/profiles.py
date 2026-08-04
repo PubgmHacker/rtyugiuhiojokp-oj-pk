@@ -23,11 +23,10 @@ from models.models import (
     Message,
     Referral,
     Subscription,
-    SwipeSession,
 )
 from models.schemas import DeckProfile, DeviceRegistration, ProfileUpdate, UserProfile
 from services.matching import get_deck_profiles
-from services.ai_moderation import moderate_text
+from services.ai_moderation import log_moderation, moderate_text
 from services.premium import is_premium as _is_premium
 from services.push import register_device
 from utils import as_list
@@ -168,6 +167,7 @@ async def update_my_profile(
 
     if data.bio:
         mod_result = await moderate_text(profile.bio)
+        await log_moderation(user.id, "bio", profile.bio, mod_result)
         if mod_result["blocked"]:
             raise HTTPException(status_code=422, detail="Bio violates content policy")
 

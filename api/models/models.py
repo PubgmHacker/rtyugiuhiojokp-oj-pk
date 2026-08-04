@@ -103,7 +103,6 @@ class Profile(Base):
     photos: Mapped[str] = mapped_column(JSON, default=list)
     interests: Mapped[str] = mapped_column(JSON, default=list)
     ai_bio: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    verification_status: Mapped[str] = mapped_column(String, default="none")
     is_incognito: Mapped[bool] = mapped_column(Boolean, default=False)
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
@@ -254,16 +253,6 @@ class ProcessedPayment(Base):
     external_id: Mapped[str] = mapped_column(String)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     days: Mapped[int] = mapped_column(Integer, default=30)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class SwipeSession(Base):
-    __tablename__ = "dating_swipe_sessions"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), unique=True)
-    viewed_ids: Mapped[list] = mapped_column(JSON, default=list)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
