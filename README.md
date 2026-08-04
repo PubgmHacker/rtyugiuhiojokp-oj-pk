@@ -90,11 +90,16 @@ Telegram Stars, реферальный буст.
 удалением аккаунта.
 
 **Кросс-платформенность** — сообщение из веба уходит пушем в Telegram,
-лайк из веба приходит в бота с кнопками. Аккаунт один.
+лайк из веба приходит в бота с кнопками. Аккаунт один. В нативном
+iOS-приложении вход по одноразовому коду: `/link` в боте выдаёт код,
+приложение обменивает его на сессию.
 
 **Безопасность** — модерация фото и текста до публикации в обоих каналах
 регистрации, жалоба в один тап, эскалация по числу разных жалобщиков
-(3 — скрытие анкеты, 5 — автобан), строго 18+.
+(3 — скрытие анкеты, 5 — автобан) и только от тех, кто реально
+пересекался с целью. Блокировка пользователя необратима: пара исчезает
+из выдачи друг друга навсегда. Фото перекодируются перед загрузкой —
+EXIF с GPS-координатами не попадает в публичное хранилище. Строго 18+.
 
 ## Структура
 
@@ -104,15 +109,17 @@ souldawn-dating/
 │   ├── handlers/           # registration, dating, matches, premium,
 │   │                       # referral, account (меню, пауза, удаление)
 │   ├── middlewares/        # авторегистрация, антифлуд
-│   ├── services/           # модерация, R2, Redis-подписчик, CryptoBot
+│   ├── services/           # модерация, R2, Redis-подписчик, CryptoBot,
+│   │                       # link_codes (коды входа в приложение)
 │   └── texts.py            # все пользовательские строки
 ├── api/                    # FastAPI
 │   ├── routers/            # auth, profiles, likes, matches, chat,
-│   │                       # upload, report, admin
+│   │                       # upload, report, blocks, admin
 │   ├── services/           # ai_matchmaker, ai_moderation, matching,
-│   │                       # r2_storage, realtime
+│   │                       # r2_storage, realtime, image_sanitizer,
+│   │                       # link_codes
 │   ├── migrations/         # ревизии Alembic
-│   └── tests/              # smoke-тесты
+│   └── tests/              # smoke-тесты и тесты правок по аудиту
 ├── web/                    # React SPA
 │   ├── src/components/     # ui.tsx (примитивы), SwipeCard, SwipeDeck,
 │   │                       # MatchModal

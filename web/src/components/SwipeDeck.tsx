@@ -46,7 +46,13 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
       if (fresh.length) {
         addDeck(fresh);
         setIsExhausted(false);
-      } else if (!existing.size) {
+      } else {
+        // Сервер вернул ноль новых анкет — кандидаты кончились, и неважно,
+        // была ли локальная дека пуста на момент запроса. Раньше здесь
+        // проверялось `!existing.size`, захваченное до ответа сервера:
+        // при свайпах во время запроса дека успевала опустеть, флаг так и
+        // не выставлялся, и человек видел «Анкеты закончились» вместо
+        // честного «На сегодня всё».
         setIsExhausted(true);
       }
     } catch {

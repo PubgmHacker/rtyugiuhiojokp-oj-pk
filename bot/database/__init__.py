@@ -10,6 +10,7 @@ from database.connection import (
     create_like,
     check_mutual_like,
     create_match,
+    like_and_match,
     get_deck_profiles,
     get_match_partner,
     get_user_matches,
@@ -22,7 +23,18 @@ from database.connection import (
     delete_user_account,
     create_report,
 )
-from database.models import Base, User, Profile, Like, Match, Message, Referral, Subscription
+from database.models import (
+    Base,
+    Block,
+    User,
+    Profile,
+    Like,
+    Match,
+    Message,
+    ProcessedPayment,
+    Referral,
+    Subscription,
+)
 
 __all__ = [
     "engine",
@@ -36,6 +48,7 @@ __all__ = [
     "create_like",
     "check_mutual_like",
     "create_match",
+    "like_and_match",
     "get_deck_profiles",
     "get_match_partner",
     "get_user_matches",

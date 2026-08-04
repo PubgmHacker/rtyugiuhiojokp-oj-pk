@@ -2,15 +2,21 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Heart } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { authWithTelegram, authDev, type UserProfile } from "../lib/api";
+import {
+  authWithTelegram,
+  authDev,
+  authWithLinkCode,
+  type UserProfile,
+} from "../lib/api";
 import { getInitData, initTelegram, isInTelegram } from "../lib/telegram";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
-import { openExternal } from "../lib/native";
+import { openExternal, isNative } from "../lib/native";
 import { Button, Spinner } from "../components/ui";
 
 const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_bot";
+const CODE_LENGTH = 6;
 
 function getDeviceId(): string {
   let id = localStorage.getItem("sd_device_id");
@@ -26,7 +32,11 @@ export default function Login() {
   const { setUser, setToken } = useStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [code, setCode] = useState("");
   const inTelegram = isInTelegram();
+  // В нативной сборке Telegram initData недоступен, поэтому единственный
+  // рабочий вход — одноразовый код из бота
+  const native = isNative();
 
   // Внутри Telegram initData уже есть — входим сами, без лишнего нажатия
   const autoTried = useRef(false);
@@ -60,6 +70,24 @@ export default function Login() {
       setLoading(false);
     }
   }, [finishLogin]);
+
+  const loginWithCode = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { token, user } = await authWithLinkCode(code);
+      finishLogin(token, user);
+    } catch (e: any) {
+      setError(
+        e?.response?.data?.detail ??
+          "Код неверный или устарел. Запросите новый командой /link у бота."
+      );
+      setCode("");
+      haptic("error");
+    } finally {
+      setLoading(false);
+    }
+  }, [code, finishLogin]);
 
   const loginAsGuest = useCallback(async () => {
     setLoading(true);
@@ -146,32 +174,86 @@ export default function Login() {
           </div>
         )}
 
-        <Button
-          size="lg"
-          fullWidth
-          onClick={
-            inTelegram
-              ? loginWithTelegram
-              : () => openExternal(`https://t.me/${BOT_USERNAME}`)
-          }
-          disabled={loading}
-        >
-          {loading ? <Spinner size={20} /> : inTelegram ? "Войти" : "Открыть в Telegram"}
-        </Button>
+        {/* Нативное приложение: Telegram initData здесь недоступен, поэтому
+            вход идёт по одноразовому коду, который выдаёт бот командой /link */}
+        {native && !inTelegram ? (
+          <>
+            <label
+              htmlFor="link-code"
+              className="text-[13px] text-text-secondary text-center"
+            >
+              Введите код из бота — команда <code className="text-text">/link</code>
+            </label>
+            <input
+              id="link-code"
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH));
+                setError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && code.length === CODE_LENGTH && !loading) {
+                  loginWithCode();
+                }
+              }}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              aria-label="Код входа из бота"
+              className="w-full h-[56px] rounded-[var(--radius-control)]
+                         bg-surface-2 border border-border text-center
+                         text-[26px] tracking-[0.4em] font-semibold
+                         text-text placeholder:text-text-faint
+                         focus:outline-none focus:border-primary"
+            />
+            <Button
+              size="lg"
+              fullWidth
+              onClick={loginWithCode}
+              disabled={loading || code.length !== CODE_LENGTH}
+            >
+              {loading ? <Spinner size={20} /> : "Войти"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              fullWidth
+              onClick={() => openExternal(`https://t.me/${BOT_USERNAME}?start=link`)}
+              disabled={loading}
+            >
+              Получить код в Telegram
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="lg"
+              fullWidth
+              onClick={
+                inTelegram
+                  ? loginWithTelegram
+                  : () => openExternal(`https://t.me/${BOT_USERNAME}`)
+              }
+              disabled={loading}
+            >
+              {loading ? <Spinner size={20} /> : inTelegram ? "Войти" : "Открыть в Telegram"}
+            </Button>
 
-        {/* Гостевой вход живёт только при DEBUG на бэкенде: в проде
-            запрос вернёт ошибку, поэтому показываем его как
-            второстепенный путь и только вне Telegram */}
-        {!inTelegram && (
-          <Button
-            variant="secondary"
-            size="md"
-            fullWidth
-            onClick={loginAsGuest}
-            disabled={loading}
-          >
-            Продолжить как гость
-          </Button>
+            {/* Гостевой вход живёт только при DEBUG на бэкенде: в проде
+                запрос вернёт ошибку, поэтому показываем его как
+                второстепенный путь и только вне Telegram */}
+            {!inTelegram && (
+              <Button
+                variant="secondary"
+                size="md"
+                fullWidth
+                onClick={loginAsGuest}
+                disabled={loading}
+              >
+                Продолжить как гость
+              </Button>
+            )}
+          </>
         )}
 
         <p className="mt-3 text-[11.5px] text-text-faint text-center leading-relaxed">

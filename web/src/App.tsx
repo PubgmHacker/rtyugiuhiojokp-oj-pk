@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -7,8 +7,8 @@ import {
   useLocation,
   Link,
 } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Flame, MessageCircle, User, Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Flame, MessageCircle, User, Sparkles, WifiOff } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
 import { initNative } from "./lib/native";
@@ -113,6 +113,48 @@ function ScreenFallback() {
   );
 }
 
+/** Полоса «нет соединения» поверх интерфейса.
+ *
+ *  Без неё пропажа сети выглядела как поломка приложения: экраны молча
+ *  не сохраняли изменения, а единственным сигналом была вибрация, которой
+ *  на десктопе и в части WebView нет вовсе. */
+function OfflineBanner() {
+  const [offline, setOffline] = useState(
+    typeof navigator !== "undefined" && navigator.onLine === false
+  );
+
+  useEffect(() => {
+    const goOffline = () => setOffline(true);
+    const goOnline = () => setOffline(false);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
+  return (
+    <AnimatePresence>
+      {offline && (
+        <motion.div
+          role="status"
+          initial={{ y: -40, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -40, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 380, damping: 34 }}
+          className="fixed top-0 left-0 right-0 z-50 safe-top
+                     bg-warn/95 text-bg text-center text-[13px] font-semibold
+                     py-1.5 flex items-center justify-center gap-1.5"
+        >
+          <WifiOff size={14} />
+          Нет соединения — изменения не сохранятся
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function Protected({ children, nav = true }: { children: React.ReactNode; nav?: boolean }) {
   const token = useStore((s) => s.token);
   if (!token) return <Navigate to="/login" replace />;
@@ -142,6 +184,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <OfflineBanner />
       <Suspense fallback={<ScreenFallback />}>
         <Routes>
           {/* Публичный лендинг — отдельный статический сайт (landing/),

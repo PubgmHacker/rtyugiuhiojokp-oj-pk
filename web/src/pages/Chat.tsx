@@ -7,6 +7,7 @@ import {
   MoreVertical,
   Sparkles,
   Flag,
+  Ban,
   UserX,
   Check,
   CheckCheck,
@@ -16,6 +17,7 @@ import {
   getMatches,
   getIcebreakers,
   reportUser,
+  blockUser,
   unmatch,
   type ChatMessage,
   type MatchResponse,
@@ -192,6 +194,24 @@ export default function Chat() {
     }
   }, [match, navigate]);
 
+  const handleBlock = useCallback(async () => {
+    if (!match) return;
+    const name = match.partner.display_name || "этого пользователя";
+    if (
+      !window.confirm(
+        `Заблокировать ${name}?\n\nВы больше не увидите друг друга и не сможете связаться. Отменить можно в настройках профиля.`
+      )
+    )
+      return;
+    try {
+      await blockUser(match.partner.id);
+      haptic("success");
+      navigate("/matches", { replace: true });
+    } catch {
+      haptic("error");
+    }
+  }, [match, navigate]);
+
   const handleUnmatch = useCallback(async () => {
     if (!match) return;
     if (!window.confirm("Разорвать мэтч? Чат исчезнет у обоих.")) return;
@@ -283,6 +303,18 @@ export default function Chat() {
                     >
                       <Flag size={16} className="text-warn" />
                       Пожаловаться
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        handleBlock();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-3 text-left
+                                 text-[14.5px] border-t border-hairline
+                                 active:bg-surface transition-colors"
+                    >
+                      <Ban size={16} className="text-danger" />
+                      Заблокировать
                     </button>
                     <button
                       onClick={() => {

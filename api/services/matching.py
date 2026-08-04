@@ -9,7 +9,7 @@ from sqlalchemy import select, and_, not_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from models.models import User, Profile, Like, Subscription, Referral
+from models.models import User, Profile, Like, Block, Subscription, Referral
 from models.schemas import DeckProfile
 from services.ai_matchmaker import score_match
 from utils import as_list
@@ -55,10 +55,31 @@ async def get_deck_profiles(
     )
     liked_ids = {row[0] for row in result.all()}
 
+    # Блокировки действуют в обе стороны: и тот, кого я заблокировал, и тот,
+    # кто заблокировал меня, не должны попадать в деку. Иначе жертва
+    # харассмента снова увидит обидчика, а он — её.
+    result = await session.execute(
+        select(Block.blocked_id).where(Block.blocker_id == user_id)
+    )
+    blocked_ids = {row[0] for row in result.all()}
+    result = await session.execute(
+        select(Block.blocker_id).where(Block.blocked_id == user_id)
+    )
+    blocked_ids |= {row[0] for row in result.all()}
+
+    # Кто поставил мне «пропустить» — взаимности с ними уже не будет,
+    # показывать их анкеты повторно означает тратить деку впустую
+    result = await session.execute(
+        select(Like.liker_id).where(
+            and_(Like.liked_id == user_id, Like.type == "pass")
+        )
+    )
+    passed_me_ids = {row[0] for row in result.all()}
+
     # Exclude: self, liked/passed, banned, incognito users.
     # Не отмечаем анкеты «просмотренными» при загрузке — иначе повторный
     # запрос деки (перезагрузка страницы) сжигает непросмотренные анкеты.
-    exclude_ids = liked_ids | {user_id}
+    exclude_ids = liked_ids | blocked_ids | passed_me_ids | {user_id}
 
     result = await session.execute(
         select(Profile)

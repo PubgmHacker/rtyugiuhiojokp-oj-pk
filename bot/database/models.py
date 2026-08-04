@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -67,7 +68,11 @@ class Profile(Base):
 class Like(Base):
     __tablename__ = "dating_likes"
     # Схема ДОЛЖНА совпадать с api/models/models.py — один лайк на пару пользователей
-    __table_args__ = (UniqueConstraint("liker_id", "liked_id", name="uq_like_pair"),)
+    __table_args__ = (
+        UniqueConstraint("liker_id", "liked_id", name="uq_like_pair"),
+        Index("ix_like_liker", "liker_id"),
+        Index("ix_like_liked", "liked_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     liker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -79,7 +84,11 @@ class Like(Base):
 class Match(Base):
     __tablename__ = "dating_matches"
     # Схема ДОЛЖНА совпадать с api/models/models.py — один мэтч на пару пользователей
-    __table_args__ = (UniqueConstraint("user1_id", "user2_id", name="uq_match_pair"),)
+    __table_args__ = (
+        UniqueConstraint("user1_id", "user2_id", name="uq_match_pair"),
+        Index("ix_match_user1", "user1_id"),
+        Index("ix_match_user2", "user2_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user1_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -113,6 +122,7 @@ class Subscription(Base):
 
 class Message(Base):
     __tablename__ = "dating_messages"
+    __table_args__ = (Index("ix_message_match_created", "match_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
@@ -134,6 +144,7 @@ class Message(Base):
 
 class Report(Base):
     __tablename__ = "dating_reports"
+    __table_args__ = (Index("ix_report_reported", "reported_id"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     reporter_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -141,6 +152,39 @@ class Report(Base):
     reason: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(String, default="")
     status: Mapped[str] = mapped_column(String, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Block(Base):
+    """Постоянная блокировка. Схема совпадает с api/models/models.py."""
+
+    __tablename__ = "dating_blocks"
+    __table_args__ = (
+        UniqueConstraint("blocker_id", "blocked_id", name="uq_block_pair"),
+        Index("ix_block_blocker", "blocker_id"),
+        Index("ix_block_blocked", "blocked_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    blocker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    blocked_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProcessedPayment(Base):
+    """Журнал зачтённых платежей — защита от двойного начисления премиума.
+    Схема совпадает с api/models/models.py."""
+
+    __tablename__ = "dating_processed_payments"
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", name="uq_payment_external"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider: Mapped[str] = mapped_column(String)  # cryptobot | stars
+    external_id: Mapped[str] = mapped_column(String)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    days: Mapped[int] = mapped_column(Integer, default=30)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

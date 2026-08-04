@@ -172,6 +172,25 @@ async def cb_resume(callback: CallbackQuery):
     await callback.message.answer(T.RESUMED, reply_markup=main_kb())
 
 
+# ── Код для входа в приложение ──────────────────────────────────
+
+@router.message(StateFilter("*"), Command("link"))
+async def cmd_link(message: Message):
+    """Код для входа в приложение на iPhone.
+
+    В Mini App вход происходит сам через Telegram, но нативное приложение
+    отдельного окружения Telegram не видит — код единственный способ
+    перенести туда авторизацию.
+    """
+    from services.link_codes import issue_link_code
+
+    code = await issue_link_code(await _user_id(message))
+    if not code:
+        await message.answer(T.LINK_UNAVAILABLE, reply_markup=main_kb())
+        return
+    await message.answer(T.LINK_CODE.format(code=code), reply_markup=main_kb())
+
+
 # ── Удаление аккаунта (требование App Store) ────────────────────
 
 @router.message(StateFilter("*"), Command("delete"))

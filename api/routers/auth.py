@@ -16,6 +16,7 @@ from middleware.auth import (
 )
 from models.models import User, Profile, Subscription
 from models.schemas import AuthResponse, UserProfile
+from services.link_codes import redeem_code
 from utils import as_list
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -143,6 +144,37 @@ async def auth_dev(
     else:
         user.last_seen_at = datetime.now(timezone.utc)
 
+    await session.flush()
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    token = create_access_token(user.id, user.telegram_id)
+    return AuthResponse(success=True, token=token, user=_user_to_profile(user, profile))
+
+
+@router.post("/link", response_model=AuthResponse)
+async def auth_link_code(
+    data: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """Вход по одноразовому коду из бота — для нативного iOS-приложения.
+
+    В Mini App личность даёт initData, но в нативной сборке его нет, и это
+    единственный рабочий способ войти: пользователь берёт код командой
+    `/link` у бота и вводит здесь. Код одноразовый и живёт минуты.
+    """
+    code = str(data.get("code", ""))
+    user_id = await redeem_code(code)
+    if not user_id:
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
+
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.is_banned:
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
+
+    user.last_seen_at = datetime.now(timezone.utc)
     await session.flush()
 
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))

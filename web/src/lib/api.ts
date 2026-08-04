@@ -104,6 +104,14 @@ export async function authWithTelegram(initData: string): Promise<{ token: strin
   return { token: data.token, user: data.user };
 }
 
+/** Вход по одноразовому коду из бота (команда /link) — путь для iOS-приложения,
+ *  где Telegram initData недоступен. */
+export async function authWithLinkCode(code: string): Promise<{ token: string; user: UserProfile }> {
+  const { data } = await api.post("/auth/link", { code });
+  if (!data.success) throw new Error("Неверный или устаревший код");
+  return { token: data.token, user: data.user };
+}
+
 export async function getMyProfile(): Promise<UserProfile> {
   const { data } = await api.get("/profiles/me");
   return data;
@@ -153,6 +161,21 @@ export async function uploadPhoto(file: File): Promise<{ url: string; key: strin
 
 export async function reportUser(reportedId: string, reason: string, description = ""): Promise<void> {
   await api.post("/report", { reported_id: reportedId, reason, description });
+}
+
+/** Заблокировать навсегда: в отличие от размэтча, пара больше не увидит
+ *  друг друга в деке и не сможет связаться. */
+export async function blockUser(targetId: string): Promise<void> {
+  await api.post(`/blocks/${targetId}`);
+}
+
+export async function unblockUser(targetId: string): Promise<void> {
+  await api.delete(`/blocks/${targetId}`);
+}
+
+export async function getBlockedUsers(): Promise<UserProfile[]> {
+  const { data } = await api.get("/blocks");
+  return data;
 }
 
 export async function authDev(deviceId: string, name = ""): Promise<{ token: string; user: UserProfile }> {

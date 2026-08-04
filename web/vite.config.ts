@@ -11,5 +11,16 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // framer-motion нужен уже на экране входа, но меняется он редко —
+        // отдельным чанком он кешируется у пользователя между релизами
+        // и не тянется заново вместе с кодом приложения
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-motion": ["framer-motion"],
+        },
+      },
+    },
   },
 });

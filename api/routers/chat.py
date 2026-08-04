@@ -119,8 +119,15 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
 
             msg_type = data.get("type", "message")
 
+            # Любая активность продлевает присутствие: по нему решается,
+            # дублировать ли сообщение в Telegram
+            await manager.refresh_presence(match_id, user_id)
+
+            if msg_type == "ping":
+                continue
+
             if msg_type == "typing":
-                await manager.broadcast(
+                await manager.publish(
                     match_id,
                     {"type": "typing", "user_id": user_id},
                     exclude=websocket,
@@ -129,7 +136,7 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
 
             if msg_type == "read":
                 await _mark_read(match_id, user_id)
-                await manager.broadcast(
+                await manager.publish(
                     match_id,
                     {"type": "read", "reader_id": user_id},
                     exclude=websocket,
@@ -146,10 +153,12 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             if payload is None:
                 await websocket.close(code=4004, reason="Match is no longer active")
                 break
-            await manager.broadcast(match_id, payload)
+            # publish, а не broadcast: собеседник может сидеть на другом
+            # инстансе API, до него событие дойдёт только через Redis
+            await manager.publish(match_id, payload)
 
-            # Партнёр не в чате — уведомляем в Telegram через бота
-            if not manager.is_user_connected(match_id, partner_id):
+            # Партнёр не в чате (ни на одном инстансе) — уведомляем в Telegram
+            if not await manager.is_user_online(match_id, partner_id):
                 await publish_bot_event({
                     "type": "new_message",
                     "match_id": match_id,

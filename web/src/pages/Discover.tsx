@@ -70,6 +70,7 @@ function FilterSheet({
   const [ageMax, setAgeMax] = useState(user?.age_max ?? 45);
   const [distance, setDistance] = useState(user?.distance_max ?? 100);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   // При открытии подтягиваем актуальные значения из профиля
   useEffect(() => {
@@ -78,10 +79,12 @@ function FilterSheet({
     setAgeMin(user.age_min ?? 18);
     setAgeMax(user.age_max ?? 45);
     setDistance(user.distance_max ?? 100);
+    setSaveError("");
   }, [open, user]);
 
   const save = useCallback(async () => {
     setSaving(true);
+    setSaveError("");
     try {
       await updateMyProfile({
         looking_for: lookingFor,
@@ -96,6 +99,9 @@ function FilterSheet({
       haptic("success");
       onClose();
     } catch {
+      // Без видимого текста человек не понимает, почему фильтры не
+      // применились: вибрации на вебе может не быть вовсе
+      setSaveError("Не удалось сохранить. Проверьте соединение.");
       haptic("error");
     } finally {
       setSaving(false);
@@ -200,6 +206,16 @@ function FilterSheet({
                 onChange={setDistance}
               />
             </div>
+
+            {saveError && (
+              <p
+                role="alert"
+                className="mb-2.5 px-3.5 py-2.5 rounded-[var(--radius-tile)]
+                           bg-danger/12 border border-danger/30 text-danger text-[13px]"
+              >
+                {saveError}
+              </p>
+            )}
 
             <Button size="lg" fullWidth onClick={save} disabled={saving}>
               {saving ? <Spinner size={20} /> : "Применить"}

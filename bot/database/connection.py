@@ -11,11 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from config import DATABASE_URL
 from database.models import (
     Base,
+    Block,
     User,
     Profile,
     Like,
     Match,
     Message,
+    ProcessedPayment,
     Referral,
     Report,
     Subscription,
@@ -332,12 +334,51 @@ async def get_active_subscription(user_id: str) -> dict | None:
         }
 
 
-async def activate_premium(user_id: str, days: int = 30, payment_id: str = "") -> dict:
-    """Активировать/продлить Premium (оплата Telegram Stars)."""
+async def activate_premium(
+    user_id: str,
+    days: int = 30,
+    payment_id: str = "",
+    provider: str = "stars",
+) -> dict:
+    """Активировать/продлить Premium.
+
+    Идемпотентность держится на уникальном ключе (provider, external_id) в
+    dating_processed_payments, а не на сравнении с последним payment_id: инвойс
+    CryptoBot остаётся оплаченным навсегда, кнопку «Проверить оплату» можно
+    нажать повторно, и без журнала повторное нажатие начисляло премиум заново.
+    """
     from datetime import timedelta
+
+    from sqlalchemy.exc import IntegrityError
 
     cls = _session_cls()
     async with cls() as session:
+        # Платёж помечается зачтённым в отдельной транзакции: при гонке двух
+        # одновременных проверок одного инвойса второй INSERT упадёт на
+        # уникальном ключе и начисления не будет.
+        if payment_id:
+            try:
+                async with session.begin():
+                    session.add(
+                        ProcessedPayment(
+                            provider=provider,
+                            external_id=payment_id,
+                            user_id=user_id,
+                            days=days,
+                        )
+                    )
+            except IntegrityError:
+                await session.rollback()
+                result = await session.execute(
+                    select(Subscription).where(Subscription.user_id == user_id)
+                )
+                sub = result.scalar_one_or_none()
+                return {
+                    "plan": sub.plan if sub else "free",
+                    "expires_at": sub.expires_at.isoformat() if sub and sub.expires_at else "",
+                    "already_processed": True,
+                }
+
         async with session.begin():
             result = await session.execute(
                 select(Subscription).where(Subscription.user_id == user_id)
@@ -348,12 +389,6 @@ async def activate_premium(user_id: str, days: int = 30, payment_id: str = "") -
             if not sub:
                 sub = Subscription(user_id=user_id)
                 session.add(sub)
-            elif payment_id and sub.stripe_id == payment_id:
-                # Повторная проверка того же платежа — не продлеваем дважды
-                return {
-                    "plan": sub.plan,
-                    "expires_at": sub.expires_at.isoformat() if sub.expires_at else "",
-                }
 
             # Продление поверх остатка, а не с текущей даты
             base = now
@@ -372,6 +407,84 @@ async def activate_premium(user_id: str, days: int = 30, payment_id: str = "") -
 # ════════════════════════════════════════════════════════════════
 #  LIKES & MATCHES
 # ════════════════════════════════════════════════════════════════
+
+async def like_and_match(liker_id: str, liked_id: str, like_type: str = "like") -> dict:
+    """Поставить лайк и, если он взаимный, создать мэтч — одной транзакцией.
+
+    Раньше это были три независимые транзакции (create_like →
+    check_mutual_like → create_match) без блокировки, и два встречных лайка
+    в один момент не видели друг друга при READ COMMITTED: оба получали
+    «взаимности нет», мэтч терялся насовсем. Advisory-lock на нормализованную
+    пару — тот же, что в api/routers/likes.py, поэтому лайки из бота и из веба
+    сериализуются между собой.
+
+    Возвращает: matched — создан/подтверждён мэтч, match — данные мэтча,
+    upgraded — прежний pass заменён на лайк.
+    """
+    u1, u2 = (liker_id, liked_id) if liker_id < liked_id else (liked_id, liker_id)
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+                {"k": f"dating:pair:{u1}:{u2}"},
+            )
+
+            result = await session.execute(
+                select(Like).where(Like.liker_id == liker_id, Like.liked_id == liked_id)
+            )
+            existing = result.scalar_one_or_none()
+
+            upgraded = False
+            if existing:
+                if existing.type != like_type:
+                    # Смена решения: pass → like должен приводить к мэтчу,
+                    # иначе повторный лайк после пропуска молча терялся
+                    existing.type = like_type
+                    upgraded = True
+            else:
+                session.add(Like(liker_id=liker_id, liked_id=liked_id, type=like_type))
+            await session.flush()
+
+            if like_type == "pass":
+                return {"matched": False, "match": None, "upgraded": upgraded}
+
+            result = await session.execute(
+                select(Like).where(
+                    Like.liker_id == liked_id,
+                    Like.liked_id == liker_id,
+                    Like.type != "pass",
+                )
+            )
+            if not result.scalar_one_or_none():
+                return {"matched": False, "match": None, "upgraded": upgraded}
+
+            result = await session.execute(
+                select(Match).where(Match.user1_id == u1, Match.user2_id == u2)
+            )
+            match = result.scalar_one_or_none()
+            is_new = False
+            if match is None:
+                match = Match(user1_id=u1, user2_id=u2, is_active=True)
+                session.add(match)
+                await session.flush()
+                is_new = True
+            elif not match.is_active:
+                match.is_active = True
+                is_new = True
+
+            return {
+                "matched": True,
+                "is_new": is_new,
+                "upgraded": upgraded,
+                "match": {
+                    "id": match.id,
+                    "user1_id": match.user1_id,
+                    "user2_id": match.user2_id,
+                    "match_score": match.match_score,
+                },
+            }
+
 
 async def create_like(liker_id: str, liked_id: str, like_type: str = "like") -> dict:
     cls = _session_cls()

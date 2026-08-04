@@ -64,8 +64,20 @@ async def send_premium_offer(message: Message, user_id: str):
         await message.answer("Выберите способ оплаты:", reply_markup=payment_methods_kb())
 
 
-async def _grant_premium(message: Message, user_id: str, payment_id: str):
-    sub = await activate_premium(user_id, days=PREMIUM_DAYS, payment_id=payment_id)
+async def _grant_premium(message: Message, user_id: str, payment_id: str, provider: str):
+    sub = await activate_premium(
+        user_id, days=PREMIUM_DAYS, payment_id=payment_id, provider=provider
+    )
+    if sub.get("already_processed"):
+        # Этот платёж уже был зачтён — повторное нажатие «Проверить оплату»
+        # не должно продлевать подписку второй раз
+        logger.info(f"Premium: повторный зачёт отклонён user={user_id} charge={payment_id}")
+        expires = (sub.get("expires_at") or "")[:10]
+        await message.answer(
+            f"⭐ Этот платёж уже зачтён. Premium активен до {expires}.",
+            reply_markup=main_kb(),
+        )
+        return
     logger.info(f"Premium activated: user={user_id} charge={payment_id} until={sub['expires_at']}")
     await message.answer(
         f"🎉 <b>Premium активирован</b> до {sub['expires_at'][:10]}!\n\n"
@@ -126,7 +138,10 @@ async def on_successful_payment(message: Message):
         message.from_user.first_name or "",
     )
     await _grant_premium(
-        message, db_user["id"], message.successful_payment.telegram_payment_charge_id,
+        message,
+        db_user["id"],
+        message.successful_payment.telegram_payment_charge_id,
+        provider="stars",
     )
 
 
@@ -179,7 +194,9 @@ async def check_crypto_payment(callback: CallbackQuery):
 
     if paid:
         await callback.answer("Оплата найдена!")
-        await _grant_premium(callback.message, db_user["id"], f"cryptobot:{invoice_id}")
+        await _grant_premium(
+            callback.message, db_user["id"], invoice_id, provider="cryptobot"
+        )
     else:
         await callback.answer("Оплата пока не поступила. Попробуйте через минуту.", show_alert=True)
 

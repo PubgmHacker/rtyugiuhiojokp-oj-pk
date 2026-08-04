@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from config import BANNERS, SITE_URL
 from database import (
     get_or_create_user, get_profile, get_deck_profiles,
-    create_like, check_mutual_like, create_match, get_user_by_id,
+    like_and_match, get_user_by_id,
     create_report,
 )
 from keyboards import dating_action_kb, main_kb, profile_kb, report_reasons_kb
@@ -115,7 +115,9 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
     current_state = await state.get_state()
     in_registration = bool(current_state and current_state.startswith("RegistrationStates"))
 
-    await create_like(db_user["id"], target_id, like_type)
+    # Лайк и проверка взаимности — одной транзакцией под advisory-lock,
+    # иначе два встречных лайка в один момент теряют мэтч
+    like_result = await like_and_match(db_user["id"], target_id, like_type)
 
     if action == "pass":
         await callback.answer("👎 Пропущено")
@@ -129,12 +131,10 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
         return
 
     # action == "like"
-    result = await check_mutual_like(db_user["id"], target_id)
-    if result and result.get("mutual"):
-        # Взаимно: создаём мэтч и уведомляем обоих напрямую.
+    if like_result.get("matched"):
+        # Мэтч уже создан внутри like_and_match — здесь только уведомления.
         # publish_match_event тут НЕ зовём — его слушает этот же бот,
         # и оба пользователя получили бы уведомления дважды.
-        match = await create_match(db_user["id"], target_id)
         await callback.answer("🎉 Это мэтч!", show_alert=True)
 
         # Убираем карточку с «живыми» кнопками (повторные тапы = спам)

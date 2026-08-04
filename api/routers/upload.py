@@ -9,6 +9,7 @@ from middleware.auth import get_current_user
 from models.models import User
 from services.r2_storage import upload_photo_to_r2, delete_photo_from_r2
 from services.ai_moderation import moderate_image
+from services.image_sanitizer import ImageRejected, sanitize_image
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -27,15 +28,22 @@ async def upload_photo(
     if len(contents) > 10 * 1024 * 1024:  # 10 MB
         raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
 
+    # Перекодирование до модерации и до R2: срезает EXIF с GPS-координатами
+    # (для дейтинга это домашний адрес) и отсекает файлы, которые лишь
+    # притворяются картинкой через заголовок Content-Type.
+    try:
+        contents, content_type, file_ext = sanitize_image(contents)
+    except ImageRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     # AI Moderation
     mod_result = await moderate_image(contents)
     if mod_result["blocked"]:
         raise HTTPException(status_code=422, detail="Image violates content policy")
 
-    file_ext = file.content_type.split("/")[-1]  # jpeg, png, webp
     object_key = f"photos/{user.id}/{uuid.uuid4()}.{file_ext}"
 
-    url = await upload_photo_to_r2(object_key, contents, file.content_type)
+    url = await upload_photo_to_r2(object_key, contents, content_type)
     if not url:
         raise HTTPException(status_code=500, detail="Upload failed")
 

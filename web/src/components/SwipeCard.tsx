@@ -1,4 +1,4 @@
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, useEffect, memo } from "react";
 import {
   motion,
   useMotionValue,
@@ -86,6 +86,18 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
     },
     [photoIndex, photos.length]
   );
+
+  // Прогреваем остальные фото, как только карточка стала верхней: иначе
+  // первый тап по краю показывает скелетон, потому что браузер начинает
+  // грузить снимок только в момент, когда тот попадает в разметку
+  useEffect(() => {
+    if (!isTop || photos.length < 2) return;
+    photos.slice(1).forEach((src) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = src;
+    });
+  }, [isTop, photos]);
 
   /* ── Карточки под верхней: только фон, без интерактива ────── */
   if (!isTop) {
