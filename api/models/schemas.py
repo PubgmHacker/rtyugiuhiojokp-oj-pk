@@ -59,6 +59,9 @@ class ProfileUpdate(BaseModel):
     bio: Optional[str] = Field(None, max_length=500)
     gender: Optional[str] = Field(None, pattern="^(male|female|other)$")
     birth_date: Optional[str] = None  # ISO format "YYYY-MM-DD"
+    # Клиенту удобнее прислать возраст, чем дату рождения: точный день
+    # мы всё равно не спрашиваем. Пересчитывается в birth_date на сервере.
+    age: Optional[int] = Field(None, ge=18, le=99)
     city: Optional[str] = Field(None, max_length=100)
     latitude: Optional[float] = None
     longitude: Optional[float] = None

@@ -156,6 +156,14 @@ async def update_my_profile(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
 
+    # Возраст переводим в дату рождения: точный день не спрашиваем,
+    # для подбора по возрасту достаточно года. Явный birth_date главнее.
+    age_value = update_fields.pop("age", None)
+    if age_value and not update_fields.get("birth_date"):
+        update_fields["birth_date"] = datetime(
+            datetime.now(timezone.utc).year - int(age_value), 1, 1, tzinfo=timezone.utc
+        )
+
     for key, value in update_fields.items():
         if value is None:
             continue  # explicit null не затирает non-nullable колонки (иначе 500)

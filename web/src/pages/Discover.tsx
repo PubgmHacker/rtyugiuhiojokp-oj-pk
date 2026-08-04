@@ -18,7 +18,9 @@ export default function Discover() {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   return (
-    <div className="flex flex-col h-screen-safe">
+    // Высота за вычетом нижней навигации (её отступ задаёт Protected):
+    // при 100dvh кнопки действий уезжают под панель
+    <div className="flex flex-col h-[calc(100dvh-68px)]">
       <header className="chrome safe-top border-b border-hairline/60 shrink-0">
         <div className="flex items-center justify-between px-4 pb-2.5 min-h-[48px]">
           <h1 className="text-[24px] font-extrabold tracking-[-0.03em] text-gradient">

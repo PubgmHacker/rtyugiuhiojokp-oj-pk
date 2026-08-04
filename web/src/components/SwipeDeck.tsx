@@ -211,7 +211,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
       </AnimatePresence>
 
       {/* Кнопки действий */}
-      <div className="flex items-center justify-center gap-3.5 pt-4">
+      <div className="flex items-center justify-center gap-3.5 pt-4 pb-2">
         <IconButton
           label="Вернуть предыдущую анкету"
           onClick={handleRewind}

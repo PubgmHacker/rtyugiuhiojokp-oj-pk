@@ -57,7 +57,12 @@ class Settings(BaseSettings):
     # ── CORS ─────────────────────────────────────────────────────
     # Домены фронтенда через запятую. Звёздочка допустима только при
     # DEBUG: в проде список обязателен, иначе остаётся открытая дыра.
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:4173"
+    # localhost и 127.0.0.1 — разные origin'ы для браузера, поэтому в
+    # дефолте нужны оба: dev-сервер доступен по обоим адресам.
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173"
+    )
 
     @property
     def cors_origin_list(self) -> list[str]:

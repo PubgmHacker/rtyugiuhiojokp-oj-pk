@@ -42,13 +42,37 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relations
-    profile: Mapped[Optional["Profile"]] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
-    likes_given: Mapped[List["Like"]] = relationship(back_populates="liker", foreign_keys="[Like.liker_id]")
-    likes_received: Mapped[List["Like"]] = relationship(back_populates="liked", foreign_keys="[Like.liked_id]")
-    matches1: Mapped[List["Match"]] = relationship(back_populates="user1", foreign_keys="[Match.user1_id]")
-    matches2: Mapped[List["Match"]] = relationship(back_populates="user2", foreign_keys="[Match.user2_id]")
-    messages: Mapped[List["Message"]] = relationship(back_populates="sender")
-    subscription: Mapped[Optional["Subscription"]] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
+    # passive_deletes=True обязателен: иначе при удалении пользователя
+    # SQLAlchemy пытается обнулить внешние ключи (liked_id NOT NULL —
+    # и удаление аккаунта падает). Каскад выполняет сама БД,
+    # ondelete="CASCADE" объявлен на колонках ниже.
+    profile: Mapped[Optional["Profile"]] = relationship(
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    likes_given: Mapped[List["Like"]] = relationship(
+        back_populates="liker", foreign_keys="[Like.liker_id]", passive_deletes=True
+    )
+    likes_received: Mapped[List["Like"]] = relationship(
+        back_populates="liked", foreign_keys="[Like.liked_id]", passive_deletes=True
+    )
+    matches1: Mapped[List["Match"]] = relationship(
+        back_populates="user1", foreign_keys="[Match.user1_id]", passive_deletes=True
+    )
+    matches2: Mapped[List["Match"]] = relationship(
+        back_populates="user2", foreign_keys="[Match.user2_id]", passive_deletes=True
+    )
+    messages: Mapped[List["Message"]] = relationship(
+        back_populates="sender", passive_deletes=True
+    )
+    subscription: Mapped[Optional["Subscription"]] = relationship(
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Profile(Base):

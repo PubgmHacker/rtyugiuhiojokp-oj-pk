@@ -20,7 +20,6 @@ import { Spinner } from "./components/ui";
 import Discover from "./pages/Discover";
 import Login from "./pages/Login";
 
-const Landing = lazy(() => import("./pages/Landing"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Matches = lazy(() => import("./pages/Matches"));
 const Likes = lazy(() => import("./pages/Likes"));
@@ -145,7 +144,12 @@ export default function App() {
     <BrowserRouter>
       <Suspense fallback={<ScreenFallback />}>
         <Routes>
-          <Route path="/" element={<Landing />} />
+          {/* Публичный лендинг — отдельный статический сайт (landing/),
+              внутри приложения корень ведёт сразу в продукт */}
+          <Route
+            path="/"
+            element={<Navigate to={token ? "/discover" : "/login"} replace />}
+          />
           <Route
             path="/login"
             element={
@@ -166,7 +170,7 @@ export default function App() {
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected nav={false}><AdminDashboard /></Protected>} />
 
-          <Route path="*" element={<Navigate to={token ? "/discover" : "/"} replace />} />
+          <Route path="*" element={<Navigate to={token ? "/discover" : "/login"} replace />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
