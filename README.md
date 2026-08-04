@@ -1,35 +1,20 @@
-# 💕 Souldawn Dating
+# 💕 Souldawn
 
-Сервис знакомств нового поколения. Объединяет механику «Леонардо Дайвинчик» (ТГ-бот) с Tinder-подобным UI (Web/iOS), дополненный AI-мэтчами на базе GLM.
-
-## Что уже работает (MVP)
-
-- **Свайп-дека** с фильтрами (пол, возраст), drag + кнопки, rewind
-- **Взаимный лайк → мэтч** с AI-скорингом совместимости (0–100 + объяснение), защита от дублей мэтча
-- **«Кто меня лайкнул»** — отдельная вкладка, ответный лайк даёт мгновенный мэтч (у Тиндера это платно)
-- **Real-time чат** по WebSocket: доставка партнёру, индикатор «печатает…», галочки прочтения
-- **AI-айсбрейкеры** — 3 персональных первых сообщения по анкете партнёра (тап — отправлено)
-- **Кросс-платформенный мост**: сообщение из веба → пуш в Telegram через бота (и наоборот), лайк из веба → анкета лайкнувшего приходит в бота с кнопками 👍/👎 (механика Дайвинчика)
-- **Бот**: анкета-регистрация (FSM), просмотр анкет, мэтчи + уведомления обеим сторонам, чат, подсказки для первого сообщения
-- **Безопасность**: жалоба + размэтч в один клик из чата, автобан по 3 жалобам, AI-модерация текста и фото
-- **Гостевой вход** (`/auth/dev`, только при `DEBUG=true`) — тестируйте веб без Telegram
-- **Админка**: статистика, пользователи, жалобы, лог модерации
-- **Умная дека** — сортировка по общим интересам, городу и расстоянию (не рандом)
-- **Геолокация** — «поиск рядом» с радиусом (haversine), координаты по разрешению
-- **Premium за Telegram Stars** (`/premium` в боте, 250 ⭐/30 дней): инкогнито-режим,
-  буст в выдаче; фото из бота перезаливаются в R2 и видны в вебе
-
-## Архитектура
+Сервис знакомств: Telegram-бот с простотой «Дайвинчика», Telegram Mini App
+и iOS-приложение с современным интерфейсом, плюс лендинг с юридическими
+страницами.
 
 ```
-Telegram Bot (aiogram)  ←→  Redis Pub/Sub  ←→  FastAPI Backend  ←→  PostgreSQL
-                                    ↕                            ↕
-                              Bot: мэтчи/уведомления       Cloudflare R2 (фото)
-                                    ↕
-React Frontend (Vite) ←→  WebSocket (real-time чат)
-  ├─ Web PWA (браузер)
+Telegram Bot (aiogram 3) ←→ Redis Pub/Sub ←→ FastAPI ←→ PostgreSQL 16
+                                  ↕                        ↕
+                          уведомления о мэтчах      Cloudflare R2 (фото)
+                                  ↕
+React 19 + Vite ←→ WebSocket (чат)
+  ├─ Web PWA
   ├─ Telegram Mini App
-  └─ iOS App (Capacitor)
+  └─ iOS (Capacitor 8)
+
+landing/ — статический сайт и юридические документы
 ```
 
 ## Стек
@@ -39,134 +24,145 @@ React Frontend (Vite) ←→  WebSocket (real-time чат)
 | Бот | Python 3.12 + aiogram 3 + SQLAlchemy async |
 | API | FastAPI + Pydantic v2 + WebSocket |
 | Real-time | Redis Pub/Sub |
-| Frontend | React 19 + Vite + Tailwind 4 + Framer Motion |
-| БД | PostgreSQL 16 |
+| Фронтенд | React 19 + Vite 6 + Tailwind 4 + Framer Motion + zustand |
+| БД | PostgreSQL 16, миграции через Alembic |
 | Медиа | Cloudflare R2 |
-| AI | Zhipu AI (GLM-4v / GLM-4) — модерация + мэтчинг |
-| iOS | Capacitor.js |
+| AI | Zhipu GLM — модерация контента и скоринг совместимости |
+| iOS | Capacitor 8 (Swift Package Manager), Xcode 16+ |
+| Лендинг | Статика: HTML + CSS + ванильный JS |
 | Хостинг | Railway (bot + api + web) |
 
 ## Быстрый старт
 
-### 1. Скопируй env
 ```bash
-cp .env.example .env
-# Заполни BOT_TOKEN (от @BotFather), ZHIPU_API_KEY, R2 ключи
+cp .env.example .env      # заполните BOT_TOKEN, ZHIPU_API_KEY, R2_*
+docker compose up -d      # PostgreSQL, Redis, API :8000, бот, веб :5173
+cd api && alembic upgrade head
 ```
 
-### 2. Запусти через Docker Compose
-```bash
-docker compose up -d
-```
-Это поднимет: PostgreSQL, Redis, API (:8000), Бот, Web (:5173).
+- Веб: http://localhost:5173
+- Документация API: http://localhost:8000/docs (только при `DEBUG=true`)
+- Бот: напишите `/start`
+- Лендинг: `cd landing && python3 -m http.server 8000`
 
-### 3. Применить миграции БД
-```bash
-cd prisma
-npx prisma db push
-```
+Без `BOT_TOKEN` / `ZHIPU_API_KEY` / `R2_*` проект тоже запускается:
+проверка initData отключается, модерация переходит на словарный фильтр,
+фото остаются как `file_id` Telegram.
 
-### 4. Открой
-- **Web**: http://localhost:5173 (вне Telegram — кнопка «Продолжить как гость»)
-- **API docs**: http://localhost:8000/docs
-- **Бот**: напиши `/start` в Telegram
+## Локальная разработка без Docker
 
-> Без `BOT_TOKEN`/`ZHIPU_API_KEY`/`R2_*` всё тоже работает: верификация initData отключается,
-> AI-скоринг падает на эвристику по интересам, фото — на placeholder-URL.
-
-## Без Docker (локальная разработка)
-
-### PostgreSQL + Redis
 ```bash
 docker compose up -d postgres redis
+
+cd api && pip install -r requirements.txt && uvicorn main:app --reload --port 8000
+cd bot && pip install -r requirements.txt && python bot.py
+cd web && npm install && npm run dev
 ```
 
-### API Backend
+## iOS
+
 ```bash
-cd api
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+./tools/ios-build.sh simulator   # проверка сборки
+./tools/ios-build.sh open        # открыть в Xcode
+DEVELOPMENT_TEAM=XXXXXXXXXX ./tools/ios-build.sh archive   # релиз
 ```
 
-### Telegram Bot
+Capacitor CLI требует Node ≥ 22 — скрипт сам находит подходящую версию,
+если основная в системе старее. Публикация, разбор рисков ревью и
+чек-лист — в [APPSTORE.md](APPSTORE.md).
+
+Иконки и splash генерируются из кода:
+
 ```bash
-cd bot
-pip install -r requirements.txt
-python bot.py
+python3 tools/make_icons.py
 ```
 
-### React Frontend
-```bash
-cd web
-npm install
-npm run dev
-```
+## Что умеет
+
+**Бот** — регистрация за 7 коротких шагов с кнопкой «Назад», просмотр
+анкет с `❤️`/`👎`, взаимный лайк с уведомлением обеим сторонам, жалоба с
+выбором причины, пауза показа анкеты, удаление аккаунта, Premium за
+Telegram Stars, реферальный буст.
+
+**Mini App и веб** — свайп-дека с пружинной физикой и подсветкой жеста,
+шторка фильтров, экран взаимной симпатии, чат по WebSocket с
+переподключением и дедупликацией, «кто меня лайкнул», профиль с
+удалением аккаунта.
+
+**Кросс-платформенность** — сообщение из веба уходит пушем в Telegram,
+лайк из веба приходит в бота с кнопками. Аккаунт один.
+
+**Безопасность** — модерация фото и текста до публикации в обоих каналах
+регистрации, жалоба в один тап, эскалация по числу разных жалобщиков
+(3 — скрытие анкеты, 5 — автобан), строго 18+.
 
 ## Структура
 
 ```
-dating/
-├── docker-compose.yml
-├── prisma/schema.prisma      # 9 моделей (source of truth)
-├── bot/                      # Telegram-бот
-│   ├── bot.py               # Entry point
-│   ├── config.py            # Env vars
-│   ├── database/            # SQLAlchemy ORM + CRUD
-│   ├── handlers/            # registration, dating, matches
-│   ├── middlewares/         # auto-registration
-│   ├── services/            # Redis subscriber
-│   ├── keyboards.py         # Inline keyboards
-│   ├── states.py            # FSM states
-│   └── texts.py             # Messages
-├── api/                      # FastAPI backend
-│   ├── main.py              # App + CORS + lifespan
-│   ├── database/            # Async session factory
-│   ├── models/              # SQLAlchemy ORM + Pydantic schemas
-│   ├── routers/             # auth, profiles, likes, matches, chat, upload, report
-│   ├── services/            # ai_matchmaker, ai_moderation, matching, r2_storage, realtime
-│   └── middleware/          # JWT auth dependency
-└── web/                      # React SPA
-    ├── src/
-    │   ├── App.tsx          # Router + BottomNav
-    │   ├── pages/           # Login, Onboarding, Discover, Matches, Chat, Profile
-    │   ├── components/      # SwipeCard, SwipeDeck, MatchModal
-    │   ├── lib/             # api.ts, websocket.ts, telegram.ts, store.ts
-    │   └── styles/           # Tailwind globals
-    ├── capacitor.config.ts   # iOS обёртка
-    └── public/              # manifest.json, sw.js
+souldawn-dating/
+├── bot/                    # Telegram-бот
+│   ├── handlers/           # registration, dating, matches, premium,
+│   │                       # referral, account (меню, пауза, удаление)
+│   ├── middlewares/        # авторегистрация, антифлуд
+│   ├── services/           # модерация, R2, Redis-подписчик, CryptoBot
+│   └── texts.py            # все пользовательские строки
+├── api/                    # FastAPI
+│   ├── routers/            # auth, profiles, likes, matches, chat,
+│   │                       # upload, report, admin
+│   ├── services/           # ai_matchmaker, ai_moderation, matching,
+│   │                       # r2_storage, realtime
+│   ├── migrations/         # ревизии Alembic
+│   └── tests/              # smoke-тесты
+├── web/                    # React SPA
+│   ├── src/components/     # ui.tsx (примитивы), SwipeCard, SwipeDeck,
+│   │                       # MatchModal
+│   ├── src/lib/            # api, store, websocket, telegram,
+│   │                       # haptics, native
+│   ├── src/styles/         # globals.css — дизайн-система
+│   └── ios/                # нативный проект Capacitor
+├── landing/                # лендинг и юридические страницы
+├── tools/                  # make_icons.py, ios-build.sh
+├── prisma/schema.prisma    # описание схемы БД
+├── APPSTORE.md             # публикация в App Store
+└── DEPLOY.md               # деплой и миграции
 ```
 
-## AI-фичи (GLM-5.2)
+## Дизайн-система
 
-### AI Matchmaker (`api/services/ai_matchmaker.py`)
-- При создании мэтча — GLM-4 анализирует обе анкеты
-- Скоринг совместимости 0-100 + текстовое объяснение
-- Fallback: простой алгоритм по общим интересам
+Единый источник токенов — `web/src/styles/globals.css`. Лендинг
+повторяет те же значения вручную, поскольку собирается без тулчейна.
 
-### AI Модерация (`api/services/ai_moderation.py`)
-- Проверка текста (bio) через GLM-4 — блокировка NSFW/спам/мошенничество
-- Проверка фото через GLM-4V (multimodal) — блокировка nudity/weapon/drugs
-- Авто-бан при 3+ жалобах от пользователей
+- Фон `#0b0a12`, поверхности `#191725` / `#221f31`
+- Бренд-градиент «рассвет»: `#ff3d71 → #ff5c7a → #ff7a5c → #ffc46b`
+- Акцент `#ff3d71`, успех `#2ee6a8`, верификация `#4da3ff`
+- Шрифт Inter, крупные заголовки с `letter-spacing: -0.035em`
+- Скругления: карточки 28px, плитки 18px
+- Liquid Glass: `blur(24px) saturate(180%)` поверх `rgb(255 255 255 / 0.07)`
+- Движение: пружина `stiffness 380 / damping 34`, уважается
+  `prefers-reduced-motion`
 
-## App Store Submission Checklist
+Экраны собираются из примитивов `web/src/components/ui.tsx` — `Button`,
+`IconButton`, `Chip`, `Card`, `Skeleton`, `EmptyState`, `ScreenHeader`,
+`VerifiedBadge`, `Spinner`. Хардкодить цвета в компонентах не нужно.
 
-- [ ] Apple Sign-In (требование 4.8 при наличии сторонней авторизации)
-- [ ] Кнопка «Пожаловаться/Заблокировать» в каждом профиле и чате
-- [ ] Content Moderation Policy URL
-- [ ] Возрастной рейтинг 17+ (Dating)
-- [ ] Privacy Policy URL
-- [ ] Terms of Service URL
-- [ ] Уведомление о покупке Premium до транзакции
-- [ ] TestFlight бета-тестирование (минимум 2 недели)
-- [ ] Скриншоты для iPhone 15 Pro Max, iPad Pro
-- [ ] Отчёт о контент-модерации
-
-## Данные для .
+## Переменные окружения
 
 | Переменная | Где взять |
 |---|---|
-| `BOT_TOKEN` | @BotFather в Telegram |
-| `ZHIPU_API_KEY` | https://open.bigmodel.cn |
+| `BOT_TOKEN` | @BotFather |
+| `ZHIPU_API_KEY` | https://open.bigmodel.cn — без него модерация по словарю |
 | `R2_*` | Cloudflare Dashboard → R2 |
-| `STRIPE_*` | https://dashboard.stripe.com (Premium) |
-| `APPLE_*` | Apple Developer Portal |
+| `DATABASE_URL`, `REDIS_URL` | Railway или локальный docker compose |
+| `CORS_ORIGINS` | Домены фронтенда, через запятую |
+| `DEBUG` | `false` в проде: закрывает `/docs` и гостевой вход |
+
+Полный список с комментариями — в `.env.example`.
+
+## Проверка перед пушем
+
+```bash
+cd web && npx tsc -b && npm run build
+cd api && python -m compileall -q . && python -m pytest tests/ -q
+cd bot && python -m compileall -q .
+./tools/ios-build.sh simulator
+```

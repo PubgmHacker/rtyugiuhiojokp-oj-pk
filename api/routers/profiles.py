@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,11 +15,22 @@ from sqlalchemy import and_, or_
 from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import User, Profile, Like, Referral, Subscription, SwipeSession
+from models.models import (
+    User,
+    Profile,
+    Like,
+    Match,
+    Message,
+    Referral,
+    Subscription,
+    SwipeSession,
+)
 from models.schemas import DeckProfile, ProfileUpdate, UserProfile
 from services.matching import get_deck_profiles
 from services.ai_moderation import moderate_text
 from utils import as_list
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 settings = get_settings()
@@ -190,3 +204,119 @@ async def update_my_profile(
         has_location=profile.latitude is not None,
         **(await _referral_stats(session, user.id)),
     )
+
+
+@router.get("/me/export")
+async def export_my_data(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Выгрузка своих данных одним JSON-файлом.
+
+    Ожидаемая возможность для приватности: пользователь должен иметь
+    доступ к тому, что о нём хранится.
+    """
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    result = await session.execute(select(Like).where(Like.liker_id == user.id))
+    likes = result.scalars().all()
+
+    result = await session.execute(
+        select(Match).where(or_(Match.user1_id == user.id, Match.user2_id == user.id))
+    )
+    matches = result.scalars().all()
+
+    result = await session.execute(select(Message).where(Message.sender_id == user.id))
+    messages = result.scalars().all()
+
+    payload = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "account": {
+            "id": user.id,
+            "telegram_id": user.telegram_id,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "is_verified": user.is_verified,
+        },
+        "profile": {
+            "display_name": profile.display_name if profile else "",
+            "bio": profile.bio if profile else "",
+            "gender": profile.gender if profile else "",
+            "city": profile.city if profile else "",
+            "birth_date": (
+                profile.birth_date.isoformat() if profile and profile.birth_date else None
+            ),
+            "photos": as_list(profile.photos) if profile else [],
+            "interests": as_list(profile.interests) if profile else [],
+            "has_location": bool(profile and profile.latitude is not None),
+        },
+        "likes_given": [
+            {"target_id": l.liked_id, "type": l.type, "at": l.created_at.isoformat() if l.created_at else None}
+            for l in likes
+        ],
+        "matches": [
+            {
+                "id": m.id,
+                "partner_id": m.user2_id if m.user1_id == user.id else m.user1_id,
+                "at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in matches
+        ],
+        "messages_sent": [
+            {
+                "match_id": msg.match_id,
+                "text": msg.text,
+                "at": msg.created_at.isoformat() if msg.created_at else None,
+            }
+            for msg in messages
+        ],
+    }
+
+    filename = f"souldawn-data-{user.id[:8]}.json"
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.delete("/me", status_code=204)
+async def delete_my_account(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Полное удаление аккаунта и всех связанных данных.
+
+    Обязательная возможность по требованию App Store 5.1.1(v): удалять
+    надо действительно, а не помечать флагом. Связанные таблицы
+    вычищаются каскадом (ondelete="CASCADE" в моделях).
+    """
+    photo_urls: list[str] = []
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+    if profile:
+        photo_urls = [p for p in as_list(profile.photos) if isinstance(p, str)]
+
+    result = await session.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    await session.delete(db_user)
+    await session.commit()
+
+    # Файлы в объектном хранилище каскад не удалит — чистим отдельно.
+    # Сбой здесь не должен отменять уже выполненное удаление аккаунта.
+    if photo_urls:
+        try:
+            from services.r2_storage import delete_photo_from_r2
+
+            prefix = (settings.R2_PUBLIC_URL or "").rstrip("/") + "/"
+            for url in photo_urls:
+                # В базе хранятся публичные URL, а удаление принимает ключ
+                # объекта; file_id из Telegram пропускаем
+                if prefix != "/" and url.startswith(prefix):
+                    await delete_photo_from_r2(url[len(prefix) :])
+        except Exception as e:
+            logger.warning(f"Не удалось удалить фото из R2 после удаления аккаунта: {e}")
+
+    return Response(status_code=204)

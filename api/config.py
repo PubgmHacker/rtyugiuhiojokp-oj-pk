@@ -54,6 +54,18 @@ class Settings(BaseSettings):
     MAX_AGE: int = 99
     DECK_SIZE: int = 10  # анкет за один запрос
 
+    # ── CORS ─────────────────────────────────────────────────────
+    # Домены фронтенда через запятую. Звёздочка допустима только при
+    # DEBUG: в проде список обязателен, иначе остаётся открытая дыра.
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:4173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        if not self.DEBUG:
+            origins = [o for o in origins if o != "*"]
+        return origins or ["http://localhost:5173"]
+
     @property
     def admin_id_list(self) -> list[int]:
         if not self.ADMIN_IDS:

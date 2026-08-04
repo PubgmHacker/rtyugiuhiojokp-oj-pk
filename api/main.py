@@ -4,8 +4,9 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, WebSocketDisconnect
+from fastapi import FastAPI, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from config import get_settings
 from routers import auth, profiles, likes, matches, chat, upload, report, admin
@@ -77,10 +78,11 @@ app = FastAPI(
 )
 
 # CORS: авторизация через Bearer-заголовок, куки не используем —
-# credentials выключены (wildcard + credentials браузеры отвергают)
+# credentials выключены. Список origin'ов приходит из CORS_ORIGINS,
+# в проде звёздочка отбрасывается (см. Settings.cors_origin_list).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,11 +99,63 @@ app.include_router(report.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Логируем стектрейс, наружу отдаём нейтральный текст.
+
+    Без этого FastAPI возвращает пустой 500, а в DEBUG-режиме способен
+    показать внутренности приложения.
+    """
+    logger.exception(f"Необработанная ошибка на {request.method} {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Внутренняя ошибка сервера. Попробуйте позже."},
+    )
+
+
 @app.get("/health")
-async def health():
-    return {"status": "ok", "service": "souldawn-dating-api"}
+async def health(response: Response):
+    """Health-check, который реально проверяет зависимости.
+
+    Railway и балансировщику нужен честный ответ: сервис без БД
+    работать не может, поэтому такое состояние отдаём как 503.
+    """
+    checks: dict[str, str] = {}
+
+    try:
+        from sqlalchemy import text as sa_text
+        from database.connection import engine
+
+        async with engine.connect() as conn:
+            await conn.execute(sa_text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as e:
+        logger.warning(f"Health: база недоступна: {e}")
+        checks["database"] = "fail"
+
+    try:
+        from services.realtime import get_redis
+
+        r = await get_redis()
+        await r.ping()
+        checks["redis"] = "ok"
+    except Exception as e:
+        logger.warning(f"Health: Redis недоступен: {e}")
+        checks["redis"] = "degraded"
+
+    # Без Redis чат теряет real-time, но сервис остаётся работоспособным;
+    # без базы — нет
+    healthy = checks["database"] == "ok"
+    if not healthy:
+        response.status_code = 503
+
+    return {
+        "status": "ok" if healthy else "unhealthy",
+        "service": "souldawn-dating-api",
+        "checks": checks,
+    }
 
 
 @app.get("/")
 async def root():
-    return {"service": "Souldawn Dating API", "version": "0.1.0", "docs": "/docs"}
+    return {"service": "Souldawn Dating API", "version": "0.1.0"}
