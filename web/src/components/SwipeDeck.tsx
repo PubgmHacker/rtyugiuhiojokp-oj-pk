@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Heart, Star, RotateCcw, SlidersHorizontal, Mail } from "lucide-react";
 import type { DeckProfile, MatchResponse } from "../lib/api";
-import { likeProfile, getDeck, resetDeck, getSuperlikeQuota } from "../lib/api";
+import { likeProfile, getDeck, resetDeck, getSuperlikeQuota, recordVisit } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import SwipeCard, { type SwipeDirection } from "./SwipeCard";
@@ -40,6 +40,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   // Блокируем повторный свайп, пока текущий не обработан — иначе
   // быстрые тапы отправляют лайк за уже удалённую карточку
   const busyRef = useRef(false);
+  // Кому визит уже отправлен в этой сессии: карточка перерисовывается на
+  // каждый жест, и без этого один просмотр давал бы десяток запросов
+  const visitedRef = useRef<Set<string>>(new Set());
 
   const loadDeck = useCallback(async () => {
     if (loadingRef.current) return;
@@ -89,6 +92,16 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
       .then((q) => setSuperlikesLeft(q.left))
       .catch(() => setSuperlikesLeft(null)); // счётчик необязателен
   }, []);
+
+  // Визит отмечаем для той анкеты, что реально оказалась сверху — не для всей
+  // выданной деки: она приходит на десяток вперёд, и записывать её целиком
+  // значило бы врать в разделе «Гости»
+  useEffect(() => {
+    const top = deck[0];
+    if (!top || visitedRef.current.has(top.id)) return;
+    visitedRef.current.add(top.id);
+    recordVisit(top.id);
+  }, [deck]);
 
   const handleSwipe = useCallback(
     async (direction: SwipeDirection, profile: DeckProfile, note = "") => {

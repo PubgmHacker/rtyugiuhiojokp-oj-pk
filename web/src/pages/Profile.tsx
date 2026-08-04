@@ -15,6 +15,7 @@ import {
   Download,
   ChevronRight,
   AlertTriangle,
+  Eye,
   Ban,
 } from "lucide-react";
 import {
@@ -23,8 +24,10 @@ import {
   deleteMyAccount,
   exportMyData,
   getBlockedUsers,
+  getMyVisitors,
   unblockUser,
   type UserProfile,
+  type VisitorsOut,
 } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
@@ -249,6 +252,9 @@ export default function Profile() {
           <p className="text-[15px] leading-relaxed selectable">{profile.bio}</p>
         </Card>
       )}
+
+      {/* ── Гости ─────────────────────────────────────────────── */}
+      <VisitorsCard />
 
       {/* ── Интересы ──────────────────────────────────────────── */}
       {!!profile?.interests?.length && (
@@ -658,4 +664,89 @@ function DeleteAccountDialog({
       )}
     </AnimatePresence>
   );
+}
+
+/* ── Гости: кто заходил в анкету ────────────────────────────── */
+
+function VisitorsCard() {
+  const [data, setData] = useState<VisitorsOut | null>(null);
+
+  useEffect(() => {
+    getMyVisitors()
+      .then(setData)
+      .catch(() => setData(null)); // раздел необязателен, молчим
+  }, []);
+
+  // Пока не знаем и когда гостей нет — блока нет: пустая карточка «0 гостей»
+  // только занимает место на экране
+  if (!data || data.total === 0) return null;
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="flex items-center gap-2.5 mb-3">
+        <Eye size={18} className="text-accent" />
+        <span className="font-semibold text-[15px] flex-1">Гости</span>
+        <span className="text-caption text-text-muted">
+          {data.total} {plural(data.total, "человек", "человека", "человек")}
+        </span>
+      </div>
+
+      {data.revealed ? (
+        <div className="flex flex-wrap gap-2">
+          {data.visitors.map((v) => (
+            <div
+              key={v.profile.id}
+              className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full
+                         bg-surface-2 border border-hairline"
+            >
+              {v.profile.photos?.[0] ? (
+                <img
+                  src={v.profile.photos[0]}
+                  alt=""
+                  loading="lazy"
+                  className="w-7 h-7 rounded-full object-cover"
+                />
+              ) : (
+                <span
+                  className="w-7 h-7 rounded-full flex items-center justify-center
+                             text-[12px] font-bold text-white/50"
+                  style={{ background: "var(--gradient-placeholder)" }}
+                >
+                  {v.profile.display_name?.[0]?.toUpperCase() ?? "?"}
+                </span>
+              )}
+              <span className="text-[13.5px]">
+                {v.profile.display_name || "Аноним"}
+                {v.profile.age ? `, ${v.profile.age}` : ""}
+              </span>
+              {v.visits > 1 && (
+                <span className="text-[12px] text-text-muted">×{v.visits}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        // Число гостей показываем всем: скрыв и его, мы не дали бы повода
+        // купить — человек не знает, что к нему вообще кто-то заходил
+        <Link
+          to="/plans"
+          onClick={() => haptic("light")}
+          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-[var(--radius-tile)]
+                     border border-accent/25 bg-accent/8"
+        >
+          <Crown size={16} className="text-accent shrink-0" />
+          <span className="flex-1 text-[13.5px]">Узнать, кто заходил — в Ultra</span>
+          <ChevronRight size={16} className="text-text-faint shrink-0" />
+        </Link>
+      )}
+    </Card>
+  );
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
 }

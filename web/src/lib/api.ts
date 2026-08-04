@@ -245,6 +245,38 @@ export async function exportMyData(): Promise<Blob> {
   return data;
 }
 
+/* ── Гости ──────────────────────────────────────────────────── */
+
+export interface VisitorOut {
+  profile: UserProfile;
+  visits: number;
+  last_seen_at?: string | null;
+}
+
+export interface VisitorsOut {
+  total: number;
+  /** false — число гостей известно, а кто именно, видно только на Ultra. */
+  revealed: boolean;
+  visitors: VisitorOut[];
+}
+
+export async function getMyVisitors(): Promise<VisitorsOut> {
+  const { data } = await api.get("/profiles/me/visitors");
+  return data;
+}
+
+/**
+ * Отметить, что анкета показана. Ошибку глушим: статистика визитов не должна
+ * мешать свайпать, а повтор всё равно только обновит время.
+ */
+export async function recordVisit(profileId: string): Promise<void> {
+  try {
+    await api.post(`/profiles/${profileId}/visit`);
+  } catch {
+    /* не мешаем просмотру */
+  }
+}
+
 /* ── Тарифы ─────────────────────────────────────────────────── */
 
 export interface PlanOut {

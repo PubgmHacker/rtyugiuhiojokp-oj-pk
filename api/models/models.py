@@ -266,6 +266,36 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ProfileVisit(Base):
+    """Кто открывал чью анкету — раздел «Гости».
+
+    Одна строка на пару с обновлением времени, а не журнал всех заходов:
+    открыть анкету можно десятки раз за вечер, и полный журнал распухал бы
+    без пользы. В разделе всё равно показывается «кто заходил», а не
+    «сколько раз».
+
+    Инкогнито здесь не хранится: анкета невидимки просто не попадает в деку,
+    поэтому и визитов от неё не будет.
+    """
+
+    __tablename__ = "dating_profile_visits"
+    __table_args__ = (
+        UniqueConstraint("visitor_id", "host_id", name="uq_visit_pair"),
+        # Раздел «Гости» читает свои визиты по host_id, свежие сверху
+        Index("ix_visit_host_seen", "host_id", "last_seen_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    visitor_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    host_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: Сколько раз заходил — для подписи «заходил 5 раз».
+    visits: Mapped[int] = mapped_column(Integer, default=1)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ProcessedPayment(Base):
     """Журнал зачтённых платежей. Уникальный ключ (provider, external_id) —
     единственная надёжная защита от двойного начисления премиума: инвойс

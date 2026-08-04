@@ -205,6 +205,27 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ProfileVisit(Base):
+    """Кто открывал чью анкету — раздел «Гости» в мини-аппе.
+    Схема совпадает с api/models/models.py; бот визиты не пишет, но обе схемы
+    создают таблицы в одной БД и обязаны совпадать."""
+
+    __tablename__ = "dating_profile_visits"
+    __table_args__ = (
+        UniqueConstraint("visitor_id", "host_id", name="uq_visit_pair"),
+        Index("ix_visit_host_seen", "host_id", "last_seen_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    visitor_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    host_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    visits: Mapped[int] = mapped_column(Integer, default=1)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ProcessedPayment(Base):
     """Журнал зачтённых платежей — защита от двойного начисления премиума.
     Схема совпадает с api/models/models.py."""

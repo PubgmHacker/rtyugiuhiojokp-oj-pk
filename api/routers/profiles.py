@@ -24,17 +24,55 @@ from models.models import (
     Referral,
     Subscription,
 )
-from models.schemas import DeckProfile, DeviceRegistration, ProfileUpdate, UserProfile
+from models.schemas import (
+    DeckProfile,
+    DeviceRegistration,
+    ProfileUpdate,
+    UserProfile,
+    VisitorOut,
+    VisitorsOut,
+)
 from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text
-from services.premium import is_premium as _is_premium
+from services.plans import tier_allows
+from services.premium import current_tier, is_premium as _is_premium
 from services.push import register_device
+from services.visits import count_visits, list_visitors, record_visit
 from utils import as_list
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 settings = get_settings()
+
+
+def _calc_age(birth_date: Optional[datetime]) -> Optional[int]:
+    if not birth_date:
+        return None
+    now = datetime.now()
+    age = now.year - birth_date.year
+    if (now.month, now.day) < (birth_date.month, birth_date.day):
+        age -= 1
+    return age
+
+
+def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
+    """Публичная часть чужой анкеты — то же, что видно на карточке в деке."""
+    if not profile:
+        return UserProfile(id=user_id)
+    return UserProfile(
+        id=user_id,
+        display_name=profile.display_name or "",
+        bio=profile.bio or "",
+        gender=profile.gender or "other",
+        age=_calc_age(profile.birth_date),
+        city=profile.city or "",
+        photos=as_list(profile.photos),
+        interests=as_list(profile.interests),
+        goal=profile.goal or "",
+        subculture=profile.subculture or "",
+        height_cm=profile.height_cm,
+    )
 
 
 @router.get("/deck", response_model=list[DeckProfile])
@@ -46,6 +84,51 @@ async def get_deck(
     """Получить анкеты для свайпов."""
     profiles = await get_deck_profiles(session, user.id, limit)
     return profiles
+
+
+@router.post("/{profile_id}/visit", status_code=204)
+async def record_profile_visit(
+    profile_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Отметить, что пользователь увидел эту анкету.
+
+    Вызывается клиентом, когда карточка реально показана сверху деки, а не при
+    выдаче деки: дека отдаёт десяток анкет вперёд, и записывать их все значило
+    бы врать в разделе «Гости».
+
+    Ответ пустой и ошибок не возвращает: статистика не должна ломать просмотр.
+    """
+    await record_visit(session, visitor_id=user.id, host_id=profile_id)
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.get("/me/visitors", response_model=VisitorsOut)
+async def get_my_visitors(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Раздел «Гости»: кто заходил в анкету.
+
+    Число гостей отдаём всем, а вот кто именно — только на Ultra. Скрывать и
+    число тоже значило бы не дать повода купить: человек не знает, что там
+    вообще кто-то есть.
+    """
+    total = await count_visits(session, user.id)
+    if not tier_allows(await current_tier(session, user.id), "visitors"):
+        return VisitorsOut(total=total, revealed=False, visitors=[])
+
+    visitors = [
+        VisitorOut(
+            profile=_deck_like_profile(profile, visitor_id),
+            visits=visits,
+            last_seen_at=last_seen,
+        )
+        for profile, visitor_id, visits, last_seen in await list_visitors(session, user.id)
+    ]
+    return VisitorsOut(total=total, revealed=True, visitors=visitors)
 
 
 @router.post("/deck/reset")

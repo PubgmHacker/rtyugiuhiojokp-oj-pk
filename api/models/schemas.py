@@ -200,6 +200,22 @@ class DeviceRegistration(BaseModel):
 #  IN-APP PURCHASES
 # ════════════════════════════════════════════════════════════════
 
+class VisitorOut(BaseModel):
+    """Один гость: анкета плюс когда и сколько раз заходил."""
+
+    profile: UserProfile
+    visits: int = 1
+    last_seen_at: Optional[datetime] = None
+
+
+class VisitorsOut(BaseModel):
+    """Раздел «Гости». `revealed=false` — число видно, а кто именно нет."""
+
+    total: int = 0
+    revealed: bool = False
+    visitors: list[VisitorOut] = Field(default_factory=list)
+
+
 class PlanOut(BaseModel):
     """Один покупаемый вариант для витрины."""
 

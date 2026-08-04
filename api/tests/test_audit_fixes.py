@@ -1419,3 +1419,97 @@ def test_витрина_и_гейт_лайков_есть_в_апи(openapi):
     # список выглядел бы как «вас никто не лайкал»
     assert 'tier_allows(await current_tier(session, user.id), "see_who_liked")' in likes
     assert "is_locked=True" in likes
+
+
+# ════════════════════════════════════════════════════════════════
+#  Гости: кто заходил в анкету (уровень Ultra)
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_гостей(openapi):
+    paths = openapi["paths"]
+    assert "/api/profiles/me/visitors" in paths
+    # Визит отмечает клиент при показе карточки: дека отдаёт анкеты на десяток
+    # вперёд, и записывать её целиком значило бы врать в разделе
+    assert "/api/profiles/{profile_id}/visit" in paths
+    assert "post" in paths["/api/profiles/{profile_id}/visit"]
+
+
+def test_визит_уникален_по_паре():
+    """Журнал всех заходов распухал бы: анкету открывают десятки раз за вечер.
+    Уникальный ключ нужен и для UPSERT, которым визит создаётся и обновляется."""
+    from models.models import ProfileVisit
+
+    constraints = {
+        tuple(col.name for col in c.columns)
+        for c in ProfileVisit.__table__.constraints
+        if c.__class__.__name__ == "UniqueConstraint"
+    }
+    assert ("visitor_id", "host_id") in constraints
+
+    indexes = {idx.name for idx in ProfileVisit.__table__.indexes}
+    assert "ix_visit_host_seen" in indexes, "раздел читает визиты по host_id"
+
+
+def test_гости_под_гейтом_но_число_видно_всем():
+    """Скрыв и число, мы не дали бы повода купить: человек не знает, что к
+    нему вообще заходили. Поэтому total отдаём всегда, а список — с Ultra."""
+    from pathlib import Path
+
+    from services.plans import tier_allows
+
+    assert tier_allows("ultra", "visitors")
+    assert not tier_allows("plus", "visitors")
+    assert not tier_allows("free", "visitors")
+
+    роутер = (
+        Path(__file__).resolve().parents[1] / "routers" / "profiles.py"
+    ).read_text(encoding="utf-8")
+    assert "VisitorsOut(total=total, revealed=False, visitors=[])" in роутер
+
+
+def test_свой_визит_не_считается():
+    """«Вы заходили к себе» — бесполезная строка в разделе."""
+    import inspect
+
+    from services import visits
+
+    исходник = inspect.getsource(visits.record_visit)
+    assert "if visitor_id == host_id:" in исходник
+    assert "return" in исходник
+
+
+def test_визит_пишется_через_upsert():
+    """SELECT-потом-INSERT падал бы на уникальном ключе при двух
+    одновременных открытиях анкеты."""
+    import inspect
+
+    from services import visits
+
+    исходник = inspect.getsource(visits.record_visit)
+    assert "on_conflict_do_update" in исходник
+    assert "uq_visit_pair" in исходник
+
+
+def test_заблокированные_не_видны_среди_гостей():
+    """Жертва харассмента не должна видеть обидчика даже в списке визитов."""
+    import inspect
+
+    from services import visits
+
+    исходник = inspect.getsource(visits.list_visitors)
+    assert "Block.blocker_id == host_id" in исходник
+    assert "Block.blocked_id == host_id" in исходник
+
+
+def test_клиент_отмечает_визит_один_раз_на_анкету():
+    """Карточка перерисовывается на каждый жест — без защиты один просмотр
+    давал бы десяток запросов."""
+    from pathlib import Path
+
+    дека = (
+        Path(__file__).resolve().parents[2]
+        / "web" / "src" / "components" / "SwipeDeck.tsx"
+    ).read_text(encoding="utf-8")
+
+    assert "recordVisit" in дека
+    assert "visitedRef" in дека, "нет защиты от повторной отправки"
