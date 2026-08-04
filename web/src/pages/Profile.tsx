@@ -14,11 +14,14 @@ import {
   FileText,
   ChevronRight,
   AlertTriangle,
+  Ban,
 } from "lucide-react";
 import {
   getMyProfile,
   updateMyProfile,
   deleteMyAccount,
+  getBlockedUsers,
+  unblockUser,
   type UserProfile,
 } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -38,6 +41,10 @@ export default function Profile() {
   const [incognitoBusy, setIncognitoBusy] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Блокировку нужно уметь снять — иначе функция незакончена и человек
+  // не может исправить случайный тап
+  const [blocked, setBlocked] = useState<UserProfile[] | null>(null);
+  const [blockedOpen, setBlockedOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +59,32 @@ export default function Profile() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const openBlocked = useCallback(async () => {
+    haptic("light");
+    setBlockedOpen(true);
+    try {
+      setBlocked(await getBlockedUsers());
+    } catch {
+      setBlocked([]);
+    }
+  }, []);
+
+  const handleUnblock = useCallback(async (id: string, name: string) => {
+    if (
+      !window.confirm(
+        `Разблокировать ${name || "этого пользователя"}?\n\nМэтч и переписка не вернутся — знакомиться придётся заново.`
+      )
+    )
+      return;
+    try {
+      await unblockUser(id);
+      setBlocked((list) => (list ?? []).filter((u) => u.id !== id));
+      haptic("success");
+    } catch {
+      haptic("error");
+    }
+  }, []);
 
   const handleGeolocate = useCallback(async () => {
     setGeoStatus("busy");
@@ -326,6 +359,69 @@ export default function Profile() {
           {linkCopied ? "Ссылка скопирована" : "Скопировать приглашение"}
         </Button>
       </Card>
+
+      {/* ── Заблокированные ──────────────────────────────────── */}
+      <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
+        <button
+          onClick={() => (blockedOpen ? setBlockedOpen(false) : openBlocked())}
+          className="w-full flex items-center gap-3 px-4 py-3.5 bg-surface
+                     active:bg-surface-2 transition-colors"
+        >
+          <Ban size={17} className="text-text-muted shrink-0" />
+          <span className="flex-1 text-left text-[15px]">Заблокированные</span>
+          <ChevronRight
+            size={17}
+            className={`text-text-faint shrink-0 transition-transform ${
+              blockedOpen ? "rotate-90" : ""
+            }`}
+          />
+        </button>
+
+        <AnimatePresence initial={false}>
+          {blockedOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden border-t border-hairline bg-surface-2"
+            >
+              {blocked === null ? (
+                <div className="flex justify-center py-4">
+                  <Spinner size={18} />
+                </div>
+              ) : blocked.length === 0 ? (
+                <p className="px-4 py-3.5 text-[13.5px] text-text-muted">
+                  Вы никого не блокировали.
+                </p>
+              ) : (
+                blocked.map((u, i) => (
+                  <div
+                    key={u.id}
+                    className={`flex items-center gap-3 px-4 py-2.5
+                                ${i > 0 ? "border-t border-hairline" : ""}`}
+                  >
+                    <div className="w-8 h-8 rounded-full overflow-hidden bg-surface shrink-0">
+                      {u.photos?.[0] && (
+                        <img src={u.photos[0]} alt="" className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                    <span className="flex-1 text-[14px] truncate">
+                      {u.display_name || "Без имени"}
+                    </span>
+                    <button
+                      onClick={() => handleUnblock(u.id, u.display_name || "")}
+                      className="text-[13px] text-accent font-medium tap-target px-1"
+                    >
+                      Разблокировать
+                    </button>
+                  </div>
+                ))
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* ── Документы и правила ───────────────────────────────── */}
       <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">

@@ -22,6 +22,8 @@ from database.connection import (
     is_profile_hidden,
     delete_user_account,
     create_report,
+    block_user,
+    get_blocked_ids,
 )
 from database.models import (
     Base,
@@ -60,4 +62,6 @@ __all__ = [
     "is_profile_hidden",
     "delete_user_account",
     "create_report",
+    "block_user",
+    "get_blocked_ids",
 ]

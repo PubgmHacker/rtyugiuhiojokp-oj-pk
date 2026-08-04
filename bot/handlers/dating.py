@@ -11,7 +11,7 @@ from config import BANNERS, SITE_URL
 from database import (
     get_or_create_user, get_profile, get_deck_profiles,
     like_and_match, get_user_by_id,
-    create_report,
+    create_report, block_user,
 )
 from keyboards import dating_action_kb, main_kb, profile_kb, report_reasons_kb
 from states import DatingStates
@@ -249,6 +249,36 @@ async def send_report(callback: CallbackQuery, state: FSMContext):
         await _show_next_from_deck(callback.message, db_user["id"], state)
     except Exception as e:
         logger.warning(f"Не удалось показать следующую анкету после жалобы: {e}")
+
+
+@router.callback_query(F.data.startswith("block:"))
+async def block_from_deck(callback: CallbackQuery, state: FSMContext):
+    """Заблокировать навсегда и показать следующую анкету.
+
+    Жалоба уходит модератору и решается не сразу, а блокировка нужна
+    человеку немедленно — поэтому это отдельное действие.
+    """
+    target_id = callback.data.split(":", 1)[-1]
+
+    try:
+        db_user = await get_or_create_user(callback.from_user.id, "", "")
+        await block_user(db_user["id"], target_id)
+    except Exception as e:
+        logger.warning(f"Не удалось заблокировать пользователя: {e}")
+        await callback.answer(T.ERROR_GENERIC, show_alert=True)
+        return
+
+    await callback.answer("Заблокировано")
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.message.answer(T.BLOCK_DONE)
+
+    try:
+        await _show_next_from_deck(callback.message, db_user["id"], state)
+    except Exception as e:
+        logger.warning(f"Не удалось показать следующую анкету после блокировки: {e}")
 
 
 @router.callback_query(F.data.startswith("report:"), ~F.data.startswith("report:send:"))

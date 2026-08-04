@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, text, func
+from sqlalchemy import select, text, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
@@ -292,6 +292,36 @@ async def create_report(
                 select(func.count(func.distinct(Report.reporter_id))).where(
                     Report.reported_id == reported_id,
                     Report.status == "pending",
+                    # В счёт идут только те, кто реально пересекался с целью:
+                    # иначе пять свежих аккаунтов банят любого за секунды
+                    or_(
+                        select(Like.liker_id)
+                        .where(
+                            Like.liked_id == reported_id,
+                            Like.liker_id == Report.reporter_id,
+                        )
+                        .exists(),
+                        select(Like.liked_id)
+                        .where(
+                            Like.liker_id == reported_id,
+                            Like.liked_id == Report.reporter_id,
+                        )
+                        .exists(),
+                        select(Match.id)
+                        .where(
+                            or_(
+                                and_(
+                                    Match.user1_id == reported_id,
+                                    Match.user2_id == Report.reporter_id,
+                                ),
+                                and_(
+                                    Match.user2_id == reported_id,
+                                    Match.user1_id == Report.reporter_id,
+                                ),
+                            )
+                        )
+                        .exists(),
+                    ),
                 )
             )
             distinct_reporters = counted.scalar() or 0
@@ -311,6 +341,74 @@ async def create_report(
                 if profile:
                     profile.is_incognito = True
     return True
+
+
+# ════════════════════════════════════════════════════════════════
+#  BLOCKS
+# ════════════════════════════════════════════════════════════════
+
+async def block_user(blocker_id: str, blocked_id: str) -> bool:
+    """Заблокировать навсегда: пара исчезает из выдачи друг друга.
+
+    В отличие от жалобы (уходит модератору) действует сразу, и в отличие
+    от размэтча необратима для второй стороны. Мэтч деактивируется, лайки
+    в обе стороны удаляются — иначе после снятия блокировки пара
+    смэтчилась бы заново старыми лайками.
+    """
+    if blocker_id == blocked_id:
+        return False
+
+    from sqlalchemy.exc import IntegrityError
+
+    cls = _session_cls()
+    async with cls() as session:
+        try:
+            async with session.begin():
+                session.add(Block(blocker_id=blocker_id, blocked_id=blocked_id))
+        except IntegrityError:
+            await session.rollback()
+            return True  # уже заблокирован — результат тот же
+
+        async with session.begin():
+            u1, u2 = (
+                (blocker_id, blocked_id)
+                if blocker_id < blocked_id
+                else (blocked_id, blocker_id)
+            )
+            result = await session.execute(
+                select(Match).where(Match.user1_id == u1, Match.user2_id == u2)
+            )
+            match = result.scalar_one_or_none()
+            if match:
+                match.is_active = False
+
+            await session.execute(
+                Like.__table__.delete().where(
+                    or_(
+                        and_(Like.liker_id == blocker_id, Like.liked_id == blocked_id),
+                        and_(Like.liker_id == blocked_id, Like.liked_id == blocker_id),
+                    )
+                )
+            )
+        return True
+
+
+async def get_blocked_ids(user_id: str) -> set[str]:
+    """Кого пользователь заблокировал и кто заблокировал его.
+
+    Блокировка действует в обе стороны, иначе обидчик продолжал бы видеть
+    анкету жертвы и мог бы связаться первым.
+    """
+    cls = _session_cls()
+    async with cls() as session:
+        result = await session.execute(
+            select(Block.blocked_id).where(Block.blocker_id == user_id)
+        )
+        ids = {row[0] for row in result.all()}
+        result = await session.execute(
+            select(Block.blocker_id).where(Block.blocked_id == user_id)
+        )
+        return ids | {row[0] for row in result.all()}
 
 
 # ════════════════════════════════════════════════════════════════
@@ -557,13 +655,32 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         result = await session.execute(
             select(Like.liked_id).where(Like.liker_id == user_id)
         )
-        liked_ids = {row[0] for row in result.all()} | {user_id}
+        exclude_ids = {row[0] for row in result.all()} | {user_id}
+
+        # Блокировки — в обе стороны, иначе жертва снова увидит обидчика
+        result = await session.execute(
+            select(Block.blocked_id).where(Block.blocker_id == user_id)
+        )
+        exclude_ids |= {row[0] for row in result.all()}
+        result = await session.execute(
+            select(Block.blocker_id).where(Block.blocked_id == user_id)
+        )
+        exclude_ids |= {row[0] for row in result.all()}
+
+        # Кто поставил мне «пропустить» — взаимности уже не будет,
+        # показывать их анкеты значит тратить деку впустую
+        result = await session.execute(
+            select(Like.liker_id).where(
+                Like.liked_id == user_id, Like.type == "pass"
+            )
+        )
+        exclude_ids |= {row[0] for row in result.all()}
 
         filters = [
             User.is_banned == False,
             Profile.is_incognito == False,
             Profile.display_name != "",  # пустые анкеты не показываем
-            Profile.user_id.notin_(liked_ids) if liked_ids else True,
+            Profile.user_id.notin_(exclude_ids) if exclude_ids else True,
         ]
         if my and my.looking_for and my.looking_for != "any":
             filters.append(Profile.gender.in_([my.looking_for, "other"]))

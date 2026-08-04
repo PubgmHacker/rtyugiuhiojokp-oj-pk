@@ -144,6 +144,9 @@ def report_reasons_kb(target_id: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Нагота", callback_data=f"report:send:{target_id}:nudity")],
             [InlineKeyboardButton(text="Обман, мошенничество", callback_data=f"report:send:{target_id}:scam")],
             [InlineKeyboardButton(text="Чужие фото", callback_data=f"report:send:{target_id}:fake")],
+            # Блокировка — отдельное действие: жалоба уходит модератору,
+            # а заблокированный исчезает из выдачи сразу и навсегда
+            [InlineKeyboardButton(text="🚫 Заблокировать", callback_data=f"block:{target_id}")],
             [InlineKeyboardButton(text="← Отмена", callback_data="dating:next")],
         ]
     )
