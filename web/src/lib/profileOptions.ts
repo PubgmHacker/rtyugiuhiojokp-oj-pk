@@ -40,3 +40,19 @@ export function optionLabel(options: Option[], value: string): string {
 
 export const HEIGHT_MIN = 140;
 export const HEIGHT_MAX = 210;
+
+/**
+ * Причины жалобы. Набор обязан совпадать с REPORT_REASONS в
+ * api/models/schemas.py и с кнопками бота: жалоба с неизвестной причиной не
+ * пройдёт валидацию API и останется без подписи в админке.
+ */
+export const REPORT_REASONS: Option[] = [
+  { value: "spam", label: "Спам или реклама" },
+  { value: "harassment", label: "Оскорбления" },
+  { value: "nudity", label: "Нагота" },
+  { value: "scam", label: "Мошенничество" },
+  { value: "fake", label: "Чужие фото" },
+  { value: "drugs", label: "Наркотики" },
+  { value: "underage", label: "Похоже, ребёнок" },
+  { value: "other", label: "Другое" },
+];

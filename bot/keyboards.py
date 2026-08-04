@@ -160,11 +160,19 @@ def dating_action_kb(profile_user_id: str) -> InlineKeyboardMarkup:
 def report_reasons_kb(target_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Спам или реклама", callback_data=f"report:send:{target_id}:spam")],
-            [InlineKeyboardButton(text="Оскорбления", callback_data=f"report:send:{target_id}:harassment")],
-            [InlineKeyboardButton(text="Нагота", callback_data=f"report:send:{target_id}:nudity")],
-            [InlineKeyboardButton(text="Обман, мошенничество", callback_data=f"report:send:{target_id}:scam")],
-            [InlineKeyboardButton(text="Чужие фото", callback_data=f"report:send:{target_id}:fake")],
+            [
+                InlineKeyboardButton(text="Спам", callback_data=f"report:send:{target_id}:spam"),
+                InlineKeyboardButton(text="Оскорбления", callback_data=f"report:send:{target_id}:harassment"),
+            ],
+            [
+                InlineKeyboardButton(text="Нагота", callback_data=f"report:send:{target_id}:nudity"),
+                InlineKeyboardButton(text="Мошенничество", callback_data=f"report:send:{target_id}:scam"),
+            ],
+            [
+                InlineKeyboardButton(text="Чужие фото", callback_data=f"report:send:{target_id}:fake"),
+                InlineKeyboardButton(text="Наркотики", callback_data=f"report:send:{target_id}:drugs"),
+            ],
+            [InlineKeyboardButton(text="Похоже, ребёнок", callback_data=f"report:send:{target_id}:underage")],
             # Блокировка — отдельное действие: жалоба уходит модератору,
             # а заблокированный исчезает из выдачи сразу и навсегда
             [InlineKeyboardButton(text="🚫 Заблокировать", callback_data=f"block:{target_id}")],

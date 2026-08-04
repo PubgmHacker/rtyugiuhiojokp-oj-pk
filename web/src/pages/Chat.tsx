@@ -25,7 +25,8 @@ import {
 import { ChatWebSocket, type ConnectionStatus } from "../lib/websocket";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
-import { Skeleton, Spinner, VerifiedBadge } from "../components/ui";
+import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
+import { REPORT_REASONS } from "../lib/profileOptions";
 
 export default function Chat() {
   const { matchId } = useParams<{ matchId: string }>();
@@ -180,19 +181,25 @@ export default function Chat() {
     }
   }, [matchId, loadingIce]);
 
-  const handleReport = useCallback(async () => {
-    if (!match) return;
-    const name = match.partner.display_name || "этого пользователя";
-    if (!window.confirm(`Пожаловаться на ${name}? Мэтч будет удалён.`)) return;
-    try {
-      await reportUser(match.partner.id, "other", "Жалоба из чата");
-      await unmatch(match.id);
-      haptic("success");
-      navigate("/matches", { replace: true });
-    } catch {
-      haptic("error");
-    }
-  }, [match, navigate]);
+  // Причину выбирает человек: раньше любая жалоба уходила как «other», и
+  // модератор не понимал, на что смотреть в первую очередь
+  const [reportOpen, setReportOpen] = useState(false);
+
+  const sendReport = useCallback(
+    async (reason: string) => {
+      if (!match) return;
+      setReportOpen(false);
+      try {
+        await reportUser(match.partner.id, reason, "Жалоба из чата");
+        await unmatch(match.id);
+        haptic("success");
+        navigate("/matches", { replace: true });
+      } catch {
+        haptic("error");
+      }
+    },
+    [match, navigate]
+  );
 
   const handleBlock = useCallback(async () => {
     if (!match) return;
@@ -296,7 +303,7 @@ export default function Chat() {
                     <button
                       onClick={() => {
                         setMenuOpen(false);
-                        handleReport();
+                        setReportOpen(true);
                       }}
                       className="w-full flex items-center gap-2.5 px-4 py-3 text-left
                                  text-[14.5px] active:bg-surface transition-colors"
@@ -524,7 +531,80 @@ export default function Chat() {
           </button>
         </div>
       </div>
+
+      <ReportSheet
+        open={reportOpen}
+        name={match?.partner.display_name || "этого пользователя"}
+        onClose={() => setReportOpen(false)}
+        onPick={sendReport}
+      />
     </div>
+  );
+}
+
+/* ── Выбор причины жалобы ───────────────────────────────────── */
+
+function ReportSheet({
+  open,
+  name,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  name: string;
+  onClose: () => void;
+  onPick: (reason: string) => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          />
+          <motion.div
+            role="dialog"
+            aria-label="Причина жалобы"
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", stiffness: 380, damping: 36 }}
+            className="fixed bottom-0 left-0 right-0 z-50 bg-bg-elevated
+                       rounded-t-[var(--radius-sheet)] border-t border-hairline
+                       px-5 pt-3 pb-7 safe-bottom max-h-[80dvh] overflow-y-auto no-scrollbar"
+          >
+            <div className="w-10 h-1 rounded-full bg-surface-3 mx-auto mb-5" />
+
+            <h2 className="text-heading font-bold mb-1.5">Пожаловаться на {name}</h2>
+            <p className="text-caption text-text-muted mb-4">
+              Мэтч будет удалён, а жалоба уйдёт модератору
+            </p>
+
+            <div className="flex flex-col gap-1.5 mb-4">
+              {REPORT_REASONS.map((r) => (
+                <button
+                  key={r.value}
+                  onClick={() => onPick(r.value)}
+                  className="w-full px-4 py-3 rounded-[var(--radius-tile)] text-left
+                             bg-surface-2 border border-hairline text-[15px]
+                             active:bg-surface transition-colors"
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+
+            <Button variant="secondary" size="lg" fullWidth onClick={onClose}>
+              Отмена
+            </Button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
 

@@ -156,9 +156,24 @@ class DeckProfile(BaseModel):
 #  REPORTS
 # ════════════════════════════════════════════════════════════════
 
+#: Причины жалобы. Набор общий для бота, мини-аппа и админки: жалоба с
+#: причиной, которой нет в этом списке, не будет ни принята API, ни подписана
+#: в админке — так и случилось с «fake», которую слал только бот.
+REPORT_REASONS = (
+    "spam",
+    "harassment",
+    "nudity",
+    "scam",
+    "fake",
+    "underage",
+    "drugs",
+    "other",
+)
+
+
 class ReportRequest(BaseModel):
     reported_id: str
-    reason: str = Field(pattern="^(spam|harassment|nudity|scam|other)$")
+    reason: str = Field(pattern="^(" + "|".join(REPORT_REASONS) + ")$")
     description: str = Field(default="", max_length=1000)
 
 

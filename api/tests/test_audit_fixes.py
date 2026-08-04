@@ -1262,3 +1262,37 @@ def test_бот_умеет_ставить_лайк_с_текстом():
     assert "waiting_like_message" in состояния
     # Текст уходит вместе с лайком, а не отдельным сообщением в чат
     assert 'like_and_match(db_user["id"], target_id, "like", note)' in хендлеры
+
+
+def test_причины_жалобы_совпадают_во_всех_слоях():
+    """Бот слал «fake», которой не было в схеме — жалоба из мини-аппа с такой
+    причиной получила бы 422, а в админке осталась бы без подписи.
+
+    Причина жалобы гуляет по четырём местам: схема API, кнопки бота, список в
+    мини-аппе и подписи в админке. Расхождение здесь не падает с ошибкой —
+    оно молча теряет сигнал о нарушителе.
+    """
+    import re
+    from pathlib import Path
+
+    from models.schemas import REPORT_REASONS
+
+    корень = Path(__file__).resolve().parents[2]
+    кнопки = (корень / "bot" / "keyboards.py").read_text(encoding="utf-8")
+    веб = (корень / "web" / "src" / "lib" / "profileOptions.ts").read_text(encoding="utf-8")
+    админка = (
+        корень / "web" / "src" / "components" / "admin" / "ReportsTable.tsx"
+    ).read_text(encoding="utf-8")
+
+    эталон = set(REPORT_REASONS)
+
+    # В боте «Другое» кнопкой не предлагается — там вместо неё «Заблокировать»
+    из_бота = set(re.findall(r'report:send:\{target_id\}:(\w+)', кнопки))
+    assert из_бота <= эталон, f"бот шлёт неизвестные причины: {из_бота - эталон}"
+
+    из_веба = _значения_ts_списка(веб, "REPORT_REASONS")
+    assert из_веба == эталон, f"расходятся: {из_веба ^ эталон}"
+
+    начало = админка.index("const REASON_MAP")
+    из_админки = set(re.findall(r"^\s+(\w+):", админка[начало : админка.index("};", начало)], re.M))
+    assert из_админки == эталон, f"в админке нет подписи для: {эталон - из_админки}"

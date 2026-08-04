@@ -8,11 +8,16 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: typeof Al
   dismissed: { label: "Отклонена", color: "text-text-muted", icon: XCircle },
 };
 
+// Набор обязан совпадать с REPORT_REASONS в api/models/schemas.py, иначе
+// жалоба придёт без подписи и модератор не поймёт, на что смотрит
 const REASON_MAP: Record<string, string> = {
   spam: "📧 Спам",
   harassment: "⚡ Харассмент",
   nudity: "🔞 Контент 18+",
   scam: "🤥 Мошенничество",
+  fake: "🎭 Чужие фото",
+  underage: "🚸 Несовершеннолетний",
+  drugs: "💊 Наркотики",
   other: "❓ Другое",
 };
 
