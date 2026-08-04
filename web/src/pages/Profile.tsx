@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Eye,
   EyeOff,
+  Film,
   Ban,
 } from "lucide-react";
 import {
@@ -25,10 +26,12 @@ import {
   deleteMyAccount,
   exportMyData,
   getBlockedUsers,
+  getMyReels,
   getMyVisitors,
   unblockUser,
   type UserProfile,
   type VisitorsOut,
+  type Reel as ReelType,
 } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
@@ -274,6 +277,9 @@ export default function Profile() {
 
       {/* ── Гости ─────────────────────────────────────────────── */}
       <VisitorsCard />
+
+      {/* ── Мои ролики ────────────────────────────────────────── */}
+      <MyReelsCard />
 
       {/* ── Интересы ──────────────────────────────────────────── */}
       {!!profile?.interests?.length && (
@@ -940,6 +946,83 @@ function ProfileCompleteness({
         <Pencil size={15} />
         Дозаполнить
       </Button>
+    </Card>
+  );
+}
+
+/* ── Мои ролики ─────────────────────────────────────────────── */
+
+/**
+ * Свои ролики с пометкой о скрытых. Именно здесь автор узнаёт, что видео сняли
+ * с показа: в общей ленте такого ролика нет, и без этого блока он решил бы,
+ * что загрузка не сработала.
+ */
+function MyReelsCard() {
+  const [reels, setReels] = useState<ReelType[] | null>(null);
+
+  useEffect(() => {
+    getMyReels()
+      .then((page) => setReels(page.reels))
+      .catch(() => setReels([])); // блок необязателен
+  }, []);
+
+  if (!reels?.length) return null;
+
+  const hidden = reels.filter((r) => r.is_hidden).length;
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="flex items-center gap-2.5 mb-3">
+        <Film size={18} className="text-accent" />
+        <span className="font-semibold text-[15px] flex-1">Мои видео</span>
+        <Link
+          to="/reels"
+          onClick={() => haptic("light")}
+          className="text-[13px] font-semibold text-accent"
+        >
+          В ленту
+        </Link>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        {reels.map((reel) => (
+          <div
+            key={reel.id}
+            className="relative w-[64px] h-[86px] shrink-0 rounded-[10px]
+                       overflow-hidden bg-surface-2"
+          >
+            {reel.cover_url ? (
+              <img
+                src={reel.cover_url}
+                alt=""
+                loading="lazy"
+                className={`w-full h-full object-cover ${
+                  reel.is_hidden ? "opacity-40" : ""
+                }`}
+              />
+            ) : (
+              <span
+                className="w-full h-full flex items-center justify-center"
+                style={{ background: "var(--gradient-placeholder)" }}
+              >
+                <Film size={16} className="text-white/40" />
+              </span>
+            )}
+            {reel.is_hidden && (
+              <span className="absolute inset-0 flex items-center justify-center">
+                <EyeOff size={16} className="text-warn" />
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {hidden > 0 && (
+        <p className="text-caption text-warn mt-2.5">
+          {hidden === 1 ? "Один ролик снят" : `${hidden} ролика сняты`} модерацией —
+          в ленте их не видно
+        </p>
+      )}
     </Card>
   );
 }

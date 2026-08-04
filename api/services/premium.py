@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.models import ProcessedPayment, Subscription
-from services.plans import TIER_FREE, TIER_PLUS, tier_allows, tier_rank
+from services.plans import TIER_FREE, TIER_PLUS, tier_rank
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +66,6 @@ async def current_tier(session: AsyncSession, user_id: str) -> str:
         return TIER_PLUS
     # Неизвестное значение не должно открывать платное: tier_rank вернёт 0
     return plan if tier_rank(plan) > 0 else TIER_FREE
-
-
-async def can_use(session: AsyncSession, user_id: str, feature: str) -> bool:
-    """Доступна ли платная возможность этому пользователю."""
-    return tier_allows(await current_tier(session, user_id), feature)
 
 
 async def activate_premium(
