@@ -3,35 +3,35 @@
   <desc id="ogDesc">Souldawn — сервис знакомств с AI-подбором пар в Telegram и на iPhone</desc>
   <defs>
     <linearGradient id="dawn" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff3d71"/>
-      <stop offset="38%" stop-color="#ff5c7a"/>
-      <stop offset="70%" stop-color="#ff7a5c"/>
-      <stop offset="100%" stop-color="#ffc46b"/>
+      <stop offset="0%" stop-color="#5b66ff"/>
+      <stop offset="38%" stop-color="#6b74ff"/>
+      <stop offset="70%" stop-color="#7b84ff"/>
+      <stop offset="100%" stop-color="#8f97ff"/>
     </linearGradient>
     <radialGradient id="glow1" cx="50%" cy="0%" r="75%">
-      <stop offset="0%" stop-color="#ff3d71" stop-opacity="0.35"/>
-      <stop offset="60%" stop-color="#ff3d71" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#5b66ff" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#5b66ff" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="glow2" cx="100%" cy="100%" r="70%">
-      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.30"/>
-      <stop offset="60%" stop-color="#a855f7" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#4450e8" stop-opacity="0.30"/>
+      <stop offset="60%" stop-color="#4450e8" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff3d71"/>
-      <stop offset="100%" stop-color="#ffc46b"/>
+      <stop offset="0%" stop-color="#5b66ff"/>
+      <stop offset="100%" stop-color="#8f97ff"/>
     </linearGradient>
   </defs>
 
-  <rect width="1200" height="630" fill="#0b0a12"/>
+  <rect width="1200" height="630" fill="#0a0b0f"/>
   <rect width="1200" height="630" fill="url(#glow1)"/>
   <rect width="1200" height="630" fill="url(#glow2)"/>
 
   <!-- декоративная карточка справа -->
   <g transform="translate(770,120)" opacity="0.9">
     <rect x="0" y="0" width="300" height="380" rx="32" fill="url(#cardGrad)"/>
-    <rect x="0" y="0" width="300" height="380" rx="32" fill="#0b0a12" opacity="0.12"/>
+    <rect x="0" y="0" width="300" height="380" rx="32" fill="#0a0b0f" opacity="0.12"/>
     <rect x="24" y="24" width="130" height="34" rx="17" fill="#ffffff" opacity="0.22"/>
-    <rect x="0" y="260" width="300" height="120" rx="0" fill="#0b0a12" opacity="0.35"/>
+    <rect x="0" y="260" width="300" height="120" rx="0" fill="#0a0b0f" opacity="0.35"/>
     <rect x="28" y="292" width="150" height="20" rx="10" fill="#ffffff" opacity="0.85"/>
     <rect x="28" y="322" width="220" height="14" rx="7" fill="#ffffff" opacity="0.55"/>
     <rect x="28" y="346" width="90" height="18" rx="9" fill="#ffffff" opacity="0.3"/>
@@ -45,6 +45,6 @@
   </g>
 
   <text x="120" y="330" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="800" letter-spacing="-2" fill="url(#dawn)">souldawn</text>
-  <text x="122" y="380" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" fill="#b8b2c7">Знакомства с AI-подбором пар</text>
-  <text x="122" y="420" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" fill="#b8b2c7">Telegram · iPhone</text>
+  <text x="122" y="380" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" fill="#c4c9d6">Знакомства с AI-подбором пар</text>
+  <text x="122" y="420" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" fill="#c4c9d6">Telegram · iPhone</text>
 </svg>

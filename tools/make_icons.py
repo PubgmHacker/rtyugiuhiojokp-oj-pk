@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Генератор иконки и splash-экрана Souldawn.
+Генератор иконки, splash-экрана и favicon Souldawn.
 
-Рисует «рассвет»: тёмный фон, восходящее солнце-градиент и силуэт сердца.
-Цвета взяты из дизайн-системы (web/src/styles/globals.css), чтобы иконка,
-splash и интерфейс выглядели одним продуктом.
+Иконка — сплошной акцентный квадрат с белым сердцем. Сознательно без
+градиента и свечения: многоцветная заливка на мелком размере смазывается
+в грязное пятно, а на домашнем экране рядом с системными иконками
+читается как развлекательное приложение.
+
+Цвета берутся из дизайн-системы (web/src/styles/globals.css), чтобы
+иконка, splash и интерфейс выглядели одним продуктом.
 
 Запуск:  python3 tools/make_icons.py
 """
@@ -21,38 +25,9 @@ IOS_ASSETS = ROOT / "web" / "ios" / "App" / "App" / "Assets.xcassets"
 WEB_PUBLIC = ROOT / "web" / "public"
 
 # ── Палитра дизайн-системы ──────────────────────────────────────
-BG = (11, 10, 18)            # #0b0a12
-ROSE = (255, 61, 113)        # #ff3d71
-CORAL = (255, 122, 92)       # #ff7a5c
-GOLD = (255, 196, 107)       # #ffc46b
-PLUM = (168, 85, 247)        # #a855f7
-
-
-def lerp(a: tuple[int, ...], b: tuple[int, ...], t: float) -> tuple[int, ...]:
-    """Линейная интерполяция двух цветов."""
-    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
-
-
-def dawn_gradient(size: int) -> Image.Image:
-    """Диагональный градиент «рассвет»: роза → коралл → золото."""
-    grad = Image.new("RGB", (size, size))
-    px = grad.load()
-    stops = [(0.0, ROSE), (0.45, CORAL), (1.0, GOLD)]
-
-    for y in range(size):
-        for x in range(size):
-            # Диагональная позиция 0..1
-            t = (x / size * 0.55) + (y / size * 0.45)
-            for i in range(len(stops) - 1):
-                t0, c0 = stops[i]
-                t1, c1 = stops[i + 1]
-                if t0 <= t <= t1:
-                    local = (t - t0) / (t1 - t0)
-                    px[x, y] = lerp(c0, c1, local)
-                    break
-            else:
-                px[x, y] = stops[-1][1]
-    return grad
+BG = (10, 11, 15)            # #0a0b0f
+ACCENT = (91, 102, 255)      # #5b66ff
+WHITE = (255, 255, 255)
 
 
 def heart_polygon(cx: float, cy: float, scale: float, steps: int = 220):
@@ -67,75 +42,42 @@ def heart_polygon(cx: float, cy: float, scale: float, steps: int = 220):
 
 
 def make_icon(size: int = 1024) -> Image.Image:
-    """Иконка приложения: тёмный фон, световое пятно, сердце-градиент."""
-    img = Image.new("RGB", (size, size), BG)
-    draw = ImageDraw.Draw(img)
+    """Иконка приложения: акцентный фон, белое сердце по центру.
 
-    # Мягкое свечение снизу — «рассвет за горизонтом»
-    glow = Image.new("RGB", (size, size), BG)
-    gdraw = ImageDraw.Draw(glow)
-    for i in range(28, 0, -1):
-        r = size * 0.62 * i / 28
-        t = 1 - i / 28
-        color = lerp(BG, lerp(PLUM, ROSE, 0.65), t * 0.55)
-        gdraw.ellipse(
-            [size * 0.5 - r, size * 0.92 - r, size * 0.5 + r, size * 0.92 + r],
-            fill=color,
-        )
-    glow = glow.filter(ImageFilter.GaussianBlur(size * 0.05))
-    img = Image.blend(img, glow, 0.9)
+    Углы не скругляем — iOS и Android накладывают собственную маску,
+    а предварительное скругление дало бы двойную обводку.
+    """
+    img = Image.new("RGB", (size, size), ACCENT)
 
-    # Сердце вырезаем маской из градиента — края остаются чистыми
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).polygon(
-        heart_polygon(size * 0.5, size * 0.5, size * 0.0265), fill=255
+        heart_polygon(size * 0.5, size * 0.52, size * 0.0245), fill=255
     )
-    mask = mask.filter(ImageFilter.GaussianBlur(size * 0.002))
+    # Микро-размытие сглаживает края многоугольника
+    mask = mask.filter(ImageFilter.GaussianBlur(size * 0.0015))
 
-    heart = dawn_gradient(size)
-
-    # Тень под сердцем для объёма
-    shadow = mask.filter(ImageFilter.GaussianBlur(size * 0.035))
-    img.paste(Image.new("RGB", (size, size), (0, 0, 0)), (0, int(size * 0.012)), shadow)
-
-    img.paste(heart, (0, 0), mask)
-
-    # Блик по верхней кромке
-    shine = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(shine).ellipse(
-        [size * 0.28, size * 0.24, size * 0.62, size * 0.42], fill=70
-    )
-    shine = shine.filter(ImageFilter.GaussianBlur(size * 0.03))
-    shine = Image.composite(shine, Image.new("L", (size, size), 0), mask)
-    img.paste(Image.new("RGB", (size, size), (255, 255, 255)), (0, 0), shine)
-
-    del draw
+    img.paste(Image.new("RGB", (size, size), WHITE), (0, 0), mask)
     return img
 
 
 def make_splash(w: int = 2732, h: int = 2732) -> Image.Image:
-    """Splash: тот же фон и свечение, по центру — уменьшенное сердце."""
+    """Splash: тёмный фон и акцентный бейдж с сердцем по центру."""
     img = Image.new("RGB", (w, h), BG)
 
-    glow = Image.new("RGB", (w, h), BG)
-    gdraw = ImageDraw.Draw(glow)
-    for i in range(30, 0, -1):
-        r = min(w, h) * 0.55 * i / 30
-        t = 1 - i / 30
-        color = lerp(BG, lerp(PLUM, ROSE, 0.6), t * 0.4)
-        gdraw.ellipse([w / 2 - r, h / 2 - r, w / 2 + r, h / 2 + r], fill=color)
-    glow = glow.filter(ImageFilter.GaussianBlur(min(w, h) * 0.06))
-    img = Image.blend(img, glow, 0.85)
+    badge = int(min(w, h) * 0.14)
+    radius = int(badge * 0.23)
 
-    icon_size = int(min(w, h) * 0.22)
-    icon = make_icon(icon_size)
+    tile = Image.new("RGB", (badge, badge), ACCENT)
+    corner = Image.new("L", (badge, badge), 0)
+    ImageDraw.Draw(corner).rounded_rectangle([0, 0, badge - 1, badge - 1], radius, fill=255)
 
-    # Круглая маска, чтобы вписать иконку без резких углов
-    mask = Image.new("L", (icon_size, icon_size), 0)
-    ImageDraw.Draw(mask).polygon(
-        heart_polygon(icon_size * 0.5, icon_size * 0.5, icon_size * 0.0265), fill=255
+    heart = Image.new("L", (badge, badge), 0)
+    ImageDraw.Draw(heart).polygon(
+        heart_polygon(badge * 0.5, badge * 0.52, badge * 0.0245), fill=255
     )
-    img.paste(icon, ((w - icon_size) // 2, (h - icon_size) // 2), mask)
+    tile.paste(Image.new("RGB", (badge, badge), WHITE), (0, 0), heart)
+
+    img.paste(tile, ((w - badge) // 2, (h - badge) // 2), corner)
     return img
 
 
@@ -178,7 +120,7 @@ def main() -> None:
     )
     print(f"✓ {WEB_PUBLIC / 'favicon.ico'}")
 
-    # Картинка для Open Graph (превью ссылки в соцсетях и мессенджерах)
+    # Превью ссылки в соцсетях и мессенджерах
     og = make_splash(1200, 630)
     og.save(WEB_PUBLIC / "og-image.png", "PNG")
     print(f"✓ {WEB_PUBLIC / 'og-image.png'}")

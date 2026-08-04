@@ -40,8 +40,8 @@ export default function RegistrationsChart({ stats }: Props) {
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
         <defs>
           <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ff6b9d" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#ff6b9d" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -62,12 +62,12 @@ export default function RegistrationsChart({ stats }: Props) {
         <path d={areaD} fill="url(#areaGrad)" />
 
         {/* Line */}
-        <path d={pathD} fill="none" stroke="#ff6b9d" strokeWidth="2.5" />
+        <path d={pathD} fill="none" stroke="var(--color-accent)" strokeWidth="2.5" />
 
         {/* Points + labels */}
         {points.map((p, i) => (
           <g key={i}>
-            <circle cx={p.x} cy={p.y} r="4" fill="#ff6b9d" />
+            <circle cx={p.x} cy={p.y} r="4" fill="var(--color-accent)" />
             {p.count > 0 && (
               <text x={p.x} y={p.y - 10} textAnchor="middle" className="fill-text text-[10px]">
                 {p.count}

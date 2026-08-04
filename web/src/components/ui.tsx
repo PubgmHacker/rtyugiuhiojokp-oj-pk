@@ -12,7 +12,7 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "glass";
 type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: "bg-dawn text-on-accent shadow-[0_8px_24px_-8px_rgb(255_61_113/0.6)]",
+  primary: "bg-dawn text-on-accent shadow-[var(--shadow-control)]",
   secondary: "bg-surface-2 text-text border border-hairline",
   ghost: "bg-transparent text-text-secondary",
   danger: "bg-danger/15 text-danger border border-danger/30",
@@ -20,9 +20,9 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
 };
 
 const SIZE_CLASS: Record<ButtonSize, string> = {
-  sm: "h-10 px-4 text-sm rounded-full",
-  md: "h-12 px-6 text-[15px] rounded-full",
-  lg: "h-14 px-8 text-base rounded-full",
+  sm: "h-10 px-4 text-sm rounded-[var(--radius-control)]",
+  md: "h-12 px-6 text-[15px] rounded-[var(--radius-control)]",
+  lg: "h-[52px] px-8 text-[15px] rounded-[var(--radius-control)]",
 };
 
 interface ButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {

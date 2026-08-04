@@ -229,7 +229,7 @@ export default function Chat() {
             ) : (
               <div
                 className="w-full h-full flex items-center justify-center text-[14px] font-bold text-white/70"
-                style={{ background: "var(--gradient-plum)" }}
+                style={{ background: "var(--gradient-placeholder)" }}
               >
                 {partnerName[0]?.toUpperCase()}
               </div>
@@ -356,7 +356,7 @@ export default function Chat() {
                 {loadingIce ? (
                   <Spinner size={16} />
                 ) : (
-                  <Sparkles size={15} className="text-gold" />
+                  <Sparkles size={15} className="text-accent" />
                 )}
                 Подсказать фразу
               </button>

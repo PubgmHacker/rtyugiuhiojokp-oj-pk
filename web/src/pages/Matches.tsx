@@ -230,7 +230,7 @@ function Avatar({
         <div
           className="w-full h-full rounded-full flex items-center justify-center
                      font-bold text-white/70"
-          style={{ background: "var(--gradient-plum)", fontSize: size / 2.6 }}
+          style={{ background: "var(--gradient-placeholder)", fontSize: size / 2.6 }}
         >
           {name?.[0]?.toUpperCase() ?? "?"}
         </div>

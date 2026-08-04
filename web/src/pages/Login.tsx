@@ -96,15 +96,14 @@ export default function Login() {
 
   return (
     <div className="relative h-screen-safe overflow-hidden flex flex-col">
-      {/* Атмосферный фон */}
+      {/* Сдержанная подсветка за логотипом: один холодный оттенок
+          вместо трёх цветных пятен */}
       <div
         aria-hidden
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(70% 50% at 50% 8%, rgb(255 61 113 / 0.28), transparent 70%)," +
-            "radial-gradient(60% 45% at 85% 30%, rgb(168 85 247 / 0.2), transparent 70%)," +
-            "radial-gradient(70% 40% at 10% 75%, rgb(255 196 107 / 0.14), transparent 70%)",
+            "radial-gradient(80% 45% at 50% 12%, rgb(91 102 255 / 0.14), transparent 72%)",
         }}
       />
 
@@ -126,7 +125,7 @@ export default function Login() {
           transition={{ delay: 0.18, type: "spring", stiffness: 320, damping: 28 }}
           className="text-[16px] text-text-secondary text-center max-w-[30ch] leading-relaxed"
         >
-          Знакомства, которые начинаются с рассвета
+          Знакомства без спешки — по интересам, а не только по фото
         </motion.p>
       </div>
 
@@ -207,10 +206,10 @@ function Logo({ animated }: { animated?: boolean }) {
       initial={animated ? { scale: 0.7, opacity: 0 } : false}
       animate={animated ? { scale: 1, opacity: 1 } : undefined}
       transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      className="w-24 h-24 rounded-[28px] bg-dawn glow-rose
-                 flex items-center justify-center shrink-0"
+      className="w-[72px] h-[72px] rounded-[var(--radius-card)] bg-dawn
+                 flex items-center justify-center shrink-0 float-shadow"
     >
-      <Heart size={46} fill="#fff" className="text-white" />
+      <Heart size={34} fill="#fff" className="text-white" />
     </motion.div>
   );
 }

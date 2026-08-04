@@ -153,7 +153,7 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
       ) : (
         <div
           className="w-full h-full flex items-center justify-center"
-          style={{ background: "var(--gradient-plum)" }}
+          style={{ background: "var(--gradient-placeholder)" }}
         >
           <span className="text-[64px] font-extrabold text-white/25">
             {profile.display_name?.[0]?.toUpperCase() ?? "?"}
@@ -216,7 +216,7 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
       <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 z-20 pointer-events-none">
         {profile.match_score != null && (
           <div className="inline-flex items-center gap-1.5 mb-3 px-2.5 py-1 rounded-full glass-strong">
-            <Sparkles size={13} className="text-gold" />
+            <Sparkles size={13} className="text-accent" />
             <span className="text-[12px] font-semibold">
               {profile.match_score}% совпадение
             </span>

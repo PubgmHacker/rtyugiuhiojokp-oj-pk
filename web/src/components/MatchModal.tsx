@@ -123,7 +123,7 @@ export default function MatchModal({ data, onClose }: MatchModalProps) {
             {data.score != null && (
               <div className="mb-6 p-4 rounded-[var(--radius-tile)] bg-surface border border-hairline">
                 <div className="flex items-center justify-center gap-2 mb-1.5">
-                  <Sparkles size={16} className="text-gold" />
+                  <Sparkles size={16} className="text-accent" />
                   <span className="font-bold text-[15px]">
                     Совместимость {data.score}%
                   </span>
@@ -192,7 +192,7 @@ function Avatar({
       ) : (
         <div
           className="w-full h-full rounded-full flex items-center justify-center text-2xl font-bold text-white/70"
-          style={{ background: "var(--gradient-plum)" }}
+          style={{ background: "var(--gradient-placeholder)" }}
         >
           {fallback?.[0]?.toUpperCase() ?? "?"}
         </div>

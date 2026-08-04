@@ -1,110 +1,126 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   SOULDAWN — Design System 2026
-   Тёмная база + «рассветный» градиент + Liquid Glass поверхности.
-   Экраны берут значения отсюда, без хардкода цветов в компонентах.
+   SOULDAWN — Design System
+
+   Холодная нейтральная база + один плоский акцент. Сознательно без
+   «рассветных» градиентов: многоцветная заливка читается как
+   развлекательное приложение, а мы хотим спокойный продукт, в
+   котором внимание достаётся фотографиям людей, а не интерфейсу.
+
+   Цветом обозначаем только действие и статус. Всё остальное —
+   оттенки серого. Экраны берут значения отсюда, без хардкода.
    ═══════════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ── Фон и поверхности ──────────────────────────────────── */
-  --color-bg: #0b0a12;
-  --color-bg-elevated: #12111c;
-  --color-surface: #191725;
-  --color-surface-2: #221f31;
-  --color-surface-3: #2c2840;
-  --color-hairline: #302c44;
+  /* ── Фон и поверхности ──────────────────────────────────────
+     Холодные серые с лёгким синим подтоном: рядом с индиго-
+     акцентом нейтрально-серый выглядел бы грязным. */
+  --color-bg: #0a0b0f;
+  --color-bg-elevated: #101218;
+  --color-surface: #16181f;
+  --color-surface-2: #1c1f28;
+  --color-surface-3: #252935;
+  --color-hairline: #262a35;
 
-  /* ── Бренд: рассвет ─────────────────────────────────────── */
-  --color-rose: #ff3d71;
-  --color-coral: #ff7a5c;
-  --color-gold: #ffc46b;
-  --color-plum: #a855f7;
+  /* ── Акцент ─────────────────────────────────────────────────
+     Один цвет на все главные действия. Индиго: достаточно
+     заметный на тёмном, не кричит и не имеет «романтических»
+     коннотаций розового. */
+  --color-accent: #5b66ff;
+  --color-accent-soft: #7b84ff;
+  --color-accent-deep: #4450e8;
+  --color-accent-dim: #2a3060;
 
-  --color-accent: #ff3d71;
-  --color-accent-soft: #ff5c8a;
-  --color-accent-deep: #e01f56;
-
-  /* ── Текст ──────────────────────────────────────────────── */
-  --color-text: #f7f5fa;
-  --color-text-secondary: #b8b2c7;
-  --color-text-muted: #8a8399;
-  --color-text-faint: #5f5973;
+  /* ── Текст ──────────────────────────────────────────────────
+     Четыре ступени: заголовок, основной, подпись, служебное. */
+  --color-text: #f6f7fb;
+  --color-text-secondary: #c4c9d6;
+  --color-text-muted: #8f97a8;
+  --color-text-faint: #656c7d;
   --color-on-accent: #ffffff;
 
-  /* ── Семантика ──────────────────────────────────────────── */
-  --color-success: #2ee6a8;
-  --color-danger: #ff4d5e;
-  --color-warn: #ffc46b;
-  --color-info: #4da3ff;
-  --color-verified: #4da3ff;
+  /* ── Семантика ──────────────────────────────────────────────
+     В дейтинге лайк и пропуск обязаны различаться цветом, иначе
+     промах стоит пользователю мэтча. Оттенки приглушены, чтобы
+     не спорить с акцентом. */
+  --color-success: #34d399;
+  --color-danger: #f4525f;
+  --color-warn: #f0b429;
+  --color-info: #58a6ff;
+  --color-verified: #58a6ff;
 
-  /* Совместимость со экранами, ещё не переведёнными на новые токены */
-  --color-bg-secondary: #12111c;
-  --color-accent-secondary: #ff7a5c;
+  /* Совместимость с экранами, ещё не переведёнными на новые токены */
+  --color-bg-secondary: #101218;
+  --color-accent-secondary: #7b84ff;
 
-  /* ── Типографика ────────────────────────────────────────── */
+  /* ── Типографика ────────────────────────────────────────────
+     Inter: нейтральный гротеск без характера, который спорил бы
+     с контентом. Один шрифт на всё — отдельный display только
+     утяжелял бы загрузку. */
   --font-sans: "Inter var", "Inter", -apple-system, BlinkMacSystemFont,
     "SF Pro Text", system-ui, sans-serif;
   --font-display: "Inter var", "Inter", -apple-system, BlinkMacSystemFont,
     "SF Pro Display", system-ui, sans-serif;
 
-  --text-display: 2.5rem;
-  --text-display--line-height: 1.05;
-  --text-display--letter-spacing: -0.035em;
-  --text-display--font-weight: 800;
+  --text-display: 2.125rem;
+  --text-display--line-height: 1.12;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 700;
 
-  --text-title: 1.75rem;
-  --text-title--line-height: 1.15;
-  --text-title--letter-spacing: -0.025em;
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.2;
+  --text-title--letter-spacing: -0.022em;
   --text-title--font-weight: 700;
 
-  --text-heading: 1.25rem;
-  --text-heading--line-height: 1.25;
-  --text-heading--letter-spacing: -0.015em;
+  --text-heading: 1.125rem;
+  --text-heading--line-height: 1.3;
+  --text-heading--letter-spacing: -0.014em;
 
   --text-caption: 0.8125rem;
   --text-caption--line-height: 1.35;
 
-  /* ── Радиусы ────────────────────────────────────────────── */
-  --radius-card: 28px;
-  --radius-sheet: 26px;
-  --radius-tile: 18px;
+  /* ── Радиусы ────────────────────────────────────────────────
+     Умеренные: сильное скругление на всём делает интерфейс
+     игрушечным. Фото-карточка чуть круглее плиток. */
+  --radius-card: 18px;
+  --radius-sheet: 16px;
+  --radius-tile: 12px;
+  --radius-control: 10px;
 
-  /* ── Тени ───────────────────────────────────────────────── */
-  --shadow-card: 0 24px 64px -16px rgb(0 0 0 / 0.75),
-    0 2px 8px -2px rgb(0 0 0 / 0.5);
-  --shadow-float: 0 8px 28px -6px rgb(0 0 0 / 0.6);
-  --shadow-glow-rose: 0 20px 60px -18px rgb(255 61 113 / 0.55);
+  /* ── Тени ───────────────────────────────────────────────────
+     Только нейтральные: цветное свечение — главный признак
+     «розового» интерфейса, даже когда сам цвет уже убран. */
+  --shadow-card: 0 20px 56px -16px rgb(0 0 0 / 0.7),
+    0 2px 6px -2px rgb(0 0 0 / 0.45);
+  --shadow-float: 0 8px 28px -8px rgb(0 0 0 / 0.6);
+  --shadow-control: 0 1px 2px rgb(0 0 0 / 0.3);
 
-  /* ── Тайминги (iOS-подобная плавность) ──────────────────── */
+  /* ── Тайминги ───────────────────────────────────────────────*/
   --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
-/* ── Градиенты и стеклянные поверхности ───────────────────── */
+/* ── Поверхности ──────────────────────────────────────────────*/
 :root {
-  --gradient-dawn: linear-gradient(
-    135deg,
-    #ff3d71 0%,
-    #ff5c7a 38%,
-    #ff7a5c 70%,
-    #ffc46b 100%
-  );
-  --gradient-dawn-soft: linear-gradient(135deg, #ff3d71 0%, #ff7a5c 100%);
-  --gradient-plum: linear-gradient(135deg, #a855f7 0%, #ff3d71 100%);
+  /* Заглушка под аватар без фото: нейтральная, не «фирменная» —
+     это отсутствие данных, а не элемент бренда */
+  --gradient-placeholder: linear-gradient(145deg, #2a2f3d 0%, #1a1d26 100%);
+
+  /* Затемнение под подписями на фото. Плотное снизу, чтобы белый
+     текст читался на любом снимке */
   --gradient-scrim: linear-gradient(
     to top,
-    rgb(0 0 0 / 0.92) 0%,
-    rgb(0 0 0 / 0.72) 22%,
-    rgb(0 0 0 / 0.28) 48%,
-    transparent 72%
+    rgb(8 9 12 / 0.94) 0%,
+    rgb(8 9 12 / 0.74) 24%,
+    rgb(8 9 12 / 0.28) 52%,
+    transparent 76%
   );
 
-  --glass-bg: rgb(255 255 255 / 0.07);
-  --glass-bg-strong: rgb(255 255 255 / 0.12);
+  --glass-bg: rgb(255 255 255 / 0.05);
+  --glass-bg-strong: rgb(255 255 255 / 0.09);
   --glass-border: rgb(255 255 255 / 0.1);
-  --glass-blur: 24px;
+  --glass-blur: 20px;
 
   color-scheme: dark;
 }
@@ -139,21 +155,11 @@
 
   body {
     overflow-x: hidden;
+    /* Как в нативном приложении: случайное выделение текста при
+       свайпе выглядит браком. Точечно включается через .selectable */
     user-select: none;
-    /* Намёк на рассвет за тёмной сценой */
-    background-image:
-      radial-gradient(
-        120% 70% at 50% -10%,
-        rgb(255 61 113 / 0.16) 0%,
-        transparent 60%
-      ),
-      radial-gradient(
-        90% 60% at 100% 0%,
-        rgb(168 85 247 / 0.1) 0%,
-        transparent 55%
-      );
-    background-attachment: fixed;
-    background-repeat: no-repeat;
+    /* Ровный фон без цветных пятен: подсветка за контентом
+       конкурировала бы с фотографиями анкет */
   }
 
   input,
@@ -204,24 +210,25 @@
    УТИЛИТЫ
    ═══════════════════════════════════════════════════════════════ */
 
+/* Раньше здесь был градиентный текст. Оставлен как обычный цвет:
+   заголовок с переливом — самый заметный признак «розового»
+   интерфейса. Утилита сохранена, чтобы не править все экраны. */
 @utility text-gradient {
-  background: var(--gradient-dawn);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: var(--color-text);
 }
 
+/* Заливка главного действия. Плоский цвет вместо градиента */
 @utility bg-dawn {
-  background: var(--gradient-dawn);
+  background: var(--color-accent);
 }
 
 @utility bg-dawn-soft {
-  background: var(--gradient-dawn-soft);
+  background: var(--color-accent-soft);
 }
 
+/* Заглушка под аватар без фото */
 @utility bg-plum {
-  background: var(--gradient-plum);
+  background: var(--gradient-placeholder);
 }
 
 @utility bg-scrim {
@@ -230,23 +237,23 @@
 
 @utility glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
 }
 
 @utility glass-strong {
   background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
 }
 
 /* Панель поверх контента (навбар, хедер) */
 @utility chrome {
-  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: color-mix(in srgb, var(--color-bg) 86%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
 }
 
 @utility card-shadow {
@@ -257,16 +264,15 @@
   box-shadow: var(--shadow-float);
 }
 
+/* Ранее цветное свечение. Теперь нейтральная тень: цветной ореол
+   выдаёт «розовый» интерфейс даже после смены самого цвета */
 @utility glow-rose {
-  box-shadow: var(--shadow-glow-rose);
+  box-shadow: var(--shadow-float);
 }
 
-/* Градиентная обводка для аватаров и премиум-бейджей */
+/* Обводка аватара. Тонкая линия вместо градиентной рамки */
 @utility ring-dawn {
-  background:
-    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
-    var(--gradient-dawn) border-box;
-  border: 2px solid transparent;
+  border: 2px solid var(--color-accent);
 }
 
 @utility no-scrollbar {
@@ -380,9 +386,9 @@
   animation: shimmer 1.4s linear infinite;
 }
 
-/* Свечение под карточкой деки */
+/* Тень под карточкой деки — без цветного ореола */
 .swipe-card-glow {
-  box-shadow: var(--shadow-glow-rose), var(--shadow-card);
+  box-shadow: var(--shadow-card);
 }
 
 /* Уважаем системную настройку «уменьшить движение» */

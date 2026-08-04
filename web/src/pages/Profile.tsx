@@ -134,7 +134,7 @@ export default function Profile() {
               <div
                 className="w-full h-full rounded-full flex items-center justify-center
                            text-3xl font-bold text-white/60"
-                style={{ background: "var(--gradient-plum)" }}
+                style={{ background: "var(--gradient-placeholder)" }}
               >
                 {profile?.display_name?.[0]?.toUpperCase() ?? "?"}
               </div>
@@ -244,7 +244,7 @@ export default function Profile() {
       {profile?.is_premium ? (
         <Card className="p-4 mb-4 border-accent/25">
           <div className="flex items-center gap-2.5 mb-3.5">
-            <Crown size={18} className="text-gold" />
+            <Crown size={18} className="text-accent" />
             <span className="font-bold text-[15px] flex-1">Premium активен</span>
           </div>
 
@@ -272,14 +272,10 @@ export default function Profile() {
               openExternal(`https://t.me/${BOT_USERNAME}?start=premium`);
             }}
             className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
-                       border border-accent/25 relative overflow-hidden"
-            style={{
-              background:
-                "linear-gradient(135deg, rgb(255 61 113 / 0.14), rgb(255 196 107 / 0.09))",
-            }}
+                       border border-accent/25 bg-accent/8 relative overflow-hidden"
           >
             <div className="flex items-center gap-3">
-              <Crown size={20} className="text-gold shrink-0" />
+              <Crown size={20} className="text-accent shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-[15px]">Souldawn Premium</p>
                 <p className="text-caption text-text-muted">
@@ -295,7 +291,7 @@ export default function Profile() {
       {/* ── Реферальная программа ─────────────────────────────── */}
       <Card className="p-4 mb-4">
         <div className="flex items-center gap-2.5 mb-2">
-          <Gift size={18} className="text-gold" />
+          <Gift size={18} className="text-accent" />
           <span className="font-semibold text-[15px]">Приглашай друзей</span>
         </div>
 

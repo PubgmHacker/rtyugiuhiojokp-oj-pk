@@ -175,7 +175,7 @@ export default function Likes() {
                 <div
                   className="w-full h-full flex items-center justify-center
                              text-4xl font-bold text-white/25"
-                  style={{ background: "var(--gradient-plum)" }}
+                  style={{ background: "var(--gradient-placeholder)" }}
                 >
                   {p.display_name?.[0]?.toUpperCase() ?? "?"}
                 </div>
