@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  push:
+    branches: [main, modern-2026]
+  pull_request:
+
+# Новый пуш в ту же ветку отменяет предыдущий прогон
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Проверка синтаксиса
+        run: python -m compileall -q .
+
+      - name: Тесты
+        env:
+          DEBUG: "true"
+          JWT_SECRET: ci_secret_not_for_production
+        run: python -m pytest
+
+  bot:
+    name: Бот
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Проверка синтаксиса
+        run: python -m compileall -q .
+
+      - name: Импорт модулей
+        # Ловит битые ссылки на состояния FSM и отсутствующие импорты —
+        # такая ошибка уже приводила к тому, что бот не стартовал вовсе
+        run: python -c "import bot; import handlers.registration, handlers.dating, handlers.matches, handlers.account"
+
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - name: Проверка стиля
+        run: ruff check api bot
+        continue-on-error: true
+
+  web:
+    name: Фронтенд
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Установка зависимостей
+        run: npm ci
+
+      - name: Проверка типов
+        run: npx tsc -b --force
+
+      - name: Сборка
+        run: npx vite build
+
+  landing:
+    name: Лендинг
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверка разметки и ссылок
+        run: |
+          cd landing
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          import glob, re, sys
+
+          VOID = {"area","base","br","col","embed","hr","img","input",
+                  "link","meta","source","track","wbr"}
+          SVG = {"path","circle","rect","svg","g","defs","stop",
+                 "linearGradient","ellipse","line","polygon","polyline","use"}
+
+          class V(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.stack, self.err, self.insvg = [], [], 0
+              def handle_starttag(self, t, a):
+                  if t == "svg":
+                      self.insvg += 1; return
+                  if self.insvg or t in VOID or t in SVG:
+                      return
+                  self.stack.append((t, self.getpos()))
+              def handle_endtag(self, t):
+                  if t == "svg":
+                      self.insvg = max(0, self.insvg - 1); return
+                  if self.insvg or t in VOID or t in SVG:
+                      return
+                  if not self.stack:
+                      self.err.append(f"лишний </{t}> {self.getpos()}"); return
+                  top, pos = self.stack.pop()
+                  if top != t:
+                      self.err.append(f"</{t}>{self.getpos()} закрывает <{top}>{pos}")
+
+          files = set(glob.glob("*.*"))
+          failed = False
+
+          for f in sorted(glob.glob("*.html")):
+              src = open(f, encoding="utf-8").read()
+              p = V(); p.feed(src)
+              if p.err or p.stack:
+                  failed = True
+                  print(f"{f}: разметка — {p.err[:3]} незакрытые={[t for t,_ in p.stack][:3]}")
+
+              for m in re.finditer(r'(?:href|src)="([^"]+)"', src):
+                  u = m.group(1)
+                  if u.startswith(("http", "mailto:", "#", "data:")):
+                      continue
+                  target = u.split("#")[0].split("?")[0].lstrip("/")
+                  if target and target not in files:
+                      failed = True
+                      print(f"{f}: битая ссылка -> {u}")
+
+          if failed:
+              sys.exit(1)
+          print("Лендинг: разметка валидна, битых ссылок нет")
+          PY
+
+  docker:
+    name: Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Проверка docker-compose
+        run: docker compose config -q
+
+      - name: Сборка образа API
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Сборка образа бота
+        uses: docker/build-push-action@v6
+        with:
+          context: ./bot
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -2,7 +2,6 @@
 # Запуск: docker compose up -d
 # Перед запуском: cp .env.example .env
 
-version: "3.9"
 
 services:
 
