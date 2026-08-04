@@ -216,6 +216,19 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class VoiceCall(Base):
+    """Журнал звонков рулетки — см. api/models/models.py."""
+
+    __tablename__ = "dating_voice_calls"
+    __table_args__ = (Index("ix_voice_call_created", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    caller_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    callee_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class CaseOpening(Base):
     """Журнал открытий кейса — см. api/models/models.py."""
 

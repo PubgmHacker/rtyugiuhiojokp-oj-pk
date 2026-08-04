@@ -2201,3 +2201,140 @@ def test_бонусные_суперлайки_отдельным_полем_и_
     списание = inspect.getsource(likes._spend_bonus_superlike)
     # Списываем только когда суточные уже исчерпаны
     assert "<= quota" in списание and "return" in списание
+
+
+# ════════════════════════════════════════════════════════════════
+#  Карта дня и голосовая рулетка
+# ════════════════════════════════════════════════════════════════
+
+def test_роут_карты_дня(openapi):
+    assert "/api/daily/card" in openapi["paths"]
+
+
+def test_карта_одна_на_сутки_и_разная_у_разных_людей():
+    """Карта, меняющаяся на каждое обновление страницы, ничего не стоит.
+    А одинаковая у всех выглядела бы рассылкой."""
+    from datetime import date
+
+    from services.daily_card import CARDS, card_for_day
+
+    день = date(2026, 8, 4)
+    assert card_for_day("u1", день).name == card_for_day("u1", день).name
+
+    у_разных = {card_for_day(f"u{i}", день).name for i in range(60)}
+    assert len(у_разных) > len(CARDS) // 2, "карты почти не различаются между людьми"
+
+    по_дням = {card_for_day("u1", date(2026, 8, d)).name for d in range(1, 29)}
+    assert len(по_дням) > 10, "карта почти не меняется по дням"
+
+
+async def test_расклад_работает_без_ai_ключа():
+    """На окружении без ключа раздел не должен быть пустым."""
+    from services.daily_card import CARDS, phrase_for
+
+    карта = CARDS[0]
+    фраза = await phrase_for(карта)
+    assert фраза, "фраза пустая"
+    # Без ключа ожидаем совет из справочника
+    assert isinstance(фраза, str) and len(фраза) > 5
+
+
+def test_карта_не_обещает_будущее():
+    """Гадание, которое звучит как предсказание, — это обман. Формулировки
+    должны быть про действия в приложении."""
+    from services.daily_card import CARDS
+
+    запрещённое = ("судьба", "предскаж", "гарантир", "obязательно", "точно будет")
+    for карта in CARDS:
+        текст = f"{карта.meaning} {карта.advice}".lower()
+        assert not any(с in текст for с in запрещённое), карта.name
+        assert карта.advice, карта.name
+
+
+def test_роуты_рулетки(openapi):
+    """WebSocket в OpenAPI не попадает, поэтому его ищем в самом приложении.
+
+    Роутеры подключены вложенно, и плоский обход `app.routes` их не видит —
+    спускаемся рекурсивно.
+    """
+    assert "/api/voice/ice-servers" in openapi["paths"]
+
+    import main
+
+    def пути(routes) -> set[str]:
+        собрано = set()
+        for r in routes:
+            путь = getattr(r, "path", None)
+            if путь:
+                собрано.add(путь)
+            # Подключённые роутеры обёрнуты и своих routes не отдают —
+            # спускаемся через original_router
+            вложенный = getattr(r, "original_router", None) or getattr(r, "app", None)
+            if getattr(вложенный, "routes", None):
+                собрано |= пути(вложенный.routes)
+            elif getattr(r, "routes", None):
+                собрано |= пути(r.routes)
+        return собрано
+
+    все = пути(main.app.routes)
+    assert any(p.endswith("/voice/ws/roulette") for p in все), (
+        f"сокет рулетки не зарегистрирован; есть: {sorted(p for p in все if 'ws' in p)}"
+    )
+
+
+def test_голос_не_идёт_через_сервер():
+    """Пропускать звук через себя значило бы платить за трафик и хранить то,
+    чего хранить нельзя."""
+    import inspect
+
+    from routers import voice
+
+    исходник = inspect.getsource(voice)
+    # Сервер только передаёт сигналы, тело не разбирает
+    assert '"type": "signal"' in исходник
+    assert "payload" in исходник
+    # Никаких аудиобуферов и записи
+    assert "record" not in исходник.lower()
+
+
+def test_очередь_рулетки_в_redis_а_не_в_памяти():
+    """Инстансов API несколько, и человек, попавший на другой, ждал бы вечно."""
+    import inspect
+
+    from services import voice
+
+    исходник = inspect.getsource(voice)
+    assert "get_redis" in исходник
+    assert "WAITING_TTL" in исходник, "запись без TTL оставит «призрака» в очереди"
+
+
+def test_себя_с_собой_не_соединяем():
+    """Два открытых окна одного человека иначе соединили бы его с самим собой."""
+    import inspect
+
+    from services.voice import pop_waiting
+
+    assert "exclude_user_id" in inspect.getsource(pop_waiting)
+
+
+def test_звонок_пишется_в_журнал_без_записи_разговора():
+    """Пожаловавшийся на голос не знает имени собеседника — без пары «кто с
+    кем» жалоба неразбираема. Но самой записи разговора быть не должно."""
+    from models.models import VoiceCall
+
+    колонки = set(VoiceCall.__table__.columns.keys())
+    assert {"caller_id", "callee_id", "duration_seconds"} <= колонки
+    # Ничего похожего на файл записи
+    assert not {c for c in колонки if "url" in c or "file" in c or "audio" in c}
+
+
+def test_turn_необязателен_но_отсутствие_логируется():
+    """Без TURN часть звонков не соединится в мобильных сетях — это должно быть
+    видно в логах, а не превращаться в загадочную поломку."""
+    import inspect
+
+    from services import voice
+
+    исходник = inspect.getsource(voice._ice_servers)
+    assert "stun:" in исходник
+    assert "logger.info" in исходник

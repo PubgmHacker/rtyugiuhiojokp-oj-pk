@@ -312,6 +312,27 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/* ── Голосовая рулетка ──────────────────────────────────────── */
+
+/** Параметры WebRTC приходят с сервера: TURN-креденшелы меняются. */
+export async function getIceServers(): Promise<RTCIceServer[]> {
+  const { data } = await api.get("/voice/ice-servers");
+  return data.ice_servers;
+}
+
+/* ── Карта дня ──────────────────────────────────────────────── */
+
+export interface DailyCard {
+  name: string;
+  meaning: string;
+  advice: string;
+}
+
+export async function getDailyCard(): Promise<DailyCard> {
+  const { data } = await api.get("/daily/card");
+  return data;
+}
+
 /* ── Кейсы ──────────────────────────────────────────────────── */
 
 export interface CaseReward {

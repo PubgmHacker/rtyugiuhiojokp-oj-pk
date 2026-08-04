@@ -32,6 +32,7 @@ const Reels = lazy(() => import("./pages/Reels"));
 const PhotoRatings = lazy(() => import("./pages/PhotoRatings"));
 const Rooms = lazy(() => import("./pages/Rooms"));
 const Cases = lazy(() => import("./pages/Cases"));
+const VoiceRoulette = lazy(() => import("./pages/VoiceRoulette"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
 // Пять вкладок, как в референсе. Подписка живёт в профиле: покупка — редкое
@@ -245,6 +246,7 @@ export default function App() {
           <Route path="/photo-ratings" element={<Protected><PhotoRatings /></Protected>} />
           <Route path="/rooms" element={<Protected><Rooms /></Protected>} />
           <Route path="/cases" element={<Protected><Cases /></Protected>} />
+          <Route path="/voice" element={<Protected><VoiceRoulette /></Protected>} />
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected nav={false}><AdminDashboard /></Protected>} />
 

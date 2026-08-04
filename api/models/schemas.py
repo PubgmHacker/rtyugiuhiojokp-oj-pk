@@ -239,6 +239,21 @@ class ReelsOut(BaseModel):
     next_before: Optional[str] = None
 
 
+class VoiceIceServers(BaseModel):
+    """Параметры соединения для WebRTC. Отдаём с сервера: TURN-креденшелы
+    меняются, а зашитые в бандл требовали бы пересборки приложения."""
+
+    ice_servers: list[dict] = Field(default_factory=list)
+
+
+class DailyCardOut(BaseModel):
+    """Карта дня. Развлечение, а не предсказание — так и подписано на экране."""
+
+    name: str
+    meaning: str
+    advice: str
+
+
 class CaseRewardOut(BaseModel):
     """Награда из кейса. Шанс показываем честно: скрытые шансы — ровно то,
     за что гача-механики и не любят."""

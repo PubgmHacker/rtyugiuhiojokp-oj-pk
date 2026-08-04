@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SlidersHorizontal, X, Flame } from "lucide-react";
 import SwipeDeck from "../components/SwipeDeck";
+import DailyCardBanner from "../components/DailyCard";
 import { useStore } from "../lib/store";
 import { updateMyProfile, getMyProfile, type UserProfile } from "../lib/api";
 import { haptic } from "../lib/haptics";
@@ -73,6 +74,8 @@ export default function Discover() {
           </button>
         </div>
       </header>
+
+      <DailyCardBanner />
 
       <SwipeDeck onOpenFilters={() => setFiltersOpen(true)} />
 

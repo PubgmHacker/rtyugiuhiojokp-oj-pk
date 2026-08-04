@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # Сборки из Xcode, TestFlight и App Review работают в песочнице
     APPSTORE_USE_SANDBOX: bool = False
 
+    # ── Голосовая рулетка (WebRTC) ──────────────────────────────
+    # Без TURN звонок не соберётся у части людей: симметричный NAT мобильных
+    # операторов одним STUN не пробивается. Пока не задан — часть звонков не
+    # соединится, но раздел работает.
+    TURN_URL: str = ""
+    TURN_USERNAME: str = ""
+    TURN_PASSWORD: str = ""
+
     # ── APNs (пуши в iOS-приложение) ────────────────────────────
     # Ключ .p8 из Apple Developer Portal — целиком, включая заголовок
     # BEGIN PRIVATE KEY. В .env переводы строк пишутся как \n.

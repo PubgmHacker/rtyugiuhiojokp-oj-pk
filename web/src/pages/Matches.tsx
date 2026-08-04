@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Users, ChevronRight } from "lucide-react";
+import { Users, ChevronRight, Mic } from "lucide-react";
 import { getMatches } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
@@ -121,6 +121,21 @@ export default function Matches() {
         <Users size={18} className="text-accent shrink-0" />
         <span className="flex-1 text-[14.5px] font-semibold">
           Чаты по интересам
+        </span>
+        <ChevronRight size={17} className="text-text-faint shrink-0" />
+      </Link>
+
+      {/* Голосом знакомиться проще, чем текстом: голос сразу говорит о
+          человеке больше, чем переписка */}
+      <Link
+        to="/voice"
+        onClick={() => haptic("light")}
+        className="mx-4 mt-2 flex items-center gap-3 px-4 py-3
+                   rounded-[var(--radius-tile)] bg-surface-2 border border-hairline"
+      >
+        <Mic size={18} className="text-accent shrink-0" />
+        <span className="flex-1 text-[14.5px] font-semibold">
+          Голосовая рулетка
         </span>
         <ChevronRight size={17} className="text-text-faint shrink-0" />
       </Link>
