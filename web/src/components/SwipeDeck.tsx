@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { X, Heart, Star, RotateCcw, SlidersHorizontal, Mail } from "lucide-react";
 import type { DeckProfile, MatchResponse } from "../lib/api";
 import { likeProfile, getDeck, resetDeck, getSuperlikeQuota } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -32,6 +32,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   // Суперлайков на сутки конечное число — кнопка должна это показывать,
   // иначе отказ сервера выглядит как поломка
   const [superlikesLeft, setSuperlikesLeft] = useState<number | null>(null);
+  // Лайк с сообщением: пишем до отправки, потому что текст уходит вместе
+  // с лайком и увидят его ещё до взаимности
+  const [noteFor, setNoteFor] = useState<DeckProfile | null>(null);
 
   const loadingRef = useRef(false);
   // Блокируем повторный свайп, пока текущий не обработан — иначе
@@ -88,7 +91,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   }, []);
 
   const handleSwipe = useCallback(
-    async (direction: SwipeDirection, profile: DeckProfile) => {
+    async (direction: SwipeDirection, profile: DeckProfile, note = "") => {
       if (busyRef.current) return;
       busyRef.current = true;
 
@@ -100,7 +103,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
       setLastSwiped(profile);
 
       try {
-        const result = await likeProfile(profile.id, type);
+        const result = await likeProfile(profile.id, type, note);
         if (type === "superlike") {
           setSuperlikesLeft((n) => (n === null ? n : Math.max(0, n - 1)));
         }
@@ -284,6 +287,20 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
           <Heart size={27} fill="currentColor" />
         </IconButton>
 
+        <IconButton
+          label="Лайк с сообщением"
+          onClick={() => {
+            const top = deck[0];
+            if (!top) return;
+            haptic("light");
+            setNoteFor(top);
+          }}
+          disabled={!deck.length}
+          size={46}
+        >
+          <Mail size={19} />
+        </IconButton>
+
         {onOpenFilters ? (
           <IconButton label="Настройки поиска" onClick={onOpenFilters} size={46}>
             <SlidersHorizontal size={19} />
@@ -293,7 +310,107 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         )}
       </div>
 
+      <LikeNoteSheet
+        profile={noteFor}
+        onClose={() => setNoteFor(null)}
+        onSend={(note) => {
+          const target = noteFor;
+          setNoteFor(null);
+          if (target) handleSwipe("right", target, note);
+        }}
+      />
+
       <MatchModal data={matchData} onClose={() => setMatchData(null)} />
     </div>
+  );
+}
+
+/* ── Шторка ввода сообщения к лайку ─────────────────────────── */
+
+/** Столько же, сколько принимает сервер (LikeRequest.message). */
+const MAX_LIKE_NOTE = 200;
+
+function LikeNoteSheet({
+  profile,
+  onClose,
+  onSend,
+}: {
+  profile: DeckProfile | null;
+  onClose: () => void;
+  onSend: (note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+
+  // Текст от предыдущей анкеты не должен уехать новой
+  useEffect(() => {
+    if (profile) setNote("");
+  }, [profile]);
+
+  const trimmed = note.trim();
+
+  return (
+    <AnimatePresence>
+      {profile && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          />
+          <motion.div
+            role="dialog"
+            aria-label="Сообщение к лайку"
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", stiffness: 380, damping: 36 }}
+            className="fixed bottom-0 left-0 right-0 z-50 bg-bg-elevated
+                       rounded-t-[var(--radius-sheet)] border-t border-hairline
+                       px-5 pt-3 pb-7 safe-bottom"
+          >
+            <div className="w-10 h-1 rounded-full bg-surface-3 mx-auto mb-5" />
+
+            <h2 className="text-heading font-bold mb-1.5">
+              Написать {profile.display_name}
+            </h2>
+            <p className="text-caption text-text-muted mb-4">
+              Сообщение придёт вместе с лайком — его увидят до взаимности
+            </p>
+
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value.slice(0, MAX_LIKE_NOTE))}
+              rows={3}
+              autoFocus
+              placeholder="Например: у нас одна любимая группа"
+              aria-label="Текст сообщения"
+              className="w-full px-3.5 py-3 mb-1.5 rounded-[var(--radius-tile)]
+                         bg-surface-2 border border-hairline text-[15px] resize-none
+                         placeholder:text-text-muted focus:outline-none
+                         focus:border-accent/60"
+            />
+            <p className="text-[12px] text-text-muted text-right mb-4">
+              {note.length} / {MAX_LIKE_NOTE}
+            </p>
+
+            <div className="flex gap-2.5">
+              <Button variant="secondary" size="lg" onClick={onClose}>
+                Отмена
+              </Button>
+              <Button
+                size="lg"
+                fullWidth
+                disabled={!trimmed}
+                onClick={() => onSend(trimmed)}
+              >
+                Отправить лайк
+              </Button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

@@ -192,6 +192,18 @@ export default function Likes() {
                   {p.is_verified && <VerifiedBadge size={13} />}
                 </div>
 
+                {/* Сообщение, приложенное к лайку: ради него и стоит открыть
+                    этот экран — оно объясняет, почему вас лайкнули */}
+                {p.like_message && (
+                  <p
+                    className="mb-2.5 px-2.5 py-1.5 rounded-[var(--radius-tile)]
+                               glass-strong text-[12px] leading-snug text-white/90
+                               line-clamp-3"
+                  >
+                    «{p.like_message}»
+                  </p>
+                )}
+
                 <div className="flex gap-2">
                   <button
                     aria-label={`Пропустить ${p.display_name}`}

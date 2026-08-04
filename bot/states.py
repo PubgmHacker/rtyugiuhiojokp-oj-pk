@@ -24,6 +24,9 @@ class DatingStates(StatesGroup):
     """Просмотр анкет."""
 
     viewing_profile = State()
+    # Ввод пары слов, которые уйдут вместе с лайком: получатель увидит их
+    # до мэтча, поэтому это отдельный шаг, а не сообщение в чат
+    waiting_like_message = State()
 
 
 class ChatStates(StatesGroup):

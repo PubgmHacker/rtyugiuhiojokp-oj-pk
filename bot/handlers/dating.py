@@ -14,6 +14,7 @@ from database import (
     create_report, block_user,
 )
 from keyboards import dating_action_kb, main_kb, profile_kb, report_reasons_kb
+from services.moderation import moderate_text, humanize
 from states import DatingStates
 from texts import profile_card, no_more_profiles, match_notification
 import texts as T
@@ -107,7 +108,12 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
     like_type = "pass" if action == "pass" else "like"
 
     if action == "message":
-        await callback.answer("💌 Напишите после мэтча — поставьте 👍!", show_alert=True)
+        # Текст уйдёт вместе с лайком, поэтому сначала спрашиваем его, а лайк
+        # ставим уже после — иначе при отказе от ввода остался бы «немой» лайк
+        await callback.answer()
+        await state.update_data(like_message_target=target_id)
+        await state.set_state(DatingStates.waiting_like_message)
+        await callback.message.answer(T.LIKE_MESSAGE_ASK)
         return
 
     # Пользователь в середине заполнения анкеты (лайк из старого уведомления):
@@ -130,21 +136,44 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
             await _show_next_from_deck(callback.message, db_user["id"], state)
         return
 
-    # action == "like"
+    # Всплывающий ответ и снятие карточки — здесь: у ветки с сообщением
+    # своего callback уже нет, а «живые» кнопки после решения оставлять
+    # нельзя, повторные тапы это спам
+    await callback.answer("🎉 Это мэтч!" if like_result.get("matched") else "👍 Понравилось!",
+                          show_alert=like_result.get("matched", False))
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await _after_like(
+        callback.message, callback.bot, db_user, target_id, like_result,
+        state, in_registration,
+    )
+
+
+async def _after_like(
+    message: Message,
+    bot,
+    db_user: dict,
+    target_id: str,
+    like_result: dict,
+    state: FSMContext,
+    in_registration: bool,
+    note: str = "",
+):
+    """Что происходит после успешно поставленного лайка.
+
+    Общая часть для обычного лайка и лайка с сообщением: уведомления, показ
+    следующей анкеты. `note` — приложенный текст, он уходит получателю вместе
+    с карточкой.
+    """
     if like_result.get("matched"):
         # Мэтч уже создан внутри like_and_match — здесь только уведомления.
         # publish_match_event тут НЕ зовём — его слушает этот же бот,
         # и оба пользователя получили бы уведомления дважды.
-        await callback.answer("🎉 Это мэтч!", show_alert=True)
-
-        # Убираем карточку с «живыми» кнопками (повторные тапы = спам)
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
         partner = await get_profile(target_id)
-        await callback.message.answer_photo(
+        await message.answer_photo(
             photo=BANNERS["match"],
             caption=match_notification(partner or {}),
             reply_markup=main_kb(),
@@ -155,42 +184,99 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
         if partner_user and partner_user.get("telegram_id"):
             my_profile = await get_profile(db_user["id"])
             try:
-                await callback.bot.send_photo(
+                await bot.send_photo(
                     chat_id=partner_user["telegram_id"],
                     photo=BANNERS["match"],
                     caption=match_notification(my_profile or {}),
                     reply_markup=main_kb(),
                 )
+                if note:
+                    await bot.send_message(
+                        chat_id=partner_user["telegram_id"],
+                        text=f"💌 <i>{T.escape(note)}</i>",
+                    )
             except Exception as e:
                 logger.warning(f"Failed to notify match partner: {e}")
 
         # Продолжаем показ анкет
         if not in_registration:
-            await _show_next_from_deck(callback.message, db_user["id"], state)
+            await _show_next_from_deck(message, db_user["id"], state)
     else:
-        await callback.answer("👍 Понравилось!")
         # Дайвинчик-механика: показываем партнёру анкету лайкнувшего
         partner_user = await get_user_by_id(target_id)
         if partner_user and partner_user.get("telegram_id"):
             my_profile = await get_profile(db_user["id"])
             if my_profile and my_profile.get("display_name"):
                 try:
-                    await callback.bot.send_message(
+                    await bot.send_message(
                         chat_id=partner_user["telegram_id"],
-                        text="💌 Вы кому-то понравились! Взгляните на анкету:",
+                        text=(
+                            f"💌 Вам написали вместе с лайком:\n\n<i>{T.escape(note)}</i>"
+                            if note
+                            else "💌 Вы кому-то понравились! Взгляните на анкету:"
+                        ),
                     )
                     await _render_profile_to_chat(
-                        callback.bot, partner_user["telegram_id"], my_profile,
+                        bot, partner_user["telegram_id"], my_profile,
                     )
                 except Exception as e:
                     logger.warning(f"Failed to notify liked user: {e}")
 
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
         if not in_registration:
-            await _show_next_from_deck(callback.message, db_user["id"], state)
+            await _show_next_from_deck(message, db_user["id"], state)
+
+
+# ── Лайк с сообщением ───────────────────────────────────────────
+
+MAX_LIKE_MESSAGE = 200
+
+
+@router.message(DatingStates.waiting_like_message, F.text)
+async def process_like_message(message: Message, state: FSMContext):
+    """Принять пару слов и поставить лайк вместе с ними."""
+    note = (message.text or "").strip()
+    if len(note) > MAX_LIKE_MESSAGE:
+        await message.answer(T.LIKE_MESSAGE_TOO_LONG)
+        return
+
+    data = await state.get_data()
+    target_id = data.get("like_message_target")
+    if not target_id:
+        # Состояние пережило перезапуск, а цель потерялась — возвращаем
+        # человека к анкетам, а не оставляем в тупике
+        await state.set_state(DatingStates.viewing_profile)
+        await message.answer(T.ERROR_GENERIC, reply_markup=main_kb())
+        return
+
+    # Получатель увидит текст до мэтча, то есть до того, как сможет
+    # заблокировать отправителя — модерируем перед отправкой
+    verdict = await moderate_text(note)
+    if verdict.get("blocked"):
+        await message.answer(
+            T.LIKE_MESSAGE_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+        )
+        return
+
+    db_user = await get_or_create_user(
+        message.from_user.id,
+        message.from_user.username or "",
+        message.from_user.first_name or "",
+    )
+    like_result = await like_and_match(db_user["id"], target_id, "like", note)
+
+    await state.set_state(DatingStates.viewing_profile)
+    await state.update_data(like_message_target=None)
+    await message.answer(T.LIKE_MESSAGE_SENT)
+
+    await _after_like(
+        message, message.bot, db_user, target_id, like_result,
+        state, in_registration=False, note=note,
+    )
+
+
+@router.message(DatingStates.waiting_like_message)
+async def like_message_wrong_type(message: Message):
+    await message.answer(T.REG_EXPECT_TEXT)
 
 
 async def _render_profile_to_chat(bot, chat_id: int, profile: dict):

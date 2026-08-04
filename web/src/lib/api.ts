@@ -64,6 +64,8 @@ export interface UserProfile {
   filter_city?: string;
   filter_height_min?: number | null;
   filter_height_max?: number | null;
+  /** Только в списке «кто меня лайкнул»: текст, приложенный к лайку. */
+  like_message?: string;
   has_location?: boolean;
   invited_count?: number;
   referral_boost?: boolean;
@@ -143,12 +145,17 @@ export async function resetDeck(): Promise<void> {
   await api.post("/profiles/deck/reset");
 }
 
-export async function likeProfile(targetId: string, type: "like" | "superlike" | "pass" = "like"): Promise<{
+export async function likeProfile(
+  targetId: string,
+  type: "like" | "superlike" | "pass" = "like",
+  /** Пара слов, которые получатель увидит ещё до мэтча. */
+  message = ""
+): Promise<{
   liked: boolean;
   matched: boolean;
   match?: MatchResponse;
 }> {
-  const { data } = await api.post("/likes", { target_id: targetId, type });
+  const { data } = await api.post("/likes", { target_id: targetId, type, message });
   return data;
 }
 

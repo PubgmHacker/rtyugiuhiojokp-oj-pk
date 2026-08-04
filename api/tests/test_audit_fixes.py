@@ -1199,3 +1199,66 @@ def test_значения_цели_и_субкультуры_совпадают_
 
     assert _ключи_py_словаря(тексты, "GOAL_LABELS") == цели
     assert _ключи_py_словаря(тексты, "SUBCULTURE_LABELS") == субкультуры
+
+
+# ════════════════════════════════════════════════════════════════
+#  Лайк с сообщением (кнопка «Написать» в боте была заглушкой:
+#  отвечала «напишите после мэтча» и не делала ничего)
+# ════════════════════════════════════════════════════════════════
+
+def test_текст_лайка_принимается_и_ограничен(openapi):
+    """Схема должна принимать message, иначе клиент шлёт его в пустоту."""
+    from models.schemas import LikeRequest
+
+    поля = LikeRequest.model_fields
+    assert "message" in поля
+
+    # Двести символов проходят, двести один — нет: это повод для разговора,
+    # а не первое сообщение
+    LikeRequest(target_id="u1", message="я" * 200)
+    with pytest.raises(Exception):
+        LikeRequest(target_id="u1", message="я" * 201)
+
+
+def test_текст_лайка_виден_в_списке_кто_лайкнул():
+    """Отправлять сообщение некуда, если получатель его не увидит."""
+    from models.schemas import UserProfile
+
+    assert "like_message" in UserProfile.model_fields
+    assert UserProfile(id="u1").like_message == ""
+
+
+def test_колонка_текста_есть_в_обеих_моделях_лайка():
+    import ast
+    from pathlib import Path
+
+    from models.models import Like
+
+    assert "message" in Like.__table__.columns
+
+    бот = (
+        Path(__file__).resolve().parents[2] / "bot" / "database" / "models.py"
+    ).read_text(encoding="utf-8")
+    дерево = ast.parse(бот)
+    поля = {
+        stmt.target.id
+        for узел in ast.walk(дерево)
+        if isinstance(узел, ast.ClassDef) and узел.name == "Like"
+        for stmt in узел.body
+        if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)
+    }
+    assert "message" in поля, "бот пишет лайки той же таблицей — колонка нужна и там"
+
+
+def test_бот_умеет_ставить_лайк_с_текстом():
+    """Заглушка «напишите после мэтча» не должна вернуться."""
+    from pathlib import Path
+
+    корень = Path(__file__).resolve().parents[2] / "bot"
+    хендлеры = (корень / "handlers" / "dating.py").read_text(encoding="utf-8")
+    состояния = (корень / "states.py").read_text(encoding="utf-8")
+
+    assert "Напишите после мэтча" not in хендлеры
+    assert "waiting_like_message" in состояния
+    # Текст уходит вместе с лайком, а не отдельным сообщением в чат
+    assert 'like_and_match(db_user["id"], target_id, "like", note)' in хендлеры

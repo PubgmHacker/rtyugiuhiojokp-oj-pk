@@ -158,6 +158,9 @@ class Like(Base):
     liker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     liked_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     type: Mapped[str] = mapped_column(String, default="like")
+    # Текст, приложенный к лайку: он показывается получателю до мэтча,
+    # поэтому это единственный способ сказать что-то первым.
+    message: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     liker: Mapped["User"] = relationship(back_populates="likes_given", foreign_keys=[liker_id])

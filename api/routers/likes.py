@@ -20,6 +20,7 @@ from models.schemas import (
 )
 from services.realtime import publish_match, publish_new_like, publish_new_match_for_bot
 from services.ai_matchmaker import score_match
+from services.ai_moderation import log_moderation, moderate_text
 from services.premium import is_premium as _is_premium
 from services.push import notify_new_match
 from utils import as_list
@@ -51,9 +52,11 @@ def _calc_age(birth_date) -> Optional[int]:
     return age
 
 
-def _profile_to_user(profile: Optional[Profile], user_id: str) -> UserProfile:
+def _profile_to_user(
+    profile: Optional[Profile], user_id: str, like_message: str = ""
+) -> UserProfile:
     if not profile:
-        return UserProfile(id=user_id)
+        return UserProfile(id=user_id, like_message=like_message)
     return UserProfile(
         id=user_id,
         display_name=profile.display_name or "",
@@ -63,6 +66,10 @@ def _profile_to_user(profile: Optional[Profile], user_id: str) -> UserProfile:
         city=profile.city or "",
         photos=as_list(profile.photos),
         interests=as_list(profile.interests),
+        goal=profile.goal or "",
+        subculture=profile.subculture or "",
+        height_cm=profile.height_cm,
+        like_message=like_message,
     )
 
 
@@ -155,12 +162,30 @@ async def create_like(
         and (existing is None or existing.type == "pass")
     )
 
+    # Текст к лайку модерируем как любой публичный текст: получатель увидит
+    # его до мэтча, то есть до того, как сможет заблокировать отправителя.
+    like_message = (data.message or "").strip() if data.type != "pass" else ""
+    if like_message:
+        verdict = await moderate_text(like_message)
+        await log_moderation(user.id, "like_message", like_message, verdict)
+        if verdict["blocked"]:
+            raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+
     if existing:
         if existing.type != data.type:
             # Смена решения (rewind): pass → like, like → superlike и т.п.
             existing.type = data.type
+        # Пустым текстом прежний не затираем: человек мог лайкнуть с
+        # сообщением, а потом просто поменять тип лайка
+        if like_message:
+            existing.message = like_message
     else:
-        session.add(Like(liker_id=user.id, liked_id=data.target_id, type=data.type))
+        session.add(Like(
+            liker_id=user.id,
+            liked_id=data.target_id,
+            type=data.type,
+            message=like_message,
+        ))
     await session.flush()
 
     if data.type == "pass":
@@ -262,5 +287,5 @@ async def get_likes_received(
             continue
         result = await session.execute(select(Profile).where(Profile.user_id == lk.liker_id))
         profile = result.scalar_one_or_none()
-        out.append(_profile_to_user(profile, lk.liker_id))
+        out.append(_profile_to_user(profile, lk.liker_id, lk.message or ""))
     return out

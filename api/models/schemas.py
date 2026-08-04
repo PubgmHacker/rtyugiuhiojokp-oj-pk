@@ -52,6 +52,9 @@ class UserProfile(BaseModel):
     filter_city: str = ""
     filter_height_min: Optional[int] = None
     filter_height_max: Optional[int] = None
+    # Заполняется только в списке «кто меня лайкнул»: текст, приложенный
+    # к входящему лайку.
+    like_message: str = ""
     has_location: bool = False
     invited_count: int = 0
     referral_boost: bool = False
@@ -95,6 +98,9 @@ class ProfileUpdate(BaseModel):
 class LikeRequest(BaseModel):
     target_id: str
     type: str = Field(default="like", pattern="^(like|superlike|pass)$")
+    # Пара слов вместе с лайком — их увидят до мэтча. Лимит короткий
+    # намеренно: это повод для разговора, а не первое сообщение.
+    message: str = Field(default="", max_length=200)
 
 
 class LikeResponse(BaseModel):

@@ -475,7 +475,9 @@ async def activate_premium(
 #  LIKES & MATCHES
 # ════════════════════════════════════════════════════════════════
 
-async def like_and_match(liker_id: str, liked_id: str, like_type: str = "like") -> dict:
+async def like_and_match(
+    liker_id: str, liked_id: str, like_type: str = "like", message: str = "",
+) -> dict:
     """Поставить лайк и, если он взаимный, создать мэтч — одной транзакцией.
 
     Раньше это были три независимые транзакции (create_like →
@@ -509,8 +511,17 @@ async def like_and_match(liker_id: str, liked_id: str, like_type: str = "like") 
                     # иначе повторный лайк после пропуска молча терялся
                     existing.type = like_type
                     upgraded = True
+                # Пустым текстом прежний не затираем: человек мог написать
+                # пару слов, а потом просто сменить тип лайка
+                if message:
+                    existing.message = message
             else:
-                session.add(Like(liker_id=liker_id, liked_id=liked_id, type=like_type))
+                session.add(Like(
+                    liker_id=liker_id,
+                    liked_id=liked_id,
+                    type=like_type,
+                    message=message,
+                ))
             await session.flush()
 
             if like_type == "pass":
