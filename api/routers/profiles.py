@@ -71,6 +71,7 @@ def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
         interests=as_list(profile.interests),
         goal=profile.goal or "",
         subculture=profile.subculture or "",
+        mbti=profile.mbti or "",
         height_cm=profile.height_cm,
     )
 
@@ -200,6 +201,7 @@ async def get_my_profile(
         distance_max=profile.distance_max if profile else 100,
         goal=profile.goal if profile else "",
         subculture=profile.subculture if profile else "",
+        mbti=profile.mbti if profile else "",
         height_cm=profile.height_cm if profile else None,
         filter_goal=profile.filter_goal if profile else "",
         filter_subculture=profile.filter_subculture if profile else "",
@@ -300,6 +302,7 @@ async def update_my_profile(
         distance_max=profile.distance_max,
         goal=profile.goal,
         subculture=profile.subculture,
+        mbti=profile.mbti,
         height_cm=profile.height_cm,
         filter_goal=profile.filter_goal,
         filter_subculture=profile.filter_subculture,

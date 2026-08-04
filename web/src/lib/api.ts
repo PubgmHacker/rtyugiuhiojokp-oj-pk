@@ -61,6 +61,7 @@ export interface UserProfile {
   // Нишевые поля анкеты и фильтры по ним: пусто — не указано / не фильтруем
   goal?: string;
   subculture?: string;
+  mbti?: string;
   height_cm?: number | null;
   filter_goal?: string;
   filter_subculture?: string;
@@ -92,6 +93,7 @@ export interface DeckProfile {
   match_reason?: string | null;
   goal?: string;
   subculture?: string;
+  mbti?: string;
   height_cm?: number | null;
 }
 

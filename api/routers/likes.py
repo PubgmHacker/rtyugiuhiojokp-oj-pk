@@ -69,6 +69,7 @@ def _profile_to_user(
         interests=as_list(profile.interests),
         goal=profile.goal or "",
         subculture=profile.subculture or "",
+        mbti=profile.mbti or "",
         height_cm=profile.height_cm,
         like_message=like_message,
     )

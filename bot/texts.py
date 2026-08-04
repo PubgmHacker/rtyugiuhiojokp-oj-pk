@@ -147,6 +147,8 @@ def profile_card(profile: dict) -> str:
     subculture = profile.get("subculture")
     if subculture:
         facts.append(_esc(SUBCULTURE_LABELS.get(subculture, subculture)))
+    if profile.get("mbti"):
+        facts.append(_esc(profile["mbti"]))
     if facts:
         line += " — " + " · ".join(facts)
 

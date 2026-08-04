@@ -15,6 +15,7 @@ import { Button, Chip, Spinner } from "../components/ui";
 import {
   GOALS,
   SUBCULTURES,
+  MBTI_TYPES,
   HEIGHT_MIN,
   HEIGHT_MAX,
 } from "../lib/profileOptions";
@@ -90,6 +91,7 @@ export default function Onboarding() {
   const [interests, setInterests] = useState<string[]>(user?.interests ?? []);
   const [goal, setGoal] = useState(user?.goal ?? "");
   const [subculture, setSubculture] = useState(user?.subculture ?? "");
+  const [mbti, setMbti] = useState(user?.mbti ?? "");
   const [height, setHeight] = useState(
     user?.height_cm != null ? String(user.height_cm) : ""
   );
@@ -186,6 +188,7 @@ export default function Onboarding() {
         interests,
         goal,
         subculture,
+        mbti,
         bio: bio.trim(),
       };
       // Рост необязателен: пустое поле не отправляем вовсе, иначе схема
@@ -222,6 +225,7 @@ export default function Onboarding() {
     interests,
     goal,
     subculture,
+    mbti,
     height,
     bio,
     coords,
@@ -435,6 +439,21 @@ export default function Onboarding() {
                       }
                     >
                       {o.label}
+                    </Chip>
+                  ))}
+                </div>
+
+                <p className="text-caption text-text-muted mb-2.5">
+                  Тип личности (MBTI)
+                </p>
+                <div className="flex flex-wrap gap-2 mb-7">
+                  {MBTI_TYPES.map((o) => (
+                    <Chip
+                      key={o.value}
+                      active={mbti === o.value}
+                      onClick={() => setMbti(mbti === o.value ? "" : o.value)}
+                    >
+                      {o.value}
                     </Chip>
                   ))}
                 </div>

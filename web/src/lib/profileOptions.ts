@@ -56,3 +56,29 @@ export const REPORT_REASONS: Option[] = [
   { value: "underage", label: "Похоже, ребёнок" },
   { value: "other", label: "Другое" },
 ];
+
+/**
+ * Типы личности MBTI. Значение — сам код («INFJ»), подпись — с описанием:
+ * четыре буквы без пояснения ничего не говорят тому, кто не в теме.
+ *
+ * Фильтра по MBTI нет намеренно: шестнадцать типов сузили бы выдачу так, что
+ * в небольшом городе не осталось бы никого.
+ */
+export const MBTI_TYPES: Option[] = [
+  { value: "INTJ", label: "INTJ · Стратег" },
+  { value: "INTP", label: "INTP · Аналитик" },
+  { value: "ENTJ", label: "ENTJ · Командир" },
+  { value: "ENTP", label: "ENTP · Полемист" },
+  { value: "INFJ", label: "INFJ · Активист" },
+  { value: "INFP", label: "INFP · Медиатор" },
+  { value: "ENFJ", label: "ENFJ · Тренер" },
+  { value: "ENFP", label: "ENFP · Борец" },
+  { value: "ISTJ", label: "ISTJ · Администратор" },
+  { value: "ISFJ", label: "ISFJ · Защитник" },
+  { value: "ESTJ", label: "ESTJ · Менеджер" },
+  { value: "ESFJ", label: "ESFJ · Консул" },
+  { value: "ISTP", label: "ISTP · Виртуоз" },
+  { value: "ISFP", label: "ISFP · Артист" },
+  { value: "ESTP", label: "ESTP · Делец" },
+  { value: "ESFP", label: "ESFP · Развлекатель" },
+];

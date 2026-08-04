@@ -49,6 +49,7 @@ class UserProfile(BaseModel):
     # Нишевые поля анкеты и фильтры по ним. Пусто — не указано / не фильтруем.
     goal: str = ""
     subculture: str = ""
+    mbti: str = ""
     height_cm: Optional[int] = None
     filter_goal: str = ""
     filter_subculture: str = ""
@@ -91,6 +92,10 @@ class ProfileUpdate(BaseModel):
     # Пустая строка — осознанное «сбросить», поэтому min_length не ставим.
     goal: Optional[str] = Field(None, max_length=32)
     subculture: Optional[str] = Field(None, max_length=32)
+    # Пустая строка — «не указан»; иначе строго один из шестнадцати типов
+    mbti: Optional[str] = Field(
+        None, pattern=r"^$|^[EI][NS][FT][JP]$"
+    )
     height_cm: Optional[int] = Field(None, ge=120, le=230)
     filter_goal: Optional[str] = Field(None, max_length=32)
     filter_subculture: Optional[str] = Field(None, max_length=32)
@@ -153,6 +158,7 @@ class DeckProfile(BaseModel):
     match_reason: Optional[str] = None
     goal: str = ""
     subculture: str = ""
+    mbti: str = ""
     height_cm: Optional[int] = None
 
 

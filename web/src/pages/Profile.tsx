@@ -258,11 +258,11 @@ export default function Profile() {
       <div className="grid grid-cols-3 gap-2.5 mb-5">
         <Stat label="Фото" value={profile?.photos?.length ?? 0} />
         <Stat label="Интересы" value={profile?.interests?.length ?? 0} />
-        <Stat
-          label="Приглашено"
-          value={profile?.invited_count ?? 0}
-        />
+        <Stat label="Приглашено" value={profile?.invited_count ?? 0} />
       </div>
+
+      {/* ── Заполненность анкеты ──────────────────────────────── */}
+      <ProfileCompleteness profile={profile} onEdit={() => navigate("/onboarding")} />
 
       {/* ── О себе ────────────────────────────────────────────── */}
       {profile?.bio && (
@@ -847,4 +847,99 @@ function plural(n: number, one: string, few: string, many: string): string {
   if (mod10 === 1 && mod100 !== 11) return one;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
   return many;
+}
+
+/* ── Заполненность анкеты ───────────────────────────────────── */
+
+/**
+ * Что считаем заполненным и сколько это стоит в процентах.
+ *
+ * Веса не равные: без фото и имени анкету не показывают вовсе, а MBTI — приятное
+ * дополнение. Сумма ровно 100, иначе «100%» не достигалось бы никогда.
+ */
+const COMPLETENESS: {
+  key: string;
+  label: string;
+  weight: number;
+  done: (p: UserProfile) => boolean;
+}[] = [
+  { key: "name", label: "Имя", weight: 10, done: (p) => !!p.display_name },
+  { key: "photo", label: "Хотя бы одно фото", weight: 20, done: (p) => !!p.photos?.length },
+  {
+    key: "photos",
+    label: "Три фото и больше",
+    weight: 15,
+    done: (p) => (p.photos?.length ?? 0) >= 3,
+  },
+  { key: "bio", label: "Пара слов о себе", weight: 15, done: (p) => !!p.bio },
+  {
+    key: "interests",
+    label: "Интересы",
+    weight: 10,
+    done: (p) => !!p.interests?.length,
+  },
+  { key: "city", label: "Город", weight: 10, done: (p) => !!p.city },
+  { key: "goal", label: "Цель знакомства", weight: 10, done: (p) => !!p.goal },
+  {
+    key: "subculture",
+    label: "Субкультура",
+    weight: 5,
+    done: (p) => !!p.subculture,
+  },
+  { key: "height", label: "Рост", weight: 3, done: (p) => p.height_cm != null },
+  { key: "mbti", label: "Тип личности", weight: 2, done: (p) => !!p.mbti },
+];
+
+function ProfileCompleteness({
+  profile,
+  onEdit,
+}: {
+  profile: UserProfile | null;
+  onEdit: () => void;
+}) {
+  if (!profile) return null;
+
+  const filled = COMPLETENESS.filter((item) => item.done(profile));
+  const percent = filled.reduce((sum, item) => sum + item.weight, 0);
+  const missing = COMPLETENESS.filter((item) => !item.done(profile));
+
+  // Полностью заполненную анкету не дёргаем: подсказка «всё готово» ничего не
+  // добавляет и только занимает место
+  if (!missing.length) return null;
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="font-semibold text-[15px]">Анкета заполнена</span>
+        <span className="font-extrabold text-[17px]">{percent}%</span>
+      </div>
+
+      <div
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="h-1.5 rounded-full bg-surface-3 overflow-hidden mb-3"
+      >
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${percent}%` }}
+          transition={{ type: "spring", stiffness: 120, damping: 20 }}
+          className="h-full rounded-full bg-dawn"
+        />
+      </div>
+
+      {/* Показываем два ближайших пункта, а не весь список: длинный перечень
+          недостатков скорее отталкивает, чем мотивирует */}
+      <p className="text-caption text-text-muted mb-3">
+        Осталось: {missing.slice(0, 2).map((m) => m.label.toLowerCase()).join(", ")}
+        {missing.length > 2 ? ` и ещё ${missing.length - 2}` : ""}
+      </p>
+
+      <Button variant="secondary" size="sm" onClick={onEdit}>
+        <Pencil size={15} />
+        Дозаполнить
+      </Button>
+    </Card>
+  );
 }

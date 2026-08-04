@@ -1707,3 +1707,80 @@ def test_настройки_приватности_доступны_без_по�
     ).read_text(encoding="utf-8")
     # А инкогнито по-прежнему требует подписки
     assert 'update_fields.get("is_incognito") is True' in роутер
+
+
+# ════════════════════════════════════════════════════════════════
+#  MBTI и заполненность анкеты
+# ════════════════════════════════════════════════════════════════
+
+def test_mbti_принимает_только_валидные_типы():
+    """Свободная строка тут бесполезна: «интроверт» не совпадёт ни с чем."""
+    import pytest as _pytest
+
+    from models.schemas import ProfileUpdate
+
+    for код in ("INFJ", "ESTP", "INTJ"):
+        ProfileUpdate(mbti=код)
+    # Пустая строка — законное «не указан»
+    ProfileUpdate(mbti="")
+
+    for мусор in ("XXXX", "INF", "INFJX", "интроверт", "infj"):
+        with _pytest.raises(Exception):
+            ProfileUpdate(mbti=мусор)
+
+
+def test_mbti_виден_во_всех_слоях():
+    from pathlib import Path
+
+    from models.models import Profile
+    from models.schemas import DeckProfile, UserProfile
+
+    assert "mbti" in Profile.__table__.columns
+    assert "mbti" in UserProfile.model_fields
+    assert "mbti" in DeckProfile.model_fields
+
+    корень = Path(__file__).resolve().parents[2]
+    карточка = (
+        корень / "web" / "src" / "components" / "SwipeCard.tsx"
+    ).read_text(encoding="utf-8")
+    assert "profile.mbti" in карточка
+
+    # В боте — то же поле в той же карточке, иначе человек выглядит по-разному
+    тексты = (корень / "bot" / "texts.py").read_text(encoding="utf-8")
+    assert 'profile.get("mbti")' in тексты
+
+
+def test_шестнадцать_типов_в_справочнике():
+    """Пропущенный тип — это анкета, которую нельзя заполнить до конца."""
+    from pathlib import Path
+
+    веб = (
+        Path(__file__).resolve().parents[2] / "web" / "src" / "lib" / "profileOptions.ts"
+    ).read_text(encoding="utf-8")
+
+    типы = _значения_ts_списка(веб, "MBTI_TYPES")
+    assert len(типы) == 16, f"типов {len(типы)}, а не 16"
+    # Все комбинации четырёх осей должны быть на месте
+    ожидаемые = {
+        a + b + c + d
+        for a in "EI"
+        for b in "NS"
+        for c in "FT"
+        for d in "JP"
+    }
+    assert типы == ожидаемые
+
+
+def test_веса_заполненности_дают_ровно_сто():
+    """Иначе «100%» недостижимо и полоса никогда не закрывается."""
+    import re
+    from pathlib import Path
+
+    профиль = (
+        Path(__file__).resolve().parents[2] / "web" / "src" / "pages" / "Profile.tsx"
+    ).read_text(encoding="utf-8")
+
+    блок = профиль[профиль.index("const COMPLETENESS") : профиль.index("function ProfileCompleteness")]
+    веса = [int(n) for n in re.findall(r"weight:\s*(\d+)", блок)]
+    assert веса, "не удалось разобрать веса"
+    assert sum(веса) == 100, f"сумма весов {sum(веса)}"

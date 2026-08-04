@@ -263,7 +263,7 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
           </div>
         )}
 
-        {(profile.goal || profile.subculture) && (
+        {(profile.goal || profile.subculture || profile.mbti) && (
           <div className="flex flex-wrap gap-1.5 mb-2.5">
             {profile.goal && (
               <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
@@ -273,6 +273,13 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
             {profile.subculture && (
               <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
                 {optionLabel(SUBCULTURES, profile.subculture)}
+              </span>
+            )}
+            {/* MBTI показываем кодом: расшифровка «INFJ · Активист» в тесную
+                карточку не влезает, а тем, кто ищет по типу, кода достаточно */}
+            {profile.mbti && (
+              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+                {profile.mbti}
               </span>
             )}
           </div>

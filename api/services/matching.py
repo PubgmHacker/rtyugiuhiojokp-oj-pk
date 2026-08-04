@@ -300,6 +300,7 @@ async def get_deck_profiles(
             match_reason=compat_reason,
             goal=profile.goal or "",
             subculture=profile.subculture or "",
+            mbti=profile.mbti or "",
             height_cm=profile.height_cm,
         ))
 

@@ -77,6 +77,7 @@ class Profile(Base):
     ai_bio: Mapped[str | None] = mapped_column(String, nullable=True)
     goal: Mapped[str] = mapped_column(String, default="")
     subculture: Mapped[str] = mapped_column(String, default="")
+    mbti: Mapped[str] = mapped_column(String, default="")
     height_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_incognito: Mapped[bool] = mapped_column(Boolean, default=False)
     # Тонкие настройки приватности — см. api/models/models.py

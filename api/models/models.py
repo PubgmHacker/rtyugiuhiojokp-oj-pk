@@ -121,6 +121,8 @@ class Profile(Base):
     # незаполненные анкеты вымывались бы из выдачи.
     goal: Mapped[str] = mapped_column(String, default="")
     subculture: Mapped[str] = mapped_column(String, default="")
+    #: Тип личности MBTI («INFJ» и т.п.). Пусто — не указан.
+    mbti: Mapped[str] = mapped_column(String, default="")
     height_cm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Полное скрытие из выдачи. Флаг перегружен по смыслу: им же работают
     # пауза аккаунта (`set_profile_hidden`) и автоскрытие по жалобам, поэтому

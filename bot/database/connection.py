@@ -754,5 +754,6 @@ def _profile_to_dict(profile: Profile) -> dict:
         "looking_for": profile.looking_for,
         "goal": profile.goal or "",
         "subculture": profile.subculture or "",
+        "mbti": profile.mbti or "",
         "height_cm": profile.height_cm,
     }
