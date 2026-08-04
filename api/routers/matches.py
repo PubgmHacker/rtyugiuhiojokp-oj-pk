@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, and_, or_, desc
+from sqlalchemy import select, and_, or_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from datetime import datetime
@@ -54,13 +54,57 @@ async def get_matches(
         .order_by(desc(Match.created_at))
     )
     matches = result.scalars().all()
+    if not matches:
+        return []
+
+    # Профили и превью переписки берём пакетно: раньше на каждый мэтч
+    # уходил отдельный запрос (N+1), и список чатов заметно тормозил
+    partner_ids = [
+        m.user2_id if m.user1_id == user.id else m.user1_id for m in matches
+    ]
+    match_ids = [m.id for m in matches]
+
+    result = await session.execute(
+        select(Profile).where(Profile.user_id.in_(partner_ids))
+    )
+    profiles = {p.user_id: p for p in result.scalars().all()}
+
+    # Последнее сообщение каждого чата
+    last_ts = (
+        select(func.max(Message.created_at).label("ts"), Message.match_id)
+        .where(Message.match_id.in_(match_ids))
+        .group_by(Message.match_id)
+        .subquery()
+    )
+    result = await session.execute(
+        select(Message).join(
+            last_ts,
+            and_(
+                Message.match_id == last_ts.c.match_id,
+                Message.created_at == last_ts.c.ts,
+            ),
+        )
+    )
+    last_messages = {m.match_id: m for m in result.scalars().all()}
+
+    # Непрочитанные — присланные партнёром и без отметки о прочтении
+    result = await session.execute(
+        select(Message.match_id, func.count(Message.id))
+        .where(
+            and_(
+                Message.match_id.in_(match_ids),
+                Message.sender_id != user.id,
+                Message.read_at.is_(None),
+            )
+        )
+        .group_by(Message.match_id)
+    )
+    unread = dict(result.all())
 
     responses = []
     for m in matches:
         partner_id = m.user2_id if m.user1_id == user.id else m.user1_id
-
-        result = await session.execute(select(Profile).where(Profile.user_id == partner_id))
-        profile = result.scalar_one_or_none()
+        profile = profiles.get(partner_id)
 
         partner_profile = UserProfile(
             id=partner_id,
@@ -72,11 +116,29 @@ async def get_matches(
             interests=as_list(profile.interests) if profile else [],
         )
 
-        responses.append(MatchResponse(
-            id=m.id, match_score=m.match_score, ai_reason=m.ai_reason,
-            created_at=m.created_at, partner=partner_profile,
-        ))
+        last = last_messages.get(m.id)
+        preview = None
+        if last:
+            preview = last.text or ("Фотография" if last.image_url else None)
 
+        responses.append(
+            MatchResponse(
+                id=m.id,
+                match_score=m.match_score,
+                ai_reason=m.ai_reason,
+                created_at=m.created_at,
+                partner=partner_profile,
+                last_message=preview,
+                last_message_at=last.created_at if last else None,
+                unread_count=unread.get(m.id, 0),
+            )
+        )
+
+    # Активные переписки и свежие мэтчи — вперёд
+    responses.sort(
+        key=lambda r: r.last_message_at or r.created_at or datetime.min,
+        reverse=True,
+    )
     return responses
 
 

@@ -1,94 +1,265 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Heart, MessageCircle } from "lucide-react";
-import { getMatches, type MatchResponse } from "../lib/api";
+import { getMatches } from "../lib/api";
+import { useStore } from "../lib/store";
+import { haptic } from "../lib/haptics";
+import { clearNotificationBadge } from "../lib/native";
+import {
+  ScreenHeader,
+  EmptyState,
+  Skeleton,
+  Button,
+  VerifiedBadge,
+} from "../components/ui";
 
 export default function Matches() {
-  const [matches, setMatches] = useState<MatchResponse[]>([]);
+  const navigate = useNavigate();
+  const { matches, setMatches } = useStore();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    loadMatches();
-  }, []);
-
-  const loadMatches = async () => {
+  const load = useCallback(async () => {
+    setError(false);
     try {
-      const data = await getMatches();
-      setMatches(data);
-    } catch (e) {
-      console.error(e);
+      setMatches(await getMatches());
+      clearNotificationBadge();
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
-  };
+  }, [setMatches]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const open = useCallback(
+    (id: string) => {
+      haptic("light");
+      navigate(`/chat/${id}`);
+    },
+    [navigate]
+  );
+
+  // Пока переписки нет, мэтч живёт в верхней ленте: так виднее, кому
+  // ещё стоит написать
+  const fresh = matches.filter((m) => !m.last_message);
+  const conversations = matches.filter((m) => m.last_message);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-accent" />
+      <div>
+        <ScreenHeader title="Чаты" />
+        <div className="px-4 pt-4">
+          <div className="flex gap-3.5 mb-7">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="w-16 h-16 rounded-full shrink-0" />
+            ))}
+          </div>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3 mb-4">
+              <Skeleton className="w-14 h-14 rounded-full shrink-0" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-32 mb-2" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        <ScreenHeader title="Чаты" />
+        <EmptyState
+          emoji="📡"
+          title="Нет связи"
+          description="Не удалось загрузить список. Проверьте подключение к интернету."
+          action={<Button onClick={load}>Повторить</Button>}
+        />
+      </div>
+    );
+  }
+
+  if (!matches.length) {
+    return (
+      <div>
+        <ScreenHeader title="Чаты" />
+        <EmptyState
+          emoji="💬"
+          title="Пока пусто"
+          description="Когда вы понравитесь друг другу, здесь появится чат. Начните с поиска."
+          action={
+            <Button onClick={() => navigate("/discover")}>Смотреть анкеты</Button>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen max-w-md mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
-        <Heart className="text-accent" fill="currentColor" />
-        Мэтчи ({matches.length})
-      </h1>
+    <div>
+      <ScreenHeader
+        title="Чаты"
+        subtitle={`${matches.length} ${plural(matches.length, "совпадение", "совпадения", "совпадений")}`}
+      />
 
-      {matches.length === 0 ? (
-        <div className="text-center py-20">
-          <Heart size={64} className="mx-auto text-text-muted mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Пока нет мэтчей</h2>
-          <p className="text-text-muted mb-6">Продолжай ставить лайки!</p>
-          <Link
-            to="/discover"
-            className="inline-block px-6 py-3 bg-accent text-white rounded-full font-semibold"
-          >
-            Искать дальше
-          </Link>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-4">
-          {matches.map((m, i) => (
-            <motion.div
-              key={m.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.05 }}
-            >
-              <Link
-                to={`/chat/${m.id}`}
-                className="block relative aspect-[3/4] rounded-2xl overflow-hidden group"
+      {/* ── Новые мэтчи ────────────────────────────────────── */}
+      {fresh.length > 0 && (
+        <section className="pt-4">
+          <h2 className="px-4 text-caption text-text-muted mb-3">
+            Новые совпадения
+          </h2>
+          <div className="flex gap-3.5 px-4 overflow-x-auto no-scrollbar pb-1">
+            {fresh.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => open(m.id)}
+                className="flex flex-col items-center gap-1.5 shrink-0 w-[70px]"
               >
-                {m.partner.photos?.[0] ? (
-                  <img
-                    src={m.partner.photos[0]}
-                    alt={m.partner.display_name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition"
+                <Avatar
+                  src={m.partner.photos?.[0]}
+                  name={m.partner.display_name}
+                  size={64}
+                  ring
+                />
+                <span className="text-[12px] text-text-secondary truncate w-full text-center">
+                  {m.partner.display_name}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Переписки ──────────────────────────────────────── */}
+      {conversations.length > 0 && (
+        <section className="pt-6">
+          <h2 className="px-4 text-caption text-text-muted mb-2">Сообщения</h2>
+          <ul>
+            {conversations.map((m, i) => (
+              <motion.li
+                key={m.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.03, 0.25) }}
+              >
+                <button
+                  onClick={() => open(m.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3
+                             active:bg-surface transition-colors text-left"
+                >
+                  <Avatar
+                    src={m.partner.photos?.[0]}
+                    name={m.partner.display_name}
+                    size={56}
                   />
-                ) : (
-                  <div className="w-full h-full bg-surface flex items-center justify-center">
-                    <Heart size={40} className="text-text-muted" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="font-semibold text-[15px] truncate">
+                        {m.partner.display_name}
+                      </span>
+                      {m.partner.is_verified && <VerifiedBadge size={14} />}
+                      {m.last_message_at && (
+                        <span className="ml-auto text-[11.5px] text-text-faint shrink-0">
+                          {formatTime(m.last_message_at)}
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className={`text-[13.5px] truncate ${
+                        m.unread_count ? "text-text font-medium" : "text-text-muted"
+                      }`}
+                    >
+                      {m.last_message}
+                    </p>
                   </div>
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
-                  <p className="font-semibold truncate">{m.partner.display_name}</p>
-                  {m.match_score != null && (
-                    <p className="text-xs text-warn">✨ {m.match_score}% совместимость</p>
+                  {!!m.unread_count && (
+                    <span
+                      className="min-w-[20px] h-5 px-1.5 rounded-full bg-dawn
+                                 text-white text-[11px] font-bold
+                                 flex items-center justify-center shrink-0"
+                    >
+                      {m.unread_count > 99 ? "99+" : m.unread_count}
+                    </span>
                   )}
-                </div>
-                <div className="absolute top-2 right-2 w-8 h-8 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
-                  <MessageCircle size={16} className="text-white" />
-                </div>
-              </Link>
-            </motion.div>
-          ))}
+                </button>
+              </motion.li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+/* ── Аватар с градиентной обводкой ──────────────────────────── */
+
+function Avatar({
+  src,
+  name,
+  size,
+  ring,
+}: {
+  src?: string;
+  name?: string;
+  size: number;
+  ring?: boolean;
+}) {
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className={`rounded-full overflow-hidden shrink-0 ${
+        ring ? "ring-dawn" : "bg-surface-2"
+      }`}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="w-full h-full object-cover rounded-full"
+        />
+      ) : (
+        <div
+          className="w-full h-full rounded-full flex items-center justify-center
+                     font-bold text-white/70"
+          style={{ background: "var(--gradient-plum)", fontSize: size / 2.6 }}
+        >
+          {name?.[0]?.toUpperCase() ?? "?"}
         </div>
       )}
     </div>
   );
+}
+
+/** Сегодня — часы, вчера — «вчера», раньше — дата. */
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "вчера";
+
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
 }

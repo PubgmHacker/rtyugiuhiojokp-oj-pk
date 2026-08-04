@@ -82,6 +82,10 @@ export interface MatchResponse {
   ai_reason?: string | null;
   created_at?: string | null;
   partner: UserProfile;
+  /** Превью для списка чатов — приходит вместе со списком мэтчей. */
+  last_message?: string | null;
+  last_message_at?: string | null;
+  unread_count?: number;
 }
 
 export interface ChatMessage {

@@ -92,6 +92,11 @@ class MatchResponse(BaseModel):
     ai_reason: Optional[str] = None
     created_at: Optional[datetime] = None
     partner: UserProfile
+    # Превью для списка чатов: иначе клиенту пришлось бы запрашивать
+    # переписку отдельно по каждому мэтчу
+    last_message: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    unread_count: int = 0
 
 
 class DeckProfile(BaseModel):

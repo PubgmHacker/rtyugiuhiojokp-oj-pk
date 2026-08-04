@@ -1,352 +1,674 @@
-import { useState } from "react";
+import { useState, useCallback, useMemo, useId } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Camera, X, Plus } from "lucide-react";
-import { updateMyProfile, uploadPhoto } from "../lib/api";
+import { Camera, X, ChevronLeft, MapPin, Check, Star } from "lucide-react";
+import {
+  updateMyProfile,
+  getMyProfile,
+  uploadPhoto,
+  type UserProfile,
+} from "../lib/api";
 import { useStore } from "../lib/store";
-import { hapticFeedback } from "../lib/telegram";
+import { haptic } from "../lib/haptics";
+import { getCurrentPosition } from "../lib/native";
+import { Button, Chip, Spinner } from "../components/ui";
 
-const INTERESTS_PRESETS = [
-  "Путешествия", "Спорт", "Кино", "Музыка", "Готовка", "Чтение",
-  "Фотография", "Танцы", "Йога", "Игры", "Искусство", "Природа",
-  "Кофе", "Вино", "Технологии", "Мода", "Авто", "Животные",
+const INTERESTS = [
+  "Музыка", "Кино", "Сериалы", "Книги",
+  "Спорт", "Зал", "Бег", "Йога",
+  "Путешествия", "Походы", "Кофе", "Кулинария",
+  "Вино", "Игры", "Аниме", "Искусство",
+  "Фотография", "Танцы", "Театр", "Животные",
+  "Мода", "Технологии", "Психология", "Волонтёрство",
 ];
+
+const MAX_INTERESTS = 8;
+const MAX_PHOTOS = 6;
+const MAX_BIO = 500;
+
+type StepId =
+  | "name"
+  | "age"
+  | "gender"
+  | "lookingFor"
+  | "city"
+  | "photos"
+  | "interests"
+  | "bio"
+  | "done";
+
+const STEPS: StepId[] = [
+  "name",
+  "age",
+  "gender",
+  "lookingFor",
+  "city",
+  "photos",
+  "interests",
+  "bio",
+  "done",
+];
+
+interface PhotoSlot {
+  /** Свой идентификатор: индекс в массиве не годится, пока идёт загрузка. */
+  id: string;
+  url?: string;
+  uploading?: boolean;
+  error?: string;
+}
+
+let photoSeq = 0;
 
 export default function Onboarding() {
   const navigate = useNavigate();
   const { user, setUser } = useStore();
 
-  const [step, setStep] = useState(0);
-  const [displayName, setDisplayName] = useState(user?.display_name || "");
-  const [gender, setGender] = useState(user?.gender || "");
-  const [birthYear, setBirthYear] = useState("");
-  const [city, setCity] = useState(user?.city || "");
-  const [bio, setBio] = useState(user?.bio || "");
-  const [lookingFor, setLookingFor] = useState(user?.looking_for || "");
-  const [interests, setInterests] = useState<string[]>(user?.interests || []);
-  const [photos, setPhotos] = useState<string[]>(user?.photos || []);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
-  const [geoStatus, setGeoStatus] = useState<"idle" | "busy" | "ok" | "fail">("idle");
+  const [index, setIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  // Экран используется и для правки анкеты — подставляем, что уже есть
+  const [name, setName] = useState(user?.display_name ?? "");
+  const [age, setAge] = useState(user?.age ? String(user.age) : "");
+  const [gender, setGender] = useState(user?.gender ?? "");
+  const [lookingFor, setLookingFor] = useState(user?.looking_for ?? "");
+  const [city, setCity] = useState(user?.city ?? "");
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [geoBusy, setGeoBusy] = useState(false);
+  const [photos, setPhotos] = useState<PhotoSlot[]>(
+    (user?.photos ?? []).map((url) => ({ id: `init-${photoSeq++}`, url }))
+  );
+  const [interests, setInterests] = useState<string[]>(user?.interests ?? []);
+  const [bio, setBio] = useState(user?.bio ?? "");
 
-  const handleGeolocate = () => {
-    if (!navigator.geolocation) return setGeoStatus("fail");
-    setGeoStatus("busy");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-        setGeoStatus("ok");
-      },
-      () => setGeoStatus("fail"),
-      { timeout: 10000 }
-    );
-  };
+  const step = STEPS[index];
+  const ageNum = Number(age);
 
-  const totalSteps = 7;
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    if (photos.length >= 6) return;
-
-    setUploading(true);
-    try {
-      const file = files[0];
-      const result = await uploadPhoto(file);
-      setPhotos([...photos, result.url]);
-      hapticFeedback("success");
-    } catch (e: any) {
-      setError(e.response?.data?.detail || "Ошибка загрузки фото");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const toggleInterest = (interest: string) => {
-    if (interests.includes(interest)) {
-      setInterests(interests.filter((i) => i !== interest));
-    } else if (interests.length < 10) {
-      setInterests([...interests, interest]);
-    }
-  };
-
-  const handleNext = () => {
-    setError("");
-    if (step < totalSteps - 1) {
-      hapticFeedback("light");
-      setStep(step + 1);
-    } else {
-      handleFinish();
-    }
-  };
-
-  const handleFinish = async () => {
-    try {
-      const birthDate = birthYear ? `${birthYear}-01-01` : undefined;
-      const updated = await updateMyProfile({
-        display_name: displayName,
-        gender,
-        birth_date: birthDate,
-        city,
-        bio,
-        looking_for: lookingFor,
-        interests,
-        photos,
-        ...(coords ? { latitude: coords.lat, longitude: coords.lon } : {}),
-      });
-      setUser(updated);
-      hapticFeedback("success");
-      navigate("/discover");
-    } catch (e: any) {
-      setError(e.response?.data?.detail || "Ошибка сохранения");
-    }
-  };
-
-  const canProceed = () => {
+  const canContinue = useMemo(() => {
     switch (step) {
-      case 0: return displayName.trim().length > 0;
-      case 1: return !!gender;
-      case 2: return birthYear && parseInt(birthYear) >= 1920 && parseInt(birthYear) <= 2010;
-      case 3: return city.trim().length > 0;
-      case 4: return !!lookingFor;
-      case 5: return true; // bio optional
-      case 6: return photos.length > 0;
-      default: return true;
+      case "name":
+        return name.trim().length >= 2;
+      case "age":
+        return Number.isInteger(ageNum) && ageNum >= 18 && ageNum <= 99;
+      case "gender":
+        return !!gender;
+      case "lookingFor":
+        return !!lookingFor;
+      case "city":
+        return city.trim().length >= 2;
+      case "photos":
+        return photos.some((p) => p.url);
+      default:
+        return true;
     }
-  };
+  }, [step, name, ageNum, gender, lookingFor, city, photos]);
+
+  const go = useCallback((delta: number) => {
+    setDirection(delta);
+    setIndex((i) => Math.min(STEPS.length - 1, Math.max(0, i + delta)));
+    haptic("light");
+  }, []);
+
+  /* ── Геопозиция ──────────────────────────────────────────── */
+  const detectLocation = useCallback(async () => {
+    setGeoBusy(true);
+    const pos = await getCurrentPosition();
+    setGeoBusy(false);
+    if (!pos) {
+      haptic("error");
+      return;
+    }
+    setCoords({ lat: pos.latitude, lon: pos.longitude });
+    haptic("success");
+  }, []);
+
+  /* ── Фото ────────────────────────────────────────────────── */
+  const addPhoto = useCallback(async (file: File) => {
+    const id = `up-${photoSeq++}`;
+    setPhotos((p) => [...p, { id, uploading: true }]);
+    try {
+      const { url } = await uploadPhoto(file);
+      setPhotos((p) => p.map((s) => (s.id === id ? { id, url } : s)));
+      haptic("success");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail ?? "Фото не подошло";
+      setPhotos((p) => p.map((s) => (s.id === id ? { id, error: detail } : s)));
+      haptic("error");
+    }
+  }, []);
+
+  const removePhoto = useCallback((id: string) => {
+    haptic("light");
+    setPhotos((p) => p.filter((s) => s.id !== id));
+  }, []);
+
+  const toggleInterest = useCallback((tag: string) => {
+    setInterests((cur) => {
+      if (cur.includes(tag)) return cur.filter((t) => t !== tag);
+      if (cur.length >= MAX_INTERESTS) return cur;
+      return [...cur, tag];
+    });
+  }, []);
+
+  /* ── Сохранение ──────────────────────────────────────────── */
+  const finish = useCallback(async () => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      const patch: Record<string, unknown> = {
+        display_name: name.trim(),
+        age: ageNum,
+        gender,
+        looking_for: lookingFor,
+        city: city.trim(),
+        photos: photos.filter((p) => p.url).map((p) => p.url as string),
+        interests,
+        bio: bio.trim(),
+      };
+      if (coords) {
+        patch.latitude = coords.lat;
+        patch.longitude = coords.lon;
+      }
+      await updateMyProfile(patch);
+      const fresh: UserProfile = await getMyProfile();
+      setUser(fresh);
+      haptic("success");
+      navigate("/discover", { replace: true });
+    } catch (e: any) {
+      setSaveError(
+        e?.response?.data?.detail ??
+          "Не удалось сохранить анкету. Попробуйте ещё раз."
+      );
+      haptic("error");
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    name,
+    ageNum,
+    gender,
+    lookingFor,
+    city,
+    photos,
+    interests,
+    bio,
+    coords,
+    navigate,
+    setUser,
+  ]);
 
   return (
-    <div className="min-h-screen flex flex-col max-w-md mx-auto p-6">
-      {/* Progress bar */}
-      <div className="flex gap-1.5 mb-8 mt-4">
-        {[...Array(totalSteps)].map((_, i) => (
-          <div
-            key={i}
-            className={`h-1 flex-1 rounded-full transition-all ${
-              i <= step ? "bg-accent" : "bg-surface"
-            }`}
-          />
-        ))}
-      </div>
+    <div className="flex flex-col h-screen-safe">
+      {/* ── Шапка: назад и прогресс ─────────────────────────── */}
+      <header className="safe-top px-4 pb-3 shrink-0">
+        <div className="flex items-center gap-3 min-h-[44px]">
+          <button
+            aria-label="Назад"
+            onClick={() => go(-1)}
+            disabled={index === 0}
+            className="tap-target flex items-center justify-center -ml-2
+                       text-text-secondary disabled:opacity-0 transition-opacity"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <div className="flex-1 flex gap-1.5">
+            {STEPS.map((_, i) => (
+              <div
+                key={i}
+                className={`h-[3px] flex-1 rounded-full transition-colors duration-300 ${
+                  i <= index ? "bg-dawn" : "bg-surface-2"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      </header>
 
-      <div className="flex-1">
-        <AnimatePresence mode="wait">
+      {/* ── Шаги ────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-5">
+        <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={step}
-            initial={{ opacity: 0, x: 30 }}
+            custom={direction}
+            initial={{ opacity: 0, x: direction * 40 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            transition={{ duration: 0.2 }}
+            exit={{ opacity: 0, x: direction * -40 }}
+            transition={{ type: "spring", stiffness: 380, damping: 34 }}
+            className="pt-4 pb-6"
           >
-            {step === 0 && (
-              <StepContainer title="Как тебя зовут?" subtitle="Это имя увидят другие пользователи">
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
+            {step === "name" && (
+              <StepShell title="Как вас зовут?" hint="Это имя увидят другие люди">
+                <TextField
+                  value={name}
+                  onChange={setName}
                   placeholder="Ваше имя"
                   maxLength={50}
                   autoFocus
-                  className="w-full px-5 py-4 bg-surface rounded-2xl text-lg outline-none focus:ring-2 focus:ring-accent"
                 />
-              </StepContainer>
+              </StepShell>
             )}
 
-            {step === 1 && (
-              <StepContainer title="Кто ты?" subtitle="Это поможет подобрать подходящие мэтчи">
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { val: "male", label: "👨 Мужчина" },
-                    { val: "female", label: "👩 Женщина" },
-                    { val: "other", label: "🧑 Другое" },
-                  ].map((g) => (
-                    <button
-                      key={g.val}
-                      onClick={() => setGender(g.val)}
-                      className={`py-4 rounded-2xl font-medium transition ${
-                        gender === g.val
-                          ? "bg-accent text-white"
-                          : "bg-surface text-text-muted"
-                      }`}
-                    >
-                      {g.label}
-                    </button>
-                  ))}
-                </div>
-              </StepContainer>
-            )}
-
-            {step === 2 && (
-              <StepContainer title="Когда ты родился?" subtitle="Только год, для начала">
-                <input
-                  type="number"
-                  value={birthYear}
-                  onChange={(e) => setBirthYear(e.target.value)}
-                  placeholder="1995"
-                  min="1920"
-                  max="2010"
+            {step === "age" && (
+              <StepShell
+                title="Сколько вам лет?"
+                hint="Souldawn — сервис только для совершеннолетних"
+              >
+                <TextField
+                  value={age}
+                  onChange={(v) => setAge(v.replace(/\D/g, "").slice(0, 2))}
+                  placeholder="18"
+                  inputMode="numeric"
                   autoFocus
-                  className="w-full px-5 py-4 bg-surface rounded-2xl text-2xl text-center outline-none focus:ring-2 focus:ring-accent"
                 />
-              </StepContainer>
+                {age && ageNum < 18 && (
+                  <p className="mt-3 text-[14px] text-danger">
+                    Регистрация возможна с 18 лет.
+                  </p>
+                )}
+              </StepShell>
             )}
 
-            {step === 3 && (
-              <StepContainer title="Где ты живешь?" subtitle="Для поиска людей поблизости">
-                <input
-                  type="text"
+            {step === "gender" && (
+              <StepShell title="Ваш пол?">
+                <OptionList
+                  value={gender}
+                  onChange={setGender}
+                  options={[
+                    { value: "male", label: "Мужской" },
+                    { value: "female", label: "Женский" },
+                    { value: "other", label: "Другое" },
+                  ]}
+                />
+              </StepShell>
+            )}
+
+            {step === "lookingFor" && (
+              <StepShell title="Кого показывать?">
+                <OptionList
+                  value={lookingFor}
+                  onChange={setLookingFor}
+                  options={[
+                    { value: "female", label: "Девушек" },
+                    { value: "male", label: "Парней" },
+                    { value: "any", label: "Всех" },
+                  ]}
+                />
+              </StepShell>
+            )}
+
+            {step === "city" && (
+              <StepShell
+                title="Из какого вы города?"
+                hint="Поможем найти людей поблизости"
+              >
+                <TextField
                   value={city}
-                  onChange={(e) => setCity(e.target.value)}
+                  onChange={setCity}
                   placeholder="Москва"
+                  maxLength={100}
                   autoFocus
-                  className="w-full px-5 py-4 bg-surface rounded-2xl text-lg outline-none focus:ring-2 focus:ring-accent"
                 />
-                <button
-                  type="button"
-                  onClick={handleGeolocate}
-                  disabled={geoStatus === "busy"}
-                  className="mt-3 w-full py-3 bg-surface/60 rounded-2xl text-sm text-text-muted disabled:opacity-50"
+                <Button
+                  variant="secondary"
+                  size="md"
+                  fullWidth
+                  className="mt-3"
+                  onClick={detectLocation}
+                  disabled={geoBusy}
                 >
-                  {geoStatus === "busy" ? "📍 Определяю координаты…"
-                    : geoStatus === "ok" ? "📍 Координаты сохранены ✓ (введите город выше)"
-                    : "📍 Разрешить поиск рядом (геолокация)"}
-                </button>
-              </StepContainer>
+                  {geoBusy ? (
+                    <Spinner size={17} />
+                  ) : (
+                    <>
+                      <MapPin size={16} />
+                      {coords
+                        ? "Местоположение определено"
+                        : "Определить по геопозиции"}
+                    </>
+                  )}
+                </Button>
+                {coords && (
+                  <p className="mt-2 text-caption text-text-muted text-center">
+                    Точные координаты другим не показываются — только расстояние
+                  </p>
+                )}
+              </StepShell>
             )}
 
-            {step === 4 && (
-              <StepContainer title="Кого ищешь?" subtitle="Мы покажем нужные анкеты">
-                <div className="grid grid-cols-1 gap-3">
-                  {[
-                    { val: "female", label: "👩 Женщин" },
-                    { val: "male", label: "👨 Мужчин" },
-                    { val: "any", label: "💞 Всех" },
-                  ].map((g) => (
-                    <button
-                      key={g.val}
-                      onClick={() => setLookingFor(g.val)}
-                      className={`py-4 rounded-2xl font-medium transition ${
-                        lookingFor === g.val
-                          ? "bg-accent text-white"
-                          : "bg-surface text-text-muted"
-                      }`}
-                    >
-                      {g.label}
-                    </button>
+            {step === "photos" && (
+              <StepShell
+                title="Добавьте фото"
+                hint="Первое станет главным. Нужно хотя бы одно"
+              >
+                <div className="grid grid-cols-3 gap-2.5">
+                  {Array.from({ length: MAX_PHOTOS }).map((_, i) => (
+                    <PhotoTile
+                      key={photos[i]?.id ?? `empty-${i}`}
+                      slot={photos[i]}
+                      isPrimary={i === 0}
+                      onPick={addPhoto}
+                      onRemove={() => photos[i] && removePhoto(photos[i].id)}
+                      disabled={i > photos.length}
+                    />
                   ))}
                 </div>
-              </StepContainer>
+              </StepShell>
             )}
 
-            {step === 5 && (
-              <StepContainer title="Расскажи о себе" subtitle="До 500 символов (можно пропустить)">
+            {step === "interests" && (
+              <StepShell
+                title="Что вам интересно?"
+                hint={`Выбрано ${interests.length} из ${MAX_INTERESTS}`}
+              >
+                <div className="flex flex-wrap gap-2">
+                  {INTERESTS.map((tag) => (
+                    <Chip
+                      key={tag}
+                      active={interests.includes(tag)}
+                      onClick={() => toggleInterest(tag)}
+                    >
+                      {tag}
+                    </Chip>
+                  ))}
+                </div>
+              </StepShell>
+            )}
+
+            {step === "bio" && (
+              <StepShell
+                title="Пара слов о себе"
+                hint="С этого людям проще начать разговор"
+              >
                 <textarea
                   value={bio}
-                  onChange={(e) => setBio(e.target.value.slice(0, 500))}
-                  placeholder="Люблю путешествия, кофе по утрам и хорошие книги..."
+                  onChange={(e) => setBio(e.target.value.slice(0, MAX_BIO))}
+                  placeholder="Чем занимаетесь, что любите, кого ищете…"
                   rows={5}
-                  className="w-full px-5 py-4 bg-surface rounded-2xl outline-none focus:ring-2 focus:ring-accent resize-none"
+                  className="w-full px-4 py-3.5 rounded-[var(--radius-tile)]
+                             bg-surface border border-hairline resize-none
+                             outline-none focus:border-accent transition-colors
+                             placeholder:text-text-faint"
                 />
-                <p className="text-right text-sm text-text-muted mt-1">{bio.length}/500</p>
-
-                {/* Interest chips */}
-                <div className="mt-4">
-                  <p className="text-sm text-text-muted mb-2">Интересы ({interests.length}/10):</p>
-                  <div className="flex flex-wrap gap-2">
-                    {INTERESTS_PRESETS.map((interest) => (
-                      <button
-                        key={interest}
-                        onClick={() => toggleInterest(interest)}
-                        className={`px-3 py-1.5 rounded-full text-sm transition ${
-                          interests.includes(interest)
-                            ? "bg-accent text-white"
-                            : "bg-surface text-text-muted"
-                        }`}
-                      >
-                        {interest}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </StepContainer>
+                <p className="mt-2 text-caption text-text-muted text-right">
+                  {bio.length} / {MAX_BIO}
+                </p>
+              </StepShell>
             )}
 
-            {step === 6 && (
-              <StepContainer title="Добавь фото" subtitle="До 6 фото. Минимум 1.">
-                <div className="grid grid-cols-3 gap-3">
-                  {[...Array(6)].map((_, i) => (
-                    <div key={i} className="aspect-square">
-                      {photos[i] ? (
-                        <div className="relative w-full h-full rounded-2xl overflow-hidden group">
-                          <img src={photos[i]} alt="" className="w-full h-full object-cover" />
-                          <button
-                            onClick={() => setPhotos(photos.filter((_, idx) => idx !== i))}
-                            className="absolute top-1 right-1 w-6 h-6 bg-black/60 rounded-full flex items-center justify-center"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : i === photos.length ? (
-                        <label className="w-full h-full rounded-2xl border-2 border-dashed border-white/20 flex items-center justify-center cursor-pointer hover:border-accent transition bg-surface">
-                          {uploading ? (
-                            <span className="text-xs text-text-muted">...</span>
-                          ) : (
-                            <Camera size={24} className="text-text-muted" />
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handlePhotoUpload}
-                            className="hidden"
-                            disabled={uploading}
-                          />
-                        </label>
-                      ) : (
-                        <div className="w-full h-full rounded-2xl border-2 border-dashed border-white/5 bg-surface/50" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </StepContainer>
+            {step === "done" && (
+              <StepShell title="Всё готово!" hint="Проверьте, что всё верно">
+                <Summary
+                  name={name}
+                  age={ageNum}
+                  city={city}
+                  photos={photos.filter((p) => p.url).length}
+                  interests={interests}
+                  bio={bio}
+                />
+                {saveError && (
+                  <p className="mt-4 text-[14px] text-danger text-center">
+                    {saveError}
+                  </p>
+                )}
+              </StepShell>
             )}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {error && (
-        <div className="mb-3 px-4 py-2 bg-danger/20 border border-danger/40 rounded-xl text-danger text-sm">
-          {error}
-        </div>
-      )}
-
-      <div className="flex gap-3 mt-4">
-        {step > 0 && (
-          <button
-            onClick={() => setStep(step - 1)}
-            className="px-6 py-3 bg-surface text-text-muted rounded-full font-medium"
+      {/* ── Кнопка продолжения ──────────────────────────────── */}
+      <div className="px-5 pt-3 pb-5 safe-bottom shrink-0">
+        {step === "done" ? (
+          <Button
+            size="lg"
+            fullWidth
+            onClick={finish}
+            disabled={saving}
+            hapticKind="success"
           >
-            Назад
-          </button>
+            {saving ? <Spinner size={20} /> : "Начать знакомиться"}
+          </Button>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Button size="lg" fullWidth onClick={() => go(1)} disabled={!canContinue}>
+              Далее
+            </Button>
+            {(step === "bio" || step === "interests") && (
+              <Button variant="ghost" size="md" fullWidth onClick={() => go(1)}>
+                Пропустить
+              </Button>
+            )}
+          </div>
         )}
-        <button
-          onClick={handleNext}
-          disabled={!canProceed()}
-          className="flex-1 py-3 bg-gradient-to-r from-accent to-warn text-white font-bold rounded-full disabled:opacity-40"
-        >
-          {step === totalSteps - 1 ? "Готово!" : "Далее"}
-        </button>
       </div>
     </div>
   );
 }
 
-function StepContainer({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+/* ── Вспомогательные компоненты ─────────────────────────────── */
+
+function StepShell({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-1">{title}</h2>
-      {subtitle && <p className="text-text-muted mb-6">{subtitle}</p>}
+      <h1 className="text-title font-extrabold mb-1.5">{title}</h1>
+      <p className="text-[15px] text-text-muted mb-6">{hint ?? " "}</p>
       {children}
+    </div>
+  );
+}
+
+function TextField({
+  value,
+  onChange,
+  placeholder,
+  maxLength,
+  inputMode,
+  autoFocus,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  maxLength?: number;
+  inputMode?: "text" | "numeric";
+  autoFocus?: boolean;
+}) {
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      inputMode={inputMode}
+      autoFocus={autoFocus}
+      className="w-full h-14 px-4 rounded-[var(--radius-tile)]
+                 bg-surface border border-hairline text-[17px]
+                 outline-none focus:border-accent transition-colors
+                 placeholder:text-text-faint"
+    />
+  );
+}
+
+function OptionList({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            onClick={() => {
+              haptic("select");
+              onChange(o.value);
+            }}
+            className={`h-14 px-5 rounded-[var(--radius-tile)] text-left text-[16px]
+                        font-medium flex items-center justify-between
+                        border transition-colors ${
+                          active
+                            ? "border-accent bg-accent/10 text-text"
+                            : "border-hairline bg-surface text-text-secondary"
+                        }`}
+          >
+            {o.label}
+            {active && <Check size={19} className="text-accent" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PhotoTile({
+  slot,
+  isPrimary,
+  onPick,
+  onRemove,
+  disabled,
+}: {
+  slot?: PhotoSlot;
+  isPrimary: boolean;
+  onPick: (f: File) => void;
+  onRemove: () => void;
+  disabled: boolean;
+}) {
+  const inputId = useId();
+
+  const fileInput = (
+    <input
+      id={inputId}
+      type="file"
+      accept="image/*"
+      className="hidden"
+      disabled={disabled}
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) onPick(f);
+        // Сбрасываем значение, иначе повторный выбор того же файла не сработает
+        e.target.value = "";
+      }}
+    />
+  );
+
+  if (slot?.url) {
+    return (
+      <div className="relative aspect-[3/4] rounded-[var(--radius-tile)] overflow-hidden bg-surface-2">
+        <img src={slot.url} alt="" className="w-full h-full object-cover" />
+        {isPrimary && (
+          <span
+            className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full
+                       bg-dawn text-[10px] font-bold text-white
+                       flex items-center gap-1"
+          >
+            <Star size={9} fill="currentColor" />
+            Главное
+          </span>
+        )}
+        <button
+          aria-label="Удалить фото"
+          onClick={onRemove}
+          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full
+                     bg-black/60 backdrop-blur-sm flex items-center justify-center"
+        >
+          <X size={15} />
+        </button>
+      </div>
+    );
+  }
+
+  if (slot?.uploading) {
+    return (
+      <div className="aspect-[3/4] rounded-[var(--radius-tile)] skeleton flex items-center justify-center">
+        <Spinner size={20} />
+      </div>
+    );
+  }
+
+  if (slot?.error) {
+    return (
+      <label
+        htmlFor={inputId}
+        className="aspect-[3/4] rounded-[var(--radius-tile)] cursor-pointer
+                   border border-danger/40 bg-danger/10 p-2
+                   flex flex-col items-center justify-center text-center gap-1"
+      >
+        <X size={18} className="text-danger" />
+        <span className="text-[10.5px] leading-tight text-danger">{slot.error}</span>
+        {fileInput}
+      </label>
+    );
+  }
+
+  return (
+    <label
+      htmlFor={inputId}
+      aria-disabled={disabled}
+      className={`aspect-[3/4] rounded-[var(--radius-tile)] border border-dashed
+                  border-hairline bg-surface flex items-center justify-center
+                  ${disabled ? "opacity-35 pointer-events-none" : "cursor-pointer"}`}
+    >
+      <Camera size={22} className="text-text-faint" />
+      {fileInput}
+    </label>
+  );
+}
+
+function Summary({
+  name,
+  age,
+  city,
+  photos,
+  interests,
+  bio,
+}: {
+  name: string;
+  age: number;
+  city: string;
+  photos: number;
+  interests: string[];
+  bio: string;
+}) {
+  return (
+    <div className="rounded-[var(--radius-tile)] bg-surface border border-hairline p-5">
+      <p className="text-[19px] font-bold mb-0.5">
+        {name}
+        {Number.isFinite(age) && age > 0 ? `, ${age}` : ""}
+      </p>
+      <p className="text-[14px] text-text-muted mb-4">{city}</p>
+
+      <Row label="Фотографии" value={String(photos)} />
+      <Row
+        label="Интересы"
+        value={interests.length ? interests.join(", ") : "не выбраны"}
+      />
+      <Row
+        label="О себе"
+        value={bio.trim() ? `${bio.trim().slice(0, 60)}…` : "не заполнено"}
+      />
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-3 py-2 border-t border-hairline first:border-t-0">
+      <span className="text-caption text-text-muted w-[92px] shrink-0">{label}</span>
+      <span className="text-[14px] flex-1 min-w-0 break-words">{value}</span>
     </div>
   );
 }
