@@ -11,6 +11,7 @@ import {
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import MatchModal from "../components/MatchModal";
+import Leaderboard from "../components/Leaderboard";
 import {
   ScreenHeader,
   EmptyState,
@@ -27,7 +28,53 @@ interface MatchData {
   matchId?: string;
 }
 
+type Tab = "likes" | "top";
+
+/**
+ * Экран лайков с двумя видами: входящие симпатии и публичный топ по лайкам.
+ *
+ * Топ живёт здесь, а не отдельной вкладкой в навигации: он про то же самое —
+ * кто кому нравится, — и своей вкладки не заслуживает.
+ */
 export default function Likes() {
+  const [tab, setTab] = useState<Tab>("likes");
+
+  return (
+    <div>
+      <ScreenHeader title="Лайки" />
+
+      <div className="px-4 pt-1">
+        <div className="flex p-1 rounded-full bg-surface-2 border border-hairline">
+          {(
+            [
+              ["likes", "Кто лайкнул"],
+              ["top", "Топ недели"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => {
+                haptic("select");
+                setTab(value);
+              }}
+              aria-pressed={tab === value}
+              className={`flex-1 py-2 rounded-full text-[14px] font-semibold
+                          transition-colors ${
+                            tab === value ? "bg-dawn text-white" : "text-text-secondary"
+                          }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "likes" ? <IncomingLikes /> : <Leaderboard />}
+    </div>
+  );
+}
+
+function IncomingLikes() {
   const navigate = useNavigate();
   const { setUnreadLikes, addMatch } = useStore();
 
@@ -99,7 +146,6 @@ export default function Likes() {
   if (loading) {
     return (
       <div>
-        <ScreenHeader title="Лайки" />
         <div className="grid grid-cols-2 gap-3 px-4 pt-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="aspect-[3/4]" />
@@ -112,7 +158,6 @@ export default function Likes() {
   if (error) {
     return (
       <div>
-        <ScreenHeader title="Лайки" />
         <EmptyState
           emoji="📡"
           title="Нет связи"
@@ -126,7 +171,6 @@ export default function Likes() {
   if (!likes.length) {
     return (
       <div>
-        <ScreenHeader title="Лайки" />
         <EmptyState
           emoji="✨"
           title="Пока никто"
@@ -141,12 +185,9 @@ export default function Likes() {
 
   return (
     <div>
-      <ScreenHeader
-        title="Лайки"
-        subtitle={`${likes.length} ${plural(likes.length, "человек", "человека", "человек")} ждут ответа`}
-      />
-
       <p className="px-4 pt-3 text-[13.5px] text-text-muted">
+        {likes.length} {plural(likes.length, "человек", "человека", "человек")} ждут
+        ответа.{" "}
         Ответная симпатия сразу открывает чат.
       </p>
 

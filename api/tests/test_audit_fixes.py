@@ -1847,3 +1847,73 @@ def test_буст_поднимает_анкету_в_деке():
     assert "boosted_ids" in исходник
     # Считаем по времени: прошедшая дата сама означает «буста нет»
     assert "p.boost_until > datetime.now(timezone.utc)" in исходник
+
+
+# ════════════════════════════════════════════════════════════════
+#  Топ по лайкам
+# ════════════════════════════════════════════════════════════════
+
+def test_роут_рейтинга(openapi):
+    assert "/api/leaderboard" in openapi["paths"]
+
+
+def test_рейтинг_считается_за_окно_а_не_за_всё_время():
+    """Вечный рейтинг занимают те, кто зарегистрировался раньше, и новичку в
+    него не попасть никогда — а значит и стараться незачем."""
+    import inspect
+
+    from routers import leaderboard
+
+    assert 1 <= leaderboard.WINDOW_DAYS <= 31
+    исходник = inspect.getsource(leaderboard._ranked_rows)
+    assert "Like.created_at >= _window_start()" in исходник
+    # Считаем в БД: выгружать все лайки за неделю в память нельзя
+    assert "func.count" in исходник and "group_by" in исходник
+
+
+def test_невидимки_не_попадают_в_чужой_топ_но_видят_себя():
+    """Публичный топ видно вообще всем — это сильнее «Гостей». Но человек,
+    который себя в рейтинге не находит, просто решит, что тот не работает."""
+    import inspect
+
+    from routers import leaderboard
+
+    исходник = inspect.getsource(leaderboard._ranked_rows)
+    assert "not_(Profile.is_incognito)" in исходник
+    assert "not_(Profile.hide_from_visitors)" in исходник
+    # Исключение для самого смотрящего
+    assert "Like.liked_id == viewer_id" in исходник
+
+
+def test_пассы_не_считаются_за_лайк():
+    import inspect
+
+    from routers import leaderboard
+
+    assert 'Like.type != "pass"' in inspect.getsource(leaderboard._ranked_rows)
+
+
+def test_место_вне_рейтинга_не_выдумывается():
+    """Ниже последнего посчитанного места точный номер неизвестен."""
+    from models.schemas import LeaderboardOut
+
+    пустой = LeaderboardOut()
+    assert пустой.my_place is None
+    assert пустой.my_place_exact is False
+
+    import inspect
+
+    from routers import leaderboard
+
+    исходник = inspect.getsource(leaderboard.get_leaderboard)
+    assert "my_place_exact=my_place is not None" in исходник
+
+
+def test_заблокированные_не_видны_в_рейтинге():
+    import inspect
+
+    from routers import leaderboard
+
+    исходник = inspect.getsource(leaderboard.get_leaderboard)
+    assert "Block.blocker_id == user.id" in исходник
+    assert "Block.blocked_id == user.id" in исходник

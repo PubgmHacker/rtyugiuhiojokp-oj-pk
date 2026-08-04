@@ -312,6 +312,31 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/* ── Топ по лайкам ──────────────────────────────────────────── */
+
+export interface LeaderboardEntry {
+  place: number;
+  user_id: string;
+  display_name: string;
+  photo: string;
+  likes: number;
+  is_me: boolean;
+}
+
+export interface LeaderboardOut {
+  window_days: number;
+  entries: LeaderboardEntry[];
+  my_place?: number | null;
+  my_likes: number;
+  /** false — человек вне посчитанных мест, точный номер неизвестен. */
+  my_place_exact: boolean;
+}
+
+export async function getLeaderboard(): Promise<LeaderboardOut> {
+  const { data } = await api.get("/leaderboard");
+  return data;
+}
+
 /* ── Буст показов ───────────────────────────────────────────── */
 
 export interface BoostState {

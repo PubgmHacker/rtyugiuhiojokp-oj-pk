@@ -239,6 +239,31 @@ class ReelsOut(BaseModel):
     next_before: Optional[str] = None
 
 
+class LeaderboardEntry(BaseModel):
+    """Одна строка рейтинга."""
+
+    place: int
+    user_id: str
+    display_name: str = ""
+    photo: str = ""
+    likes: int = 0
+    is_me: bool = False
+
+
+class LeaderboardOut(BaseModel):
+    """Топ по лайкам за окно плюс своё место.
+
+    `my_place_exact=false` — человек за пределами посчитанных мест: точный
+    номер неизвестен, и выдумывать его нельзя.
+    """
+
+    window_days: int = 7
+    entries: list[LeaderboardEntry] = Field(default_factory=list)
+    my_place: Optional[int] = None
+    my_likes: int = 0
+    my_place_exact: bool = False
+
+
 class BoostOut(BaseModel):
     """Состояние буста показов."""
 
