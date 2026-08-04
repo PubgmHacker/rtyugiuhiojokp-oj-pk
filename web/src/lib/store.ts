@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { logoutServerSide } from "./api";
 import type { UserProfile, DeckProfile, MatchResponse } from "./api";
 
 interface AppState {
@@ -52,6 +53,9 @@ export const useStore = create<AppState>((set) => ({
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
   setUnreadLikes: (unreadLikes) => set({ unreadLikes }),
   logout: () => {
+    // Сервер должен погасить токен, пока он ещё в localStorage: без этого
+    // он остаётся годным до конца срока, даже если выйти на чужом устройстве
+    void logoutServerSide();
     localStorage.removeItem("sd_token");
     localStorage.removeItem("sd_user");
     set({

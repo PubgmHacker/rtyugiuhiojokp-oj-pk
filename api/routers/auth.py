@@ -11,12 +11,14 @@ from config import get_settings
 from database.connection import get_session
 from middleware.auth import (
     create_access_token,
+    get_current_token_payload,
     get_current_user,
     verify_telegram_init_data,
 )
 from models.models import User, Profile, Subscription
 from models.schemas import AuthResponse, UserProfile
 from services.link_codes import redeem_code
+from services.token_revocation import revoke_all_for_user, revoke_token
 from utils import as_list
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -193,3 +195,26 @@ async def get_me(
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))
     profile = result.scalar_one_or_none()
     return _user_to_profile(user, profile)
+
+
+@router.post("/logout")
+async def logout(
+    payload: dict = Depends(get_current_token_payload),
+    user: User = Depends(get_current_user),
+):
+    """Выход: гасит текущий токен, остальные устройства продолжают работать."""
+    revoked = await revoke_token(payload)
+    return {"success": revoked}
+
+
+@router.post("/logout-all")
+async def logout_all(
+    user: User = Depends(get_current_user),
+):
+    """Выход со всех устройств — для угнанного аккаунта.
+
+    Гасит все токены, выданные до этого момента, включая текущий: продолжить
+    работу с украденным токеном нельзя, нужен повторный вход.
+    """
+    revoked = await revoke_all_for_user(user.id)
+    return {"success": revoked}

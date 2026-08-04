@@ -13,12 +13,13 @@ from middleware.auth import verify_access_token
 from models.models import Match, Message, User
 from services.ws_manager import manager
 from services.realtime import publish_bot_event
+from services.token_revocation import is_revoked
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 
-async def _ws_auth(websocket: WebSocket) -> str | None:
+async def _ws_auth(websocket: WebSocket) -> tuple[str, dict] | None:
     """Аутентификация WebSocket через query param token."""
     token = websocket.query_params.get("token")
     if not token:
@@ -31,6 +32,11 @@ async def _ws_auth(websocket: WebSocket) -> str | None:
         await websocket.close(code=4001, reason="Invalid token")
         return None
 
+    # Сессия могла быть отозвана уже после выдачи токена
+    if await is_revoked(payload):
+        await websocket.close(code=4001, reason="Token revoked")
+        return None
+
     # Токен валиден — но пользователь мог быть удалён/забанен после выдачи
     async with async_session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -39,7 +45,7 @@ async def _ws_auth(websocket: WebSocket) -> str | None:
             await websocket.close(code=4003, reason="Forbidden")
             return None
 
-    return user_id
+    return user_id, payload
 
 
 async def _save_message(match_id: str, sender_id: str, text: str, image_url: str | None) -> dict | None:
@@ -87,9 +93,10 @@ async def _mark_read(match_id: str, reader_id: str) -> None:
 @router.websocket("/ws/chat/{match_id}")
 async def websocket_chat(websocket: WebSocket, match_id: str):
     """Real-time чат для мэтча: message / typing / read."""
-    user_id = await _ws_auth(websocket)
-    if not user_id:
+    auth = await _ws_auth(websocket)
+    if not auth:
         return
+    user_id, token_payload = auth
 
     await websocket.accept()
 
@@ -118,6 +125,12 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
                 continue
 
             msg_type = data.get("type", "message")
+
+            # Бан или выход рвут и уже открытый сокет: проверка при коннекте
+            # не помогает тому, кто подключился минуту назад
+            if await is_revoked(token_payload):
+                await websocket.close(code=4001, reason="Token revoked")
+                break
 
             # Любая активность продлевает присутствие: по нему решается,
             # дублировать ли сообщение в Telegram

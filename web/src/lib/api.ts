@@ -228,3 +228,16 @@ export async function exportMyData(): Promise<Blob> {
 export async function registerDevice(token: string, platform: string): Promise<void> {
   await api.post("/profiles/me/devices", { token, platform });
 }
+
+/** Выход: гасит токен на сервере, иначе он остаётся годным до конца срока.
+ *
+ * Ошибку намеренно проглатываем — локальный выход должен состояться даже
+ * при недоступном бэкенде, иначе на чужом устройстве не выйти вообще.
+ */
+export async function logoutServerSide(): Promise<void> {
+  try {
+    await api.post("/auth/logout");
+  } catch {
+    // токен истечёт сам; локальные данные всё равно чистятся
+  }
+}

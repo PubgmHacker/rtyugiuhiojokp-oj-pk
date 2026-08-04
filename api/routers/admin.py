@@ -13,6 +13,7 @@ from middleware.admin_auth import require_admin
 from models.models import (
     User, Profile, Like, Match, Message, Report, Subscription, AiModerationLog
 )
+from services.token_revocation import clear_user_revocation, revoke_all_for_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -268,6 +269,10 @@ async def ban_user(
     target.is_banned = True
     await session.flush()
 
+    # Бан должен убивать и уже выданные токены: HTTP-запросы отсекаются
+    # проверкой is_banned, но открытый WebSocket её не переспрашивает
+    await revoke_all_for_user(data.user_id)
+
     # Log the action
     # Send notification via Redis for bot to pick up
     try:
@@ -299,6 +304,9 @@ async def unban_user(
 
     target.is_banned = False
     await session.flush()
+
+    # Иначе отметка отзыва из бана продолжала бы гасить свежие токены
+    await clear_user_revocation(data.user_id)
 
     return {"success": True, "message": f"User {data.user_id} unbanned"}
 

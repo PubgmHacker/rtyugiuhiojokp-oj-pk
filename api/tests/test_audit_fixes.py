@@ -84,7 +84,7 @@ def test_прозрачность_сохраняется():
 
 
 class _FakeRedis:
-    """Минимальный Redis: только то, что использует link_codes."""
+    """Минимальный Redis: только то, что используют link_codes и отзыв токенов."""
 
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
@@ -94,6 +94,12 @@ class _FakeRedis:
             return None
         self.store[key] = str(value)
         return True
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def exists(self, key):
+        return 1 if key in self.store else 0
 
     async def getdel(self, key):
         return self.store.pop(key, None)
@@ -333,3 +339,145 @@ def test_схема_бота_совпадает_с_api():
         f"только в API: {sorted(api_tables - bot_tables)}; "
         f"только в боте: {sorted(bot_tables - api_tables)}"
     )
+
+
+# ── Отзыв сессий (JWT) ──────────────────────────────────────────
+
+
+@pytest.fixture
+def fake_revocation_redis(monkeypatch):
+    from services import token_revocation
+
+    redis = _FakeRedis()
+
+    async def _get_redis():
+        return redis
+
+    monkeypatch.setattr(token_revocation, "get_redis", _get_redis)
+    return redis
+
+
+def test_токен_содержит_jti_и_iat():
+    """Без них конкретную сессию погасить нельзя — только сменить секрет."""
+    from middleware.auth import create_access_token, verify_access_token
+
+    payload = verify_access_token(create_access_token("user-1", 12345))
+
+    assert payload["jti"], "нужен уникальный id токена"
+    assert payload["iat"], "нужна метка выпуска для отзыва «всех сессий»"
+    assert payload["sub"] == "user-1"
+
+
+def test_два_токена_имеют_разные_jti():
+    from middleware.auth import create_access_token, verify_access_token
+
+    first = verify_access_token(create_access_token("user-1"))
+    second = verify_access_token(create_access_token("user-1"))
+
+    assert first["jti"] != second["jti"]
+
+
+async def test_свежий_токен_не_отозван(fake_revocation_redis):
+    from middleware.auth import create_access_token, verify_access_token
+    from services.token_revocation import is_revoked
+
+    payload = verify_access_token(create_access_token("user-1"))
+    assert await is_revoked(payload) is False
+
+
+async def test_выход_гасит_только_свой_токен(fake_revocation_redis):
+    """Выход на одном устройстве не должен разлогинивать остальные."""
+    from middleware.auth import create_access_token, verify_access_token
+    from services.token_revocation import is_revoked, revoke_token
+
+    phone = verify_access_token(create_access_token("user-1"))
+    laptop = verify_access_token(create_access_token("user-1"))
+
+    assert await revoke_token(phone) is True
+
+    assert await is_revoked(phone) is True
+    assert await is_revoked(laptop) is False
+
+
+async def test_выход_везде_гасит_все_токены(fake_revocation_redis):
+    """Сценарий угнанного аккаунта: разом гаснут все выданные сессии."""
+    from middleware.auth import create_access_token, verify_access_token
+    from services.token_revocation import is_revoked, revoke_all_for_user
+
+    phone = verify_access_token(create_access_token("user-1"))
+    laptop = verify_access_token(create_access_token("user-1"))
+    другой_юзер = verify_access_token(create_access_token("user-2"))
+
+    assert await revoke_all_for_user("user-1") is True
+
+    assert await is_revoked(phone) is True
+    assert await is_revoked(laptop) is True
+    assert await is_revoked(другой_юзер) is False, "чужие сессии не трогаем"
+
+
+async def test_после_отзыва_всех_новый_токен_работает(fake_revocation_redis):
+    """Повторный вход после «выйти везде» должен пускать в аккаунт."""
+    import asyncio
+
+    from middleware.auth import create_access_token, verify_access_token
+    from services.token_revocation import is_revoked, revoke_all_for_user
+
+    await revoke_all_for_user("user-1")
+    # iat в JWT — целые секунды, поэтому токен той же секунды сравнить нельзя
+    await asyncio.sleep(1.1)
+
+    свежий = verify_access_token(create_access_token("user-1"))
+    assert await is_revoked(свежий) is False
+
+
+async def test_разбан_снимает_отзыв(fake_revocation_redis):
+    import asyncio
+
+    from middleware.auth import create_access_token, verify_access_token
+    from services.token_revocation import (
+        clear_user_revocation,
+        is_revoked,
+        revoke_all_for_user,
+    )
+
+    await revoke_all_for_user("user-1")
+    await clear_user_revocation("user-1")
+
+    старый = verify_access_token(create_access_token("user-1"))
+    await asyncio.sleep(0)
+    assert await is_revoked(старый) is False
+
+
+async def test_токен_старого_формата_считается_отозванным(fake_revocation_redis):
+    """Иначе токен без jti обходил бы проверку целиком."""
+    from services.token_revocation import is_revoked
+
+    assert await is_revoked({"sub": "user-1", "exp": 9999999999}) is True
+
+
+async def test_истёкший_токен_не_пишется_в_список(fake_revocation_redis):
+    """Список отзыва не должен расти записями, которые уже не нужны."""
+    from services.token_revocation import revoke_token
+
+    assert await revoke_token({"jti": "old", "exp": 1}) is True
+    assert fake_revocation_redis.store == {}
+
+
+async def test_недоступный_redis_не_разлогинивает(monkeypatch):
+    """Падение кеша не должно выбивать всех пользователей сервиса."""
+    from middleware.auth import create_access_token, verify_access_token
+    from services import token_revocation
+
+    async def _broken():
+        raise RuntimeError("redis is down")
+
+    monkeypatch.setattr(token_revocation, "get_redis", _broken)
+
+    payload = verify_access_token(create_access_token("user-1"))
+    assert await token_revocation.is_revoked(payload) is False
+
+
+def test_роуты_выхода_есть(openapi):
+    paths = openapi["paths"]
+    assert "/api/auth/logout" in paths
+    assert "/api/auth/logout-all" in paths

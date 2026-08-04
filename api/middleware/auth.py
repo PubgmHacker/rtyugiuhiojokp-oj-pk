@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -20,10 +21,18 @@ security = HTTPBearer()
 
 
 def create_access_token(user_id: str, telegram_id: Optional[int] = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_ACCESS_EXPIRE_HOURS)
+    """Выпустить access-токен.
+
+    `jti` и `iat` обязательны: по ним работает отзыв сессий
+    (services/token_revocation.py) — без них конкретный токен погасить нельзя.
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(hours=settings.JWT_ACCESS_EXPIRE_HOURS)
     payload = {
         "sub": user_id,
         "telegram_id": telegram_id,
+        "iat": now,
+        "jti": uuid.uuid4().hex,
         "exp": expire,
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
@@ -91,6 +100,12 @@ async def get_current_user(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No user in token")
 
+    # Сессия могла быть отозвана — выходом, баном или «выйти везде»
+    from services.token_revocation import is_revoked
+
+    if await is_revoked(payload):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
 
@@ -100,6 +115,13 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is banned")
 
     return user
+
+
+async def get_current_token_payload(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> dict:
+    """Payload текущего токена — нужен, чтобы отозвать именно его при выходе."""
+    return verify_access_token(credentials.credentials)
 
 
 async def get_current_user_id(
