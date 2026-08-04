@@ -239,6 +239,29 @@ class ReelsOut(BaseModel):
     next_before: Optional[str] = None
 
 
+class CaseRewardOut(BaseModel):
+    """Награда из кейса. Шанс показываем честно: скрытые шансы — ровно то,
+    за что гача-механики и не любят."""
+
+    code: str
+    title: str
+    amount: int
+    chance_percent: int
+
+
+class CaseStateOut(BaseModel):
+    left_today: int = 0
+    per_day: int = 0
+    rewards: list[CaseRewardOut] = Field(default_factory=list)
+
+
+class CaseOpenResult(BaseModel):
+    reward: CaseRewardOut
+    left_today: int = 0
+    per_day: int = 0
+    boost_minutes: int = 30
+
+
 class RoomOut(BaseModel):
     """Комната в списке."""
 

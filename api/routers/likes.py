@@ -86,10 +86,11 @@ async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> Matc
 
 
 async def _superlikes_left(session: AsyncSession, user_id: str) -> int:
-    """Сколько суперлайков осталось на сегодня.
+    """Сколько суперлайков осталось: суточная квота плюс бонусные из кейсов.
 
-    Считаем по таблице лайков, а не по счётчику в Redis: суперлайк — вещь,
-    за которую платят, и его расход не должен теряться вместе с кешем.
+    Суточную часть считаем по таблице лайков, а не по счётчику в Redis:
+    суперлайк — вещь, за которую платят, и его расход не должен теряться
+    вместе с кешем. Бонусные лежат в анкете и не возобновляются.
     """
     quota = superlikes_for(await current_tier(session, user_id))
     since = datetime.now(timezone.utc) - timedelta(days=1)
@@ -100,7 +101,39 @@ async def _superlikes_left(session: AsyncSession, user_id: str) -> int:
             Like.created_at >= since,
         ))
     )
-    return max(0, quota - (result.scalar() or 0))
+    used = result.scalar() or 0
+
+    result = await session.execute(
+        select(Profile.bonus_superlikes).where(Profile.user_id == user_id)
+    )
+    bonus = result.scalar_one_or_none() or 0
+
+    return max(0, quota - used) + bonus
+
+
+async def _spend_bonus_superlike(session: AsyncSession, user_id: str) -> None:
+    """Списать бонусный суперлайк, если суточные уже израсходованы.
+
+    Порядок именно такой: сначала тратится то, что и так обновится завтра, а
+    выпавшее из кейса остаётся на потом — иначе награда сгорала бы первой.
+    """
+    quota = superlikes_for(await current_tier(session, user_id))
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    result = await session.execute(
+        select(func.count(Like.id)).where(and_(
+            Like.liker_id == user_id,
+            Like.type == "superlike",
+            Like.created_at >= since,
+        ))
+    )
+    # Текущий лайк уже записан, поэтому суточные исчерпаны при used > quota
+    if (result.scalar() or 0) <= quota:
+        return
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+    if profile and profile.bonus_superlikes > 0:
+        profile.bonus_superlikes -= 1
 
 
 @router.get("/superlikes", response_model=SuperlikeQuota)
@@ -181,6 +214,11 @@ async def create_like(
             message=like_message,
         ))
     await session.flush()
+
+    # Бонусный суперлайк списываем после записи лайка: до неё непонятно,
+    # укладывается ли он в суточную квоту
+    if data.type == "superlike":
+        await _spend_bonus_superlike(session, user.id)
 
     if data.type == "pass":
         return LikeResponse(liked=False, matched=False)

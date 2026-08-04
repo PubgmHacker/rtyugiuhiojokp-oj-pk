@@ -312,6 +312,38 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/* ── Кейсы ──────────────────────────────────────────────────── */
+
+export interface CaseReward {
+  code: string;
+  title: string;
+  amount: number;
+  chance_percent: number;
+}
+
+export interface CaseState {
+  left_today: number;
+  per_day: number;
+  rewards: CaseReward[];
+}
+
+export interface CaseOpenResult {
+  reward: CaseReward;
+  left_today: number;
+  per_day: number;
+  boost_minutes: number;
+}
+
+export async function getCaseState(): Promise<CaseState> {
+  const { data } = await api.get("/cases");
+  return data;
+}
+
+export async function openCase(): Promise<CaseOpenResult> {
+  const { data } = await api.post("/cases/open");
+  return data;
+}
+
 /* ── Групповые чаты ─────────────────────────────────────────── */
 
 export interface Room {

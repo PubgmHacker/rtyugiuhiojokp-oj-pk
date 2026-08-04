@@ -140,6 +140,10 @@ class Profile(Base):
     boost_until: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: Суперлайки, выпавшие из кейса. Отдельный пул, а не прибавка к суточной
+    #: квоте: квота считается по факту расхода за сутки, и прибавка к ней
+    #: возобновлялась бы каждый день сама.
+    bonus_superlikes: Mapped[int] = mapped_column(Integer, default=0)
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
@@ -280,6 +284,30 @@ class Block(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     blocker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     blocked_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CaseOpening(Base):
+    """Журнал открытий кейса и выпавших наград.
+
+    Награды — то, что уже работает в продукте: суперлайки и минуты буста.
+    Коллекционные картинки, как у конкурента, потребовали бы шестидесяти
+    рисунков, а ценность бы имели только для того, кто их собирает.
+
+    Попытки не храним счётчиком: они даются за подписку и считаются как
+    «положено по уровню минус открыто за сутки» — тот же приём, что у
+    суперлайков и бустов, он не ломается от пропущенной уборки.
+    """
+
+    __tablename__ = "dating_case_openings"
+    __table_args__ = (Index("ix_case_user_created", "user_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: Код награды из services/cases.py: superlike | boost.
+    reward: Mapped[str] = mapped_column(String)
+    #: Сколько начислено — суперлайков или минут буста.
+    amount: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

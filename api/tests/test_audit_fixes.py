@@ -2119,3 +2119,85 @@ def test_сообщения_комнат_отдельно_от_личных():
     assert "read_at" in Message.__table__.columns
     assert "read_at" not in RoomMessage.__table__.columns
     assert "match_id" not in RoomMessage.__table__.columns
+
+
+# ════════════════════════════════════════════════════════════════
+#  Кейсы (бонус подписки)
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_кейсов(openapi):
+    paths = openapi["paths"]
+    assert "/api/cases" in paths
+    assert "/api/cases/open" in paths
+
+
+def test_шансы_наград_дают_единицу():
+    """Сумма меньше единицы означала бы, что иногда не выпадает ничего, а
+    больше — что часть наград недостижима."""
+    from services.cases import REWARDS
+
+    assert abs(sum(r.chance for r in REWARDS) - 1.0) < 1e-9
+    assert all(0 < r.chance < 1 for r in REWARDS)
+    assert all(r.amount > 0 for r in REWARDS)
+
+
+def test_каждая_награда_достижима():
+    """Наивная реализация через накопленную сумму легко оставляет последнюю
+    награду недостижимой — проверяем, что выпадают все."""
+    from collections import Counter
+
+    from services.cases import REWARDS, roll
+
+    выпало = Counter(roll().title for _ in range(20_000))
+    for награда in REWARDS:
+        assert выпало[награда.title] > 0, f"{награда.title} не выпала ни разу"
+
+
+def test_кейсы_только_по_подписке():
+    """Бонус, доступный бесплатно, не помогает продать подписку."""
+    from services.cases import openings_per_day
+
+    assert openings_per_day("free") == 0
+    assert openings_per_day("plus") >= 1
+    assert openings_per_day("ultra") > openings_per_day("plus")
+    # Испорченная запись в БД не должна выдавать попытки
+    assert openings_per_day("админ") == 0
+
+
+def test_попытки_считаются_по_времени():
+    import inspect
+
+    from routers import cases
+
+    исходник = inspect.getsource(cases._openings_left)
+    assert "timedelta(days=1)" in исходник
+    assert "CaseOpening.created_at >= since" in исходник
+
+
+def test_выпавший_буст_продлевает_а_не_обнуляет():
+    """Иначе выпавшие минуты сожгли бы уже действующий буст."""
+    import inspect
+
+    from routers import cases
+
+    исходник = inspect.getsource(cases.open_case)
+    assert "profile.boost_until > now" in исходник
+
+
+def test_бонусные_суперлайки_отдельным_полем_и_тратятся_последними():
+    """Прибавка к суточной квоте возобновлялась бы каждый день сама — кейс
+    давал бы бесконечный бонус. А тратить награду первой означало бы сжечь её
+    вместо того, что и так обновится завтра."""
+    import inspect
+
+    from models.models import Profile
+    from routers import likes
+
+    assert "bonus_superlikes" in Profile.__table__.columns
+
+    остаток = inspect.getsource(likes._superlikes_left)
+    assert "bonus" in остаток and "max(0, quota - used) + bonus" in остаток
+
+    списание = inspect.getsource(likes._spend_bonus_superlike)
+    # Списываем только когда суточные уже исчерпаны
+    assert "<= quota" in списание and "return" in списание
