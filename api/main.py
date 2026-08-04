@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config import get_settings
+from middleware.rate_limit import RateLimitMiddleware
 from routers import auth, profiles, likes, matches, chat, upload, report, admin, blocks
 
 settings = get_settings()
@@ -76,6 +77,10 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
 )
+
+# Лимит частоты запросов на чувствительных путях (жалобы, вход, загрузка).
+# Ставится до CORS, чтобы отброшенный запрос не тратил работу приложения.
+app.add_middleware(RateLimitMiddleware)
 
 # CORS: авторизация через Bearer-заголовок, куки не используем —
 # credentials выключены. Список origin'ов приходит из CORS_ORIGINS,

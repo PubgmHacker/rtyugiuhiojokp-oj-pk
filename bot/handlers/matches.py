@@ -1,3 +1,10 @@
+"""Мэтчи и чат внутри бота.
+
+Колбэки `profile:view` и `menu` живут в handlers/account.py: этот роутер
+подключается позже, поэтому дубли здесь были бы недостижимым кодом —
+aiogram останавливается на первом совпавшем обработчике.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -46,34 +53,6 @@ async def list_matches(callback: CallbackQuery):
         f"💕 <b>Ваши мэтчи ({len(matches)}):</b>\n\nВыберите мэтч для начала чата:",
         reply_markup=matches_list_kb(matches),
     )
-
-
-@router.callback_query(F.data == "profile:view")
-async def view_profile(callback: CallbackQuery):
-    """Просмотр своей анкеты."""
-    db_user = await get_or_create_user(
-        callback.from_user.id,
-        callback.from_user.username or "",
-        callback.from_user.first_name or "",
-    )
-    profile = await get_profile(db_user["id"])
-
-    if not profile or not profile.get("display_name"):
-        await safe_edit_text(
-            callback.message,
-            "⚠️ Анкета не заполнена. Начните создание!",
-            reply_markup=profile_kb(),
-        )
-        return
-
-    from texts import profile_card
-    text = (
-        "👤 <b>Ваша анкета:</b>\n\n"
-        f"{profile_card(profile)}\n\n"
-        f"{'✅ Анкета активна' if db_user.get('is_verified') else '⚠️ Заполните анкету'}"
-    )
-
-    await safe_edit_text(callback.message, text, reply_markup=profile_kb())
 
 
 @router.callback_query(F.data.startswith("chat:open:"))
@@ -173,23 +152,6 @@ async def send_message(message: Message, state: FSMContext):
     await message.answer(
         chat_header(partner_name),
         reply_markup=chat_kb(match_id),
-    )
-
-
-@router.callback_query(F.data == "menu")
-async def back_to_menu(callback: CallbackQuery, state: FSMContext):
-    """Вернуться в главное меню."""
-    await state.clear()
-    db_user = await get_or_create_user(
-        callback.from_user.id,
-        callback.from_user.username or "",
-        callback.from_user.first_name or "",
-    )
-    from texts import menu_text
-    await safe_edit_text(
-        callback.message,
-        menu_text(db_user.get("id", "")[:8], db_user.get("is_verified", False)),
-        reply_markup=main_kb(),
     )
 
 

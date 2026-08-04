@@ -89,6 +89,14 @@ class LikeResponse(BaseModel):
     match: Optional[MatchResponse] = None
 
 
+class SuperlikeQuota(BaseModel):
+    """Остаток суперлайков на сутки — счётчик на кнопке в деке."""
+
+    left: int = 0
+    total: int = 0
+    is_premium: bool = False
+
+
 class MatchResponse(BaseModel):
     id: str
     match_score: Optional[int] = None

@@ -49,13 +49,6 @@ async def publish_new_like(receiver_id: str, liker_id: str):
     await publish_bot_event({"type": "new_like", "receiver_id": receiver_id, "liker_id": liker_id})
 
 
-async def publish_message(match_id: str, sender_id: str, text: str):
-    """Опубликовать новое сообщение для WebSocket рассылки."""
-    r = await get_redis()
-    data = {"type": "message", "match_id": match_id, "sender_id": sender_id, "text": text}
-    await r.publish(f"dating:match:{match_id}", json.dumps(data))
-
-
 async def publish_new_match_for_bot(match_id: str, user1_id: str, user2_id: str):
     """Опубликовать мэтч для Telegram-бота (отдельный канал)."""
     await publish_bot_event({
@@ -71,26 +64,3 @@ async def publish_bot_event(data: dict):
         await r.publish("dating:bot:matches", json.dumps(data))
     except Exception as e:
         logger.error(f"Bot event publish failed: {e}")
-
-
-async def cache_deck_profile(user_id: str, profile_ids: list[str], ttl: int = 3600):
-    """Кешировать IDs показанных анкет (чтобы не повторять)."""
-    r = await get_redis()
-    key = f"dating:deck:viewed:{user_id}"
-    for pid in profile_ids:
-        await r.sadd(key, pid)
-    await r.expire(key, ttl)
-
-
-async def get_viewed_profile_ids(user_id: str) -> set[str]:
-    """Получить множество уже показанных ID анкет."""
-    r = await get_redis()
-    key = f"dating:deck:viewed:{user_id}"
-    members = await r.smembers(key)
-    return set(members or [])
-
-
-async def clear_viewed_profiles(user_id: str):
-    """Сбросить кеш показанных анкет."""
-    r = await get_redis()
-    await r.delete(f"dating:deck:viewed:{user_id}")

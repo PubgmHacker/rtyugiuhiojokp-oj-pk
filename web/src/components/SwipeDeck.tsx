@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Heart, Star, RotateCcw, SlidersHorizontal } from "lucide-react";
 import type { DeckProfile, MatchResponse } from "../lib/api";
-import { likeProfile, getDeck, resetDeck } from "../lib/api";
+import { likeProfile, getDeck, resetDeck, getSuperlikeQuota } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import SwipeCard, { type SwipeDirection } from "./SwipeCard";
@@ -29,6 +29,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   const [isLoading, setIsLoading] = useState(true);
   const [isExhausted, setIsExhausted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Суперлайков на сутки конечное число — кнопка должна это показывать,
+  // иначе отказ сервера выглядит как поломка
+  const [superlikesLeft, setSuperlikesLeft] = useState<number | null>(null);
 
   const loadingRef = useRef(false);
   // Блокируем повторный свайп, пока текущий не обработан — иначе
@@ -78,6 +81,12 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
     if (deck.length < PREFETCH_AT) loadDeck();
   }, [deck.length, loadDeck]);
 
+  useEffect(() => {
+    getSuperlikeQuota()
+      .then((q) => setSuperlikesLeft(q.left))
+      .catch(() => setSuperlikesLeft(null)); // счётчик необязателен
+  }, []);
+
   const handleSwipe = useCallback(
     async (direction: SwipeDirection, profile: DeckProfile) => {
       if (busyRef.current) return;
@@ -92,6 +101,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
 
       try {
         const result = await likeProfile(profile.id, type);
+        if (type === "superlike") {
+          setSuperlikesLeft((n) => (n === null ? n : Math.max(0, n - 1)));
+        }
         if (result.matched && result.match) {
           haptic("success");
           setMatchData({
@@ -103,12 +115,20 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
           });
           addMatch(result.match as MatchResponse);
         }
-      } catch {
-        // Сеть подвела — возвращаем карточку, чтобы решение не потерялось
+      } catch (e: any) {
+        // Карточку возвращаем всегда: решение пользователя не должно
+        // пропадать ни от сбоя сети, ни от исчерпанного лимита
         haptic("error");
         setDeck([profile, ...useStore.getState().deck]);
         setLastSwiped(null);
-        setError("Нет связи — попробуйте ещё раз");
+        if (e?.response?.status === 429) {
+          setSuperlikesLeft(0);
+          setError(
+            e?.response?.data?.detail ?? "Суперлайки на сегодня закончились"
+          );
+        } else {
+          setError("Нет связи — попробуйте ещё раз");
+        }
       } finally {
         busyRef.current = false;
       }
@@ -232,9 +252,33 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
           <X size={29} strokeWidth={2.6} />
         </IconButton>
 
-        <IconButton label="Суперлайк" onClick={() => handleButton("up")} size={46} tone="info">
-          <Star size={20} fill="currentColor" />
-        </IconButton>
+        <div className="relative">
+          <IconButton
+            label={
+              superlikesLeft === 0
+                ? "Суперлайки закончились"
+                : superlikesLeft === null
+                  ? "Суперлайк"
+                  : `Суперлайк, осталось ${superlikesLeft}`
+            }
+            onClick={() => handleButton("up")}
+            disabled={superlikesLeft === 0}
+            size={46}
+            tone="info"
+          >
+            <Star size={20} fill="currentColor" />
+          </IconButton>
+          {superlikesLeft !== null && superlikesLeft > 0 && (
+            <span
+              aria-hidden
+              className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1
+                         rounded-full bg-info text-bg text-[10px] font-bold
+                         flex items-center justify-center"
+            >
+              {superlikesLeft}
+            </span>
+          )}
+        </div>
 
         <IconButton label="Лайк" onClick={() => handleButton("right")} size={62} tone="success">
           <Heart size={27} fill="currentColor" />

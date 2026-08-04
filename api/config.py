@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     REFERRAL_MIN_INVITES: int = 3     # друзей для активации буста
     REFERRAL_BOOST_PERCENT: int = 12  # +% к скору анкеты в выдаче (10–15)
 
+    # ── Суперлайки ───────────────────────────────────────────────
+    # Ограниченный ресурс: безлимитный суперлайк не значит ничего ни для
+    # отправителя, ни для получателя, и не даёт повода купить подписку
+    SUPERLIKES_PER_DAY: int = 1
+    SUPERLIKES_PER_DAY_PREMIUM: int = 5
+
     # ── Profile limits ───────────────────────────────────────────
     MAX_PHOTOS: int = 6
     MAX_BIO_LENGTH: int = 500

@@ -227,6 +227,77 @@ def test_роуты_блокировки_и_входа_по_коду(openapi):
     assert "/api/auth/link" in paths
 
 
+# ── Ограничение частоты запросов ────────────────────────────────
+
+
+def test_лимит_находится_по_самому_длинному_префиксу():
+    """/api/auth/link должен получить свой лимит, а не общий по /api/auth."""
+    from middleware.rate_limit import _find_limit
+
+    prefix, limit, _ = _find_limit("/api/auth/link", "POST")
+    assert prefix == "/api/auth/link"
+    assert limit == 10
+
+    # Жалобы ограничены строже свайпов — иначе спам жалоб бесплатен
+    _, report_limit, _ = _find_limit("/api/report", "POST")
+    _, likes_limit, _ = _find_limit("/api/likes", "POST")
+    assert report_limit < likes_limit
+
+
+def test_чтение_не_ограничивается():
+    """GET-запросы деки и чатов лимитов не имеют — иначе сломается листание."""
+    from middleware.rate_limit import _find_limit
+
+    assert _find_limit("/api/profiles/deck", "GET") is None
+    assert _find_limit("/api/matches", "GET") is None
+
+
+def test_ключ_клиента_по_токену_а_не_по_ip():
+    """За мобильным NAT сидят тысячи людей — лимит по IP задел бы всех."""
+    from types import SimpleNamespace
+
+    from middleware.rate_limit import _client_key
+
+    with_token = SimpleNamespace(
+        headers={"authorization": "Bearer " + "a" * 120},
+        client=SimpleNamespace(host="10.0.0.1"),
+    )
+    assert _client_key(with_token).startswith("t:")
+
+    without_token = SimpleNamespace(
+        headers={"x-forwarded-for": "203.0.113.9, 10.0.0.1"},
+        client=SimpleNamespace(host="10.0.0.1"),
+    )
+    assert _client_key(without_token) == "ip:203.0.113.9"
+
+
+def test_middleware_подключено(app):
+    from middleware.rate_limit import RateLimitMiddleware
+
+    assert any(m.cls is RateLimitMiddleware for m in app.user_middleware)
+
+
+# ── Суперлайки ──────────────────────────────────────────────────
+
+
+def test_квота_суперлайков_конечна(settings):
+    """Безлимитный суперлайк ничего не значит и не продаёт подписку."""
+    assert settings.SUPERLIKES_PER_DAY >= 1
+    assert settings.SUPERLIKES_PER_DAY_PREMIUM > settings.SUPERLIKES_PER_DAY
+
+
+def test_роут_остатка_суперлайков(openapi):
+    assert "/api/likes/superlikes" in openapi["paths"]
+
+
+def test_мёртвый_кеш_деки_удалён():
+    """Кеш просмотренных анкет никто не наполнял — сброс чистил пустоту."""
+    from services import realtime
+
+    for name in ("cache_deck_profile", "get_viewed_profile_ids", "clear_viewed_profiles"):
+        assert not hasattr(realtime, name), f"{name} должен быть удалён"
+
+
 def test_схема_бота_совпадает_с_api():
     """Обе схемы создают таблицы в одной БД — расхождение ломает прод.
 

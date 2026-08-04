@@ -1,21 +1,29 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, and_, desc, text as sa_text
+from sqlalchemy import select, and_, or_, desc, func, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import User, Profile, Like, Match
-from models.schemas import LikeRequest, LikeResponse, MatchResponse, UserProfile
+from models.models import User, Profile, Like, Match, Subscription
+from models.schemas import (
+    LikeRequest,
+    LikeResponse,
+    MatchResponse,
+    SuperlikeQuota,
+    UserProfile,
+)
 from services.realtime import publish_match, publish_new_like, publish_new_match_for_bot
 from services.ai_matchmaker import score_match
 from utils import as_list
 
 router = APIRouter(prefix="/likes", tags=["likes"])
+settings = get_settings()
 
 
 def _pair(a: str, b: str) -> tuple[str, str]:
@@ -66,6 +74,60 @@ async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> Matc
     )
 
 
+async def _is_premium(session: AsyncSession, user_id: str) -> bool:
+    result = await session.execute(
+        select(Subscription.id).where(and_(
+            Subscription.user_id == user_id,
+            Subscription.plan != "free",
+            or_(
+                Subscription.expires_at.is_(None),
+                Subscription.expires_at > datetime.now(timezone.utc),
+            ),
+        ))
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _superlikes_left(session: AsyncSession, user_id: str) -> int:
+    """Сколько суперлайков осталось на сегодня.
+
+    Считаем по таблице лайков, а не по счётчику в Redis: суперлайк — вещь,
+    за которую платят, и его расход не должен теряться вместе с кешем.
+    """
+    quota = (
+        settings.SUPERLIKES_PER_DAY_PREMIUM
+        if await _is_premium(session, user_id)
+        else settings.SUPERLIKES_PER_DAY
+    )
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    result = await session.execute(
+        select(func.count(Like.id)).where(and_(
+            Like.liker_id == user_id,
+            Like.type == "superlike",
+            Like.created_at >= since,
+        ))
+    )
+    return max(0, quota - (result.scalar() or 0))
+
+
+@router.get("/superlikes", response_model=SuperlikeQuota)
+async def get_superlike_quota(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Остаток суперлайков — для счётчика на кнопке в деке."""
+    is_premium = await _is_premium(session, user.id)
+    return SuperlikeQuota(
+        left=await _superlikes_left(session, user.id),
+        total=(
+            settings.SUPERLIKES_PER_DAY_PREMIUM
+            if is_premium
+            else settings.SUPERLIKES_PER_DAY
+        ),
+        is_premium=is_premium,
+    )
+
+
 @router.post("", response_model=LikeResponse)
 async def create_like(
     data: LikeRequest,
@@ -79,6 +141,12 @@ async def create_like(
     target = result.scalar_one_or_none()
     if not target or target.is_banned:
         raise HTTPException(status_code=404, detail="Profile not found")
+
+    if data.type == "superlike" and not await _superlikes_left(session, user.id):
+        raise HTTPException(
+            status_code=429,
+            detail="Суперлайки на сегодня закончились",
+        )
 
     u1, u2 = _pair(user.id, data.target_id)
     # Advisory-lock на пару: без него два встречных лайка в параллельных

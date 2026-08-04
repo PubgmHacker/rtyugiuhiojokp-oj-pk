@@ -184,6 +184,18 @@ export async function authDev(deviceId: string, name = ""): Promise<{ token: str
   return { token: data.token, user: data.user };
 }
 
+export interface SuperlikeQuota {
+  left: number;
+  total: number;
+  is_premium: boolean;
+}
+
+/** Остаток суперлайков на сутки — для счётчика на кнопке в деке. */
+export async function getSuperlikeQuota(): Promise<SuperlikeQuota> {
+  const { data } = await api.get("/likes/superlikes");
+  return data;
+}
+
 export async function getLikesReceived(): Promise<UserProfile[]> {
   const { data } = await api.get("/likes/received");
   return data;

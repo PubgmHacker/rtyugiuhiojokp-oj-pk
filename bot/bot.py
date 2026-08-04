@@ -138,13 +138,23 @@ async def start_health_server():
     logger.info(f"Health server running on :{WEBHOOK_PORT}")
 
 
-def get_fsm_storage():
-    """Redis-backed FSM storage для продакшена, MemoryStorage fallback."""
+async def get_fsm_storage():
+    """Redis-backed FSM storage для продакшена, MemoryStorage fallback.
+
+    `RedisStorage.from_url` только собирает пул соединений и ничего не
+    проверяет — соединение ленивое. Поэтому раньше except не срабатывал
+    никогда: при неверном REDIS_URL бот молча выбирал Redis, а падало уже
+    внутри хендлеров, на первом же шаге анкеты, и человек застревал в
+    бесконечной «что-то пошло не так». Проверяем доступность явным ping.
+    """
     try:
         storage = RedisStorage.from_url(REDIS_URL)
+        await asyncio.wait_for(storage.redis.ping(), timeout=5)
         logger.info("Using Redis FSM storage")
         return storage
     except Exception as e:
+        # MemoryStorage теряет состояние при рестарте, но регистрация
+        # работает — это лучше, чем нерабочий бот
         logger.warning(f"Redis unavailable, using MemoryStorage: {e}")
         return MemoryStorage()
 
@@ -160,7 +170,7 @@ async def main():
     logger.info("Database initialized")
 
     # Bot setup
-    storage = get_fsm_storage()
+    storage = await get_fsm_storage()
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=storage)
 
@@ -193,6 +203,7 @@ async def main():
             BotCommand(command="profile", description="Моя анкета"),
             BotCommand(command="premium", description="Premium-подписка"),
             BotCommand(command="invite", description="Пригласить друзей"),
+            BotCommand(command="link", description="Код для входа в приложение"),
             BotCommand(command="pause", description="Скрыть анкету из поиска"),
             BotCommand(command="resume", description="Вернуть анкету в поиск"),
             BotCommand(command="delete", description="Удалить аккаунт"),
