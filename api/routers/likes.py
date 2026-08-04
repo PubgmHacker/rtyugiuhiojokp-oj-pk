@@ -21,7 +21,8 @@ from models.schemas import (
 from services.realtime import publish_match, publish_new_like, publish_new_match_for_bot
 from services.ai_matchmaker import score_match
 from services.ai_moderation import log_moderation, moderate_text
-from services.premium import is_premium as _is_premium
+from services.premium import current_tier, is_premium as _is_premium
+from services.plans import superlikes_for, tier_allows
 from services.push import notify_new_match
 from utils import as_list
 
@@ -89,11 +90,7 @@ async def _superlikes_left(session: AsyncSession, user_id: str) -> int:
     Считаем по таблице лайков, а не по счётчику в Redis: суперлайк — вещь,
     за которую платят, и его расход не должен теряться вместе с кешем.
     """
-    quota = (
-        settings.SUPERLIKES_PER_DAY_PREMIUM
-        if await _is_premium(session, user_id)
-        else settings.SUPERLIKES_PER_DAY
-    )
+    quota = superlikes_for(await current_tier(session, user_id))
     since = datetime.now(timezone.utc) - timedelta(days=1)
     result = await session.execute(
         select(func.count(Like.id)).where(and_(
@@ -111,15 +108,11 @@ async def get_superlike_quota(
     session: AsyncSession = Depends(get_session),
 ):
     """Остаток суперлайков — для счётчика на кнопке в деке."""
-    is_premium = await _is_premium(session, user.id)
+    tier = await current_tier(session, user.id)
     return SuperlikeQuota(
         left=await _superlikes_left(session, user.id),
-        total=(
-            settings.SUPERLIKES_PER_DAY_PREMIUM
-            if is_premium
-            else settings.SUPERLIKES_PER_DAY
-        ),
-        is_premium=is_premium,
+        total=superlikes_for(tier),
+        is_premium=tier != "free",
     )
 
 
@@ -281,9 +274,18 @@ async def get_likes_received(
     )
     likes = result.scalars().all()
 
+    # Кто именно лайкнул — платная возможность. Бесплатному аккаунту отдаём
+    # карточки без имени, фото и текста: количество он видит честно, а вот
+    # «кто» — за подписку. Пустой список тут был бы обманом: человеку
+    # показалось бы, что его никто не лайкал.
+    revealed = tier_allows(await current_tier(session, user.id), "see_who_liked")
+
     out: list[UserProfile] = []
     for lk in likes:
         if lk.liker_id in my_rated:
+            continue
+        if not revealed:
+            out.append(UserProfile(id=lk.liker_id, is_locked=True))
             continue
         result = await session.execute(select(Profile).where(Profile.user_id == lk.liker_id))
         profile = result.scalar_one_or_none()

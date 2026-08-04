@@ -10,6 +10,7 @@ from sqlalchemy import select, text, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
+from services.plans import tier_rank
 from database.models import (
     Base,
     Block,
@@ -406,6 +407,7 @@ async def activate_premium(
     days: int = 30,
     payment_id: str = "",
     provider: str = "stars",
+    tier: str = "plus",
 ) -> dict:
     """Активировать/продлить Premium.
 
@@ -464,7 +466,10 @@ async def activate_premium(
                 if current > now:
                     base = current
 
-            sub.plan = "premium"
+            # Уровень не понижаем задним числом: купивший Ultra и продливший
+            # затем Plus добавляет срок, но не теряет уплаченный уровень
+            if tier_rank(tier) >= tier_rank(sub.plan or "free"):
+                sub.plan = tier
             sub.stripe_id = payment_id or sub.stripe_id
             sub.expires_at = base + timedelta(days=days)
             await session.flush()

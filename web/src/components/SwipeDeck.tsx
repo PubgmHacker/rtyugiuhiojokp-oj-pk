@@ -221,6 +221,94 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               );
             })}
         </AnimatePresence>
+
+        {/* Действия — вертикальным столбцом поверх карточки: так до них
+            дотягивается большой палец, и фото остаётся во всю высоту.
+            pointer-events-none на контейнере, чтобы свайп проходил насквозь
+            между кнопками */}
+        <div
+          className="absolute right-3 bottom-28 z-30 flex flex-col items-center gap-3
+                     pointer-events-none"
+        >
+          <div className="pointer-events-auto">
+            <IconButton
+              label="Вернуть предыдущую анкету"
+              onClick={handleRewind}
+              disabled={!lastSwiped}
+              size={48}
+              tone="warn"
+            >
+              <RotateCcw size={20} />
+            </IconButton>
+          </div>
+
+          <div className="relative pointer-events-auto">
+            <IconButton
+              label={
+                superlikesLeft === 0
+                  ? "Суперлайки закончились"
+                  : superlikesLeft === null
+                    ? "Суперлайк"
+                    : `Суперлайк, осталось ${superlikesLeft}`
+              }
+              onClick={() => handleButton("up")}
+              disabled={superlikesLeft === 0}
+              size={48}
+              tone="info"
+            >
+              <Star size={20} fill="currentColor" />
+            </IconButton>
+            {superlikesLeft !== null && superlikesLeft > 0 && (
+              <span
+                aria-hidden
+                className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1
+                           rounded-full bg-info text-bg text-[10px] font-bold
+                           flex items-center justify-center"
+              >
+                {superlikesLeft}
+              </span>
+            )}
+          </div>
+
+          {/* Лайк крупнее остальных — главное действие экрана */}
+          <div className="pointer-events-auto">
+            <IconButton
+              label="Лайк"
+              onClick={() => handleButton("right")}
+              size={64}
+              tone="success"
+            >
+              <Heart size={28} fill="currentColor" />
+            </IconButton>
+          </div>
+
+          <div className="pointer-events-auto">
+            <IconButton
+              label="Лайк с сообщением"
+              onClick={() => {
+                const top = deck[0];
+                if (!top) return;
+                haptic("light");
+                setNoteFor(top);
+              }}
+              disabled={!deck.length}
+              size={48}
+            >
+              <Mail size={19} />
+            </IconButton>
+          </div>
+
+          <div className="pointer-events-auto">
+            <IconButton
+              label="Пропустить"
+              onClick={() => handleButton("left")}
+              size={48}
+              tone="danger"
+            >
+              <X size={22} strokeWidth={2.6} />
+            </IconButton>
+          </div>
+        </div>
       </div>
 
       {/* Ошибка сети */}
@@ -238,77 +326,6 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
           </motion.button>
         )}
       </AnimatePresence>
-
-      {/* Кнопки действий */}
-      <div className="flex items-center justify-center gap-3.5 pt-4 pb-2">
-        <IconButton
-          label="Вернуть предыдущую анкету"
-          onClick={handleRewind}
-          disabled={!lastSwiped}
-          size={46}
-          tone="warn"
-        >
-          <RotateCcw size={20} />
-        </IconButton>
-
-        <IconButton label="Пропустить" onClick={() => handleButton("left")} size={62} tone="danger">
-          <X size={29} strokeWidth={2.6} />
-        </IconButton>
-
-        <div className="relative">
-          <IconButton
-            label={
-              superlikesLeft === 0
-                ? "Суперлайки закончились"
-                : superlikesLeft === null
-                  ? "Суперлайк"
-                  : `Суперлайк, осталось ${superlikesLeft}`
-            }
-            onClick={() => handleButton("up")}
-            disabled={superlikesLeft === 0}
-            size={46}
-            tone="info"
-          >
-            <Star size={20} fill="currentColor" />
-          </IconButton>
-          {superlikesLeft !== null && superlikesLeft > 0 && (
-            <span
-              aria-hidden
-              className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1
-                         rounded-full bg-info text-bg text-[10px] font-bold
-                         flex items-center justify-center"
-            >
-              {superlikesLeft}
-            </span>
-          )}
-        </div>
-
-        <IconButton label="Лайк" onClick={() => handleButton("right")} size={62} tone="success">
-          <Heart size={27} fill="currentColor" />
-        </IconButton>
-
-        <IconButton
-          label="Лайк с сообщением"
-          onClick={() => {
-            const top = deck[0];
-            if (!top) return;
-            haptic("light");
-            setNoteFor(top);
-          }}
-          disabled={!deck.length}
-          size={46}
-        >
-          <Mail size={19} />
-        </IconButton>
-
-        {onOpenFilters ? (
-          <IconButton label="Настройки поиска" onClick={onOpenFilters} size={46}>
-            <SlidersHorizontal size={19} />
-          </IconButton>
-        ) : (
-          <span className="w-[46px]" aria-hidden />
-        )}
-      </div>
 
       <LikeNoteSheet
         profile={noteFor}

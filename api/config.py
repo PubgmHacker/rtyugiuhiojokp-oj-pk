@@ -42,30 +42,16 @@ class Settings(BaseSettings):
     # ── Zhipu AI (GLM-5.2) ──────────────────────────────────────
     ZHIPU_API_KEY: str = ""
 
-    # ── App Store IAP (покупка Premium в iOS) ───────────────────
-    # Идентификаторы продуктов из App Store Connect и срок, который
-    # начисляется по каждому. Пока bundle id не задан вместе с корневым
+    # ── App Store IAP (покупка подписки в iOS) ──────────────────
+    # Идентификаторы продуктов и сроки живут в services/plans.py — там же,
+    # где цены и уровни. Пока bundle id не задан вместе с корневым
     # сертификатом Apple, покупка в приложении не предлагается.
     APPSTORE_BUNDLE_ID: str = "com.souldawn.dating"
     # Числовой Apple ID приложения из App Store Connect — библиотека Apple
     # требует его для проверки в Production
     APPSTORE_APP_APPLE_ID: int = 0
-    APPSTORE_PRODUCT_MONTHLY: str = "com.souldawn.dating.premium.monthly"
-    APPSTORE_PRODUCT_YEARLY: str = "com.souldawn.dating.premium.yearly"
     # Сборки из Xcode, TestFlight и App Review работают в песочнице
     APPSTORE_USE_SANDBOX: bool = False
-
-    @property
-    def appstore_product_days(self) -> dict[str, int]:
-        """Сколько дней подписки даёт каждый продукт.
-
-        Срок нужен только как запасной вариант: у подписки App Store
-        настоящий `expiresDate` приходит в самой транзакции.
-        """
-        return {
-            self.APPSTORE_PRODUCT_MONTHLY: 30,
-            self.APPSTORE_PRODUCT_YEARLY: 365,
-        }
 
     # ── APNs (пуши в iOS-приложение) ────────────────────────────
     # Ключ .p8 из Apple Developer Portal — целиком, включая заголовок
@@ -83,12 +69,6 @@ class Settings(BaseSettings):
     # ── Referral program ─────────────────────────────────────────
     REFERRAL_MIN_INVITES: int = 3     # друзей для активации буста
     REFERRAL_BOOST_PERCENT: int = 12  # +% к скору анкеты в выдаче (10–15)
-
-    # ── Суперлайки ───────────────────────────────────────────────
-    # Ограниченный ресурс: безлимитный суперлайк не значит ничего ни для
-    # отправителя, ни для получателя, и не даёт повода купить подписку
-    SUPERLIKES_PER_DAY: int = 1
-    SUPERLIKES_PER_DAY_PREMIUM: int = 5
 
     # ── Profile limits ───────────────────────────────────────────
     MAX_PHOTOS: int = 6

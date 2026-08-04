@@ -4,7 +4,7 @@ import logging
 
 import aiohttp
 
-from config import CRYPTOBOT_TOKEN, PREMIUM_PRICE_USDT, PREMIUM_DAYS
+from config import CRYPTOBOT_TOKEN
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +34,19 @@ async def _call(method: str, payload: dict | None = None) -> dict | None:
         return None
 
 
-async def create_premium_invoice(user_id: str) -> dict | None:
-    """Создать счёт в USDT. Возвращает {'invoice_id': int, 'url': str} или None."""
+async def create_premium_invoice(
+    user_id: str, amount: str, title: str = "Souldawn Premium",
+) -> dict | None:
+    """Создать счёт в USDT. Возвращает {'invoice_id': int, 'url': str} или None.
+
+    Сумма приходит из тарифной линейки, а не из настроек: тарифов теперь
+    несколько, и общая цена для всех означала бы, что годовой Ultra стоит
+    столько же, сколько месяц Plus.
+    """
     result = await _call("createInvoice", {
         "asset": "USDT",
-        "amount": str(PREMIUM_PRICE_USDT),
-        "description": f"Souldawn Premium — {PREMIUM_DAYS} дней",
+        "amount": str(amount),
+        "description": title,
         "payload": f"premium:{user_id}",
         "expires_in": 3600,
     })

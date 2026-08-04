@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.models import ProcessedPayment, Subscription
+from services.plans import TIER_FREE, TIER_PLUS, tier_allows, tier_rank
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,38 @@ async def is_premium(session: AsyncSession, user_id: str) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def current_tier(session: AsyncSession, user_id: str) -> str:
+    """Действующий уровень подписки: free / plus / ultra.
+
+    Истёкшая подписка — это free, поэтому срок проверяется здесь, а не в
+    вызывающем коде: иначе каждое место пришлось бы помнить про expires_at.
+
+    Записи, сделанные до появления линейки, имеют plan="premium" — считаем их
+    Plus: это ровно то, что тогда продавалось.
+    """
+    result = await session.execute(
+        select(Subscription.plan).where(and_(
+            Subscription.user_id == user_id,
+            or_(
+                Subscription.expires_at.is_(None),
+                Subscription.expires_at > datetime.now(timezone.utc),
+            ),
+        ))
+    )
+    plan = result.scalar_one_or_none()
+    if not plan or plan == TIER_FREE:
+        return TIER_FREE
+    if plan == "premium":
+        return TIER_PLUS
+    # Неизвестное значение не должно открывать платное: tier_rank вернёт 0
+    return plan if tier_rank(plan) > 0 else TIER_FREE
+
+
+async def can_use(session: AsyncSession, user_id: str, feature: str) -> bool:
+    """Доступна ли платная возможность этому пользователю."""
+    return tier_allows(await current_tier(session, user_id), feature)
+
+
 async def activate_premium(
     session: AsyncSession,
     user_id: str,
@@ -47,6 +80,7 @@ async def activate_premium(
     payment_id: str,
     provider: str,
     expires_at: datetime | None = None,
+    tier: str = TIER_PLUS,
 ) -> dict:
     """Начислить или продлить Premium ровно один раз на платёж.
 
@@ -98,7 +132,9 @@ async def activate_premium(
                 base = current
         new_expires = base + timedelta(days=days)
 
-    sub.plan = "premium"
+    # Уровень не понижаем задним числом: если человек купил Ultra, а потом
+    # продлил Plus, продление добавляет срок, но не отбирает уплаченный уровень
+    sub.plan = tier if tier_rank(tier) >= tier_rank(sub.plan or TIER_FREE) else sub.plan
     sub.stripe_id = payment_id or sub.stripe_id
     sub.expires_at = new_expires
     await session.flush()

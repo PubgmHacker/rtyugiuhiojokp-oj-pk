@@ -225,8 +225,9 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
         className="top-1/3 left-1/2 -translate-x-1/2"
       />
 
-      {/* Информация о профиле */}
-      <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 z-20 pointer-events-none">
+      {/* Информация о профиле. Правый отступ — под столбец кнопок действий,
+          иначе длинное имя уезжает под них */}
+      <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 pr-[84px] z-20 pointer-events-none">
         {profile.match_score != null && (
           <div className="inline-flex items-center gap-1.5 mb-3 px-2.5 py-1 rounded-full glass-strong">
             <Sparkles size={13} className="text-accent" />

@@ -8,7 +8,7 @@ import {
   Link,
 } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Flame, MessageCircle, User, Sparkles, WifiOff } from "lucide-react";
+import { Flame, MessageCircle, User, Sparkles, Crown, WifiOff } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
 import { initNative, registerPushNotifications } from "./lib/native";
@@ -27,12 +27,14 @@ const Matches = lazy(() => import("./pages/Matches"));
 const Likes = lazy(() => import("./pages/Likes"));
 const Chat = lazy(() => import("./pages/Chat"));
 const Profile = lazy(() => import("./pages/Profile"));
+const Plans = lazy(() => import("./pages/Plans"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
 const NAV_ITEMS = [
-  { path: "/discover", icon: Flame, label: "Поиск" },
+  { path: "/discover", icon: Flame, label: "Лента" },
   { path: "/likes", icon: Sparkles, label: "Лайки" },
   { path: "/matches", icon: MessageCircle, label: "Чаты" },
+  { path: "/plans", icon: Crown, label: "Подписка" },
   { path: "/profile", icon: User, label: "Профиль" },
 ];
 
@@ -231,6 +233,7 @@ export default function App() {
           <Route path="/likes" element={<Protected><Likes /></Protected>} />
           {/* В чате нижняя навигация мешает полю ввода */}
           <Route path="/chat/:matchId" element={<Protected nav={false}><Chat /></Protected>} />
+          <Route path="/plans" element={<Protected><Plans /></Protected>} />
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected nav={false}><AdminDashboard /></Protected>} />
 

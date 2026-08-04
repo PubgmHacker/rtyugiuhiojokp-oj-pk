@@ -55,6 +55,8 @@ class UserProfile(BaseModel):
     # Заполняется только в списке «кто меня лайкнул»: текст, приложенный
     # к входящему лайку.
     like_message: str = ""
+    #: Карточка скрыта до подписки: имя, фото и текст лайка не отданы.
+    is_locked: bool = False
     has_location: bool = False
     invited_count: int = 0
     referral_boost: bool = False
@@ -197,6 +199,35 @@ class DeviceRegistration(BaseModel):
 # ════════════════════════════════════════════════════════════════
 #  IN-APP PURCHASES
 # ════════════════════════════════════════════════════════════════
+
+class PlanOut(BaseModel):
+    """Один покупаемый вариант для витрины."""
+
+    code: str
+    tier: str
+    title: str
+    months: int
+    price_rub: int
+    price_per_month: int
+    appstore_id: str = ""
+
+
+class TierOut(BaseModel):
+    """Уровень и что он даёт."""
+
+    tier: str
+    name: str
+    superlikes: int
+    perks: list[str] = Field(default_factory=list)
+    plans: list[PlanOut] = Field(default_factory=list)
+
+
+class PlansOut(BaseModel):
+    """Витрина тарифов. `current_tier` — что действует у спросившего."""
+
+    current_tier: str
+    tiers: list[TierOut] = Field(default_factory=list)
+
 
 class IAPProducts(BaseModel):
     """Что доступно к покупке. `available=false` — кнопку покупки не показываем."""

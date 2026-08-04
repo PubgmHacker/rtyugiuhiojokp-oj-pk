@@ -286,10 +286,17 @@ def test_middleware_подключено(app):
 # ── Суперлайки ──────────────────────────────────────────────────
 
 
-def test_квота_суперлайков_конечна(settings):
-    """Безлимитный суперлайк ничего не значит и не продаёт подписку."""
-    assert settings.SUPERLIKES_PER_DAY >= 1
-    assert settings.SUPERLIKES_PER_DAY_PREMIUM > settings.SUPERLIKES_PER_DAY
+def test_квота_суперлайков_конечна_и_растёт_с_уровнем():
+    """Безлимитный суперлайк ничего не значит и не продаёт подписку,
+    а одинаковая квота на всех уровнях не даёт повода брать старший."""
+    from services.plans import superlikes_for
+
+    free = superlikes_for("free")
+    plus = superlikes_for("plus")
+    ultra = superlikes_for("ultra")
+
+    assert free >= 1
+    assert free < plus < ultra
 
 
 def test_роут_остатка_суперлайков(openapi):
@@ -836,13 +843,15 @@ def _payload(**over):
     from appstoreserverlibrary.models.Environment import Environment
     from config import get_settings
 
+    from services.plans import PLANS_BY_CODE
+
     s = get_settings()
     now_ms = int(time.time() * 1000)
     base = dict(
         transactionId="2000000000000001",
         originalTransactionId="2000000000000000",
         bundleId=s.APPSTORE_BUNDLE_ID,
-        productId=s.APPSTORE_PRODUCT_MONTHLY,
+        productId=PLANS_BY_CODE["plus_1m"].appstore_id,
         purchaseDate=now_ms,
         expiresDate=now_ms + 30 * 86400 * 1000,
         appAccountToken="11111111-1111-1111-1111-111111111111",
@@ -990,22 +999,28 @@ def test_имя_продукта_плагина_совпадает_с_ios_про
     assert 'product(name: "SouldawnCapacitorIap"' in spm
 
 
-def test_клиент_покупки_подключён_к_профилю():
+def test_клиент_покупки_подключён_к_витрине():
+    """Витрина тарифов должна и продавать, и восстанавливать покупки."""
     from pathlib import Path
 
     web = Path(__file__).resolve().parents[2] / "web" / "src"
 
     assert (web / "lib" / "iap.ts").exists()
-    profile = (web / "pages" / "Profile.tsx").read_text(encoding="utf-8")
-    assert "PremiumOffer" in profile, "блок покупки не подключён в профиль"
 
-    offer = (web / "components" / "PremiumOffer.tsx").read_text(encoding="utf-8")
+    plans = (web / "pages" / "Plans.tsx").read_text(encoding="utf-8")
+    assert "purchasePremium" in plans, "витрина ничего не покупает"
     # Обязательный пункт ревью: сменивший устройство должен вернуть оплаченное
-    assert "restorePurchases" in offer, "нет восстановления покупок"
+    assert "restorePurchases" in plans, "нет восстановления покупок"
+    # Цены приходят с сервера: захардкоженный ценник разойдётся с ботом
+    assert "getPlans" in plans
+
+    profile = (web / "pages" / "Profile.tsx").read_text(encoding="utf-8")
+    assert '"/plans"' in profile, "из профиля не попасть в витрину"
 
     app = (web / "App.tsx").read_text(encoding="utf-8")
     # Без слушателя продления не дойдут до сервера и Premium погаснет
     assert "startTransactionListener" in app
+    assert '"/plans"' in app, "маршрут витрины не объявлен"
 
 
 def test_транзакция_подтверждается_после_сервера():
@@ -1296,3 +1311,111 @@ def test_причины_жалобы_совпадают_во_всех_слоях
     начало = админка.index("const REASON_MAP")
     из_админки = set(re.findall(r"^\s+(\w+):", админка[начало : админка.index("};", начало)], re.M))
     assert из_админки == эталон, f"в админке нет подписи для: {эталон - из_админки}"
+
+
+# ════════════════════════════════════════════════════════════════
+#  Тарифная линейка (раньше премиум был бинарным: любая платная
+#  возможность включалась всем одинаково)
+# ════════════════════════════════════════════════════════════════
+
+def test_тарифы_совпадают_в_боте_и_api():
+    """Бот и API держат линейку раздельно — бот не может импортировать код API.
+
+    Разойдись они в цене, человек увидел бы в боте одну сумму, а в мини-аппе
+    другую, и заплатил бы третью.
+    """
+    import ast
+    from pathlib import Path
+
+    from services.plans import PLANS
+
+    бот = (
+        Path(__file__).resolve().parents[2] / "bot" / "services" / "plans.py"
+    ).read_text(encoding="utf-8")
+    дерево = ast.parse(бот)
+
+    планы_бота = {}
+    for узел in ast.walk(дерево):
+        if not (isinstance(узел, ast.Call) and getattr(узел.func, "id", "") == "Plan"):
+            continue
+        # tier передаётся константой TIER_PLUS/TIER_ULTRA, остальное — литералы
+        значения = []
+        for арг in узел.args:
+            if isinstance(арг, ast.Constant):
+                значения.append(арг.value)
+            elif isinstance(арг, ast.Name):
+                значения.append(арг.id.removeprefix("TIER_").lower())
+        планы_бота[значения[0]] = tuple(значения[1:5])
+
+    планы_api = {p.code: (p.tier, p.months, p.days, p.price_rub) for p in PLANS}
+    assert планы_бота == планы_api, (
+        f"расходятся: {set(планы_бота.items()) ^ set(планы_api.items())}"
+    )
+
+
+def test_цены_растут_с_уровнем_а_за_срок_дают_скидку():
+    """Тариф без выгоды за длинный срок не продаётся, а Ultra дешевле Plus
+    означал бы, что старший уровень покупать незачем."""
+    from services.plans import PLANS_BY_CODE
+
+    for tier in ("plus", "ultra"):
+        месяц = PLANS_BY_CODE[f"{tier}_1m"]
+        квартал = PLANS_BY_CODE[f"{tier}_3m"]
+        год = PLANS_BY_CODE[f"{tier}_12m"]
+
+        assert месяц.price_per_month > квартал.price_per_month > год.price_per_month
+        # Общая сумма всё равно растёт со сроком — иначе год выглядел бы ошибкой
+        assert месяц.price_rub < квартал.price_rub < год.price_rub
+
+    assert PLANS_BY_CODE["ultra_1m"].price_rub > PLANS_BY_CODE["plus_1m"].price_rub
+
+
+def test_возможности_наследуются_от_младшего_уровня():
+    from services.plans import tier_allows
+
+    # Всё, что доступно в Plus, доступно и в Ultra
+    for feature in ("see_who_liked", "incognito", "deck_boost"):
+        assert tier_allows("plus", feature)
+        assert tier_allows("ultra", feature)
+        assert not tier_allows("free", feature)
+
+    # А обратное неверно: за старший уровень платят не зря
+    assert tier_allows("ultra", "visitors")
+    assert not tier_allows("plus", "visitors")
+
+
+def test_неизвестный_уровень_не_открывает_платное():
+    """Испорченная или чужая запись в БД не должна выдавать подписку."""
+    from services.plans import superlikes_for, tier_allows
+
+    assert not tier_allows("админ", "visitors")
+    assert not tier_allows("", "incognito")
+    # Незнакомая возможность закрыта: опечатка не открывает платное всем
+    assert not tier_allows("ultra", "телепортация")
+    assert superlikes_for("что-то") == superlikes_for("free")
+
+
+def test_каждый_платный_тариф_продаётся_в_ios():
+    """Тариф без продукта App Store нельзя купить с айфона, а показать его
+    в витрине мы всё равно покажем."""
+    from services.plans import PLANS
+
+    for plan in PLANS:
+        assert plan.appstore_id, f"{plan.code} без идентификатора продукта"
+
+    # Идентификаторы уникальны: один продукт на два тарифа начислял бы не то
+    assert len({p.appstore_id for p in PLANS}) == len(PLANS)
+
+
+def test_витрина_и_гейт_лайков_есть_в_апи(openapi):
+    assert "/api/iap/plans" in openapi["paths"]
+
+    from pathlib import Path
+
+    likes = (
+        Path(__file__).resolve().parents[1] / "routers" / "likes.py"
+    ).read_text(encoding="utf-8")
+    # Кто именно лайкнул — за подписку, но количество видно всем: пустой
+    # список выглядел бы как «вас никто не лайкал»
+    assert 'tier_allows(await current_tier(session, user.id), "see_who_liked")' in likes
+    assert "is_locked=True" in likes

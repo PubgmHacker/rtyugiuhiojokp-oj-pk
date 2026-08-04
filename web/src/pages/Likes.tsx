@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, X } from "lucide-react";
+import { Heart, X, Lock, Crown, ChevronRight } from "lucide-react";
 import {
   getLikesReceived,
   likeProfile,
@@ -150,19 +150,65 @@ export default function Likes() {
         Ответная симпатия сразу открывает чат.
       </p>
 
+      {/* Кто именно лайкнул — платная возможность. Количество показываем
+          честно всем: пустой экран заставил бы думать, что лайков нет */}
+      {likes.some((p) => p.is_locked) && (
+        <Link
+          to="/plans"
+          onClick={() => haptic("light")}
+          className="mx-4 mt-3 flex items-center gap-3 px-4 py-3
+                     rounded-[var(--radius-tile)] border border-accent/25 bg-accent/8"
+        >
+          <Crown size={18} className="text-accent shrink-0" />
+          <span className="flex-1 text-[14px] leading-snug">
+            <span className="font-bold">
+              {likes.length} {plural(likes.length, "человек", "человека", "человек")}
+            </span>{" "}
+            уже лайкнули вас. Узнайте, кто именно — в Plus
+          </span>
+          <ChevronRight size={18} className="text-text-faint shrink-0" />
+        </Link>
+      )}
+
       <div className="grid grid-cols-2 gap-3 px-4 pt-3">
         <AnimatePresence mode="popLayout">
-          {likes.map((p) => (
-            <motion.article
-              key={p.id}
-              layout
-              initial={{ opacity: 0, scale: 0.94 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 380, damping: 34 }}
-              className="relative aspect-[3/4] rounded-[var(--radius-tile)]
-                         overflow-hidden bg-surface-2"
-            >
+          {likes.map((p) =>
+            p.is_locked ? (
+              // Скрытая карточка: сервер не присылает ни имени, ни фото —
+              // подглядеть в ответе API нечего
+              <motion.article
+                key={p.id}
+                layout
+                initial={{ opacity: 0, scale: 0.94 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 380, damping: 34 }}
+                className="relative aspect-[3/4] rounded-[var(--radius-tile)]
+                           overflow-hidden border border-hairline"
+                style={{ background: "var(--gradient-placeholder)" }}
+              >
+                <Link
+                  to="/plans"
+                  onClick={() => haptic("light")}
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+                >
+                  <Lock size={26} className="text-white/50" />
+                  <span className="text-[12.5px] text-white/70 font-medium">
+                    Открыть в Plus
+                  </span>
+                </Link>
+              </motion.article>
+            ) : (
+              <motion.article
+                key={p.id}
+                layout
+                initial={{ opacity: 0, scale: 0.94 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 380, damping: 34 }}
+                className="relative aspect-[3/4] rounded-[var(--radius-tile)]
+                           overflow-hidden bg-surface-2"
+              >
               {p.photos?.[0] ? (
                 <img
                   src={p.photos[0]}
@@ -228,7 +274,8 @@ export default function Likes() {
                 </div>
               </div>
             </motion.article>
-          ))}
+            )
+          )}
         </AnimatePresence>
       </div>
 

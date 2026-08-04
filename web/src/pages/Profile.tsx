@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LogOut,
@@ -30,7 +30,6 @@ import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { getCurrentPosition, openExternal } from "../lib/native";
 import { Button, Card, Chip, Skeleton, VerifiedBadge, Spinner } from "../components/ui";
-import PremiumOffer from "../components/PremiumOffer";
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
 const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
@@ -320,7 +319,23 @@ export default function Profile() {
           </button>
         </Card>
       ) : (
-        <PremiumOffer userId={profile?.id || ""} onPurchased={load} />
+        // Витрина живёт на своей вкладке: тарифов теперь шесть, в карточку
+        // профиля они не укладываются
+        <Link
+          to="/plans"
+          onClick={() => haptic("light")}
+          className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
+                     border border-accent/25 bg-accent/8 flex items-center gap-3"
+        >
+          <Crown size={20} className="text-accent shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-[15px]">Souldawn Plus и Ultra</p>
+            <p className="text-caption text-text-muted">
+              Кто вас лайкнул, инкогнито и приоритет в выдаче
+            </p>
+          </div>
+          <ChevronRight size={18} className="text-text-faint shrink-0" />
+        </Link>
       )}
 
       {/* ── Реферальная программа ─────────────────────────────── */}

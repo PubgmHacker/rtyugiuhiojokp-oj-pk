@@ -23,11 +23,13 @@ REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6380/0")
 SITE_URL: str = os.getenv("SITE_URL", "http://localhost:5173")  # Web frontend
 
 # ── Premium / Payments (значения задаются в .env) ──────────────
-PREMIUM_DAYS: int = int(os.getenv("PREMIUM_DAYS", "30"))
-PREMIUM_PRICE_STARS: int = int(os.getenv("PREMIUM_PRICE_STARS", "250"))
+# Цены и сроки живут в services/plans.py — там же, где уровни. Здесь только
+# курсы пересчёта рублёвой цены в единицы платёжных систем: Stars и USDT
+# ходят по своему курсу, а линейка должна оставаться одной для всех способов.
+RUB_PER_STAR: float = float(os.getenv("RUB_PER_STAR", "1.9"))
+RUB_PER_USDT: float = float(os.getenv("RUB_PER_USDT", "95"))
 # CryptoBot (@CryptoBot, Crypto Pay API) — если токен пуст, способ скрыт
 CRYPTOBOT_TOKEN: str = os.getenv("CRYPTOBOT_TOKEN", "")
-PREMIUM_PRICE_USDT: str = os.getenv("PREMIUM_PRICE_USDT", "3")
 # СБП — появится после подключения провайдера (заглушка)
 SBP_ENABLED: bool = os.getenv("SBP_ENABLED", "").lower() in ("1", "true", "yes")
 

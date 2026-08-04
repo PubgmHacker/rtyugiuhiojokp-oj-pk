@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal, X, Flame } from "lucide-react";
 import SwipeDeck from "../components/SwipeDeck";
 import { useStore } from "../lib/store";
 import { updateMyProfile, getMyProfile, type UserProfile } from "../lib/api";
@@ -23,25 +23,53 @@ export default function Discover() {
   const { user, setUser } = useStore();
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // Заданы ли нишевые фильтры — по этому кнопка подсвечивается: иначе
+  // человек не помнит, почему выдача сузилась
+  const filtersActive = Boolean(
+    user?.filter_goal ||
+      user?.filter_subculture ||
+      user?.filter_city ||
+      user?.filter_height_min ||
+      user?.filter_height_max
+  );
+
   return (
     // Высота за вычетом нижней навигации (её отступ задаёт Protected):
     // при 100dvh кнопки действий уезжают под панель
     <div className="flex flex-col h-[calc(100dvh-68px)]">
-      <header className="chrome safe-top border-b border-hairline/60 shrink-0">
-        <div className="flex items-center justify-between px-4 pb-2.5 min-h-[48px]">
-          <h1 className="text-[24px] font-extrabold tracking-[-0.03em] text-gradient">
-            Souldawn
-          </h1>
+      {/* Шапка поверх карточки, как в референсе: пилюля-режим слева,
+          фильтры справа. Фон прозрачный — фото уходит под неё */}
+      <header className="safe-top shrink-0 px-3 pb-2 pt-1">
+        <div className="flex items-center justify-between gap-2 min-h-[44px]">
+          <span
+            className="inline-flex items-center gap-2 pl-2 pr-4 py-1.5 rounded-full
+                       bg-dawn text-white font-bold text-[15px] shadow-lg"
+          >
+            <span
+              aria-hidden
+              className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center"
+            >
+              <Flame size={16} />
+            </span>
+            Анкеты
+          </span>
+
           <button
             aria-label="Настройки поиска"
             onClick={() => {
               haptic("light");
               setFiltersOpen(true);
             }}
-            className="tap-target flex items-center justify-center rounded-full
-                       text-text-secondary active:scale-90 transition-transform"
+            className={`inline-flex items-center gap-2 pl-3.5 pr-4 py-2 rounded-full
+                        text-[14.5px] font-semibold glass-strong
+                        active:scale-95 transition-transform
+                        ${filtersActive ? "text-accent" : "text-text-secondary"}`}
           >
-            <SlidersHorizontal size={21} />
+            <SlidersHorizontal size={17} />
+            Фильтры
+            {filtersActive && (
+              <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent" />
+            )}
           </button>
         </div>
       </header>

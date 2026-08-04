@@ -66,6 +66,8 @@ export interface UserProfile {
   filter_height_max?: number | null;
   /** Только в списке «кто меня лайкнул»: текст, приложенный к лайку. */
   like_message?: string;
+  /** Карточка скрыта до подписки: имени и фото в ответе нет. */
+  is_locked?: boolean;
   has_location?: boolean;
   invited_count?: number;
   referral_boost?: boolean;
@@ -240,6 +242,40 @@ export async function deleteMyAccount(): Promise<void> {
 /** Экспорт своих данных — ожидаемая возможность для приватности. */
 export async function exportMyData(): Promise<Blob> {
   const { data } = await api.get("/profiles/me/export", { responseType: "blob" });
+  return data;
+}
+
+/* ── Тарифы ─────────────────────────────────────────────────── */
+
+export interface PlanOut {
+  code: string;
+  tier: string;
+  title: string;
+  months: number;
+  price_rub: number;
+  price_per_month: number;
+  appstore_id: string;
+}
+
+export interface TierOut {
+  tier: string;
+  name: string;
+  superlikes: number;
+  perks: string[];
+  plans: PlanOut[];
+}
+
+export interface PlansOut {
+  current_tier: string;
+  tiers: TierOut[];
+}
+
+/**
+ * Витрина тарифов. Цены приходят с сервера, а не хранятся в клиенте: иначе
+ * бот и мини-апп разошлись бы в ценнике после первой же правки.
+ */
+export async function getPlans(): Promise<PlansOut> {
+  const { data } = await api.get("/iap/plans");
   return data;
 }
 
