@@ -6,6 +6,12 @@ import { useStore } from "../lib/store";
 import { updateMyProfile, getMyProfile, type UserProfile } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { Button, Chip, Spinner } from "../components/ui";
+import {
+  GOALS,
+  SUBCULTURES,
+  HEIGHT_MIN,
+  HEIGHT_MAX,
+} from "../lib/profileOptions";
 
 const LOOKING_FOR = [
   { value: "female", label: "Девушек" },
@@ -69,6 +75,16 @@ function FilterSheet({
   const [ageMin, setAgeMin] = useState(user?.age_min ?? 18);
   const [ageMax, setAgeMax] = useState(user?.age_max ?? 45);
   const [distance, setDistance] = useState(user?.distance_max ?? 100);
+  const [goal, setGoal] = useState(user?.filter_goal ?? "");
+  const [subculture, setSubculture] = useState(user?.filter_subculture ?? "");
+  const [city, setCity] = useState(user?.filter_city ?? "");
+  // Рост фильтруем только если человек включил ползунки: иначе анкеты без
+  // указанного роста молча исчезли бы из выдачи
+  const [heightOn, setHeightOn] = useState(
+    user?.filter_height_min != null || user?.filter_height_max != null
+  );
+  const [heightMin, setHeightMin] = useState(user?.filter_height_min ?? 155);
+  const [heightMax, setHeightMax] = useState(user?.filter_height_max ?? 195);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -79,8 +95,28 @@ function FilterSheet({
     setAgeMin(user.age_min ?? 18);
     setAgeMax(user.age_max ?? 45);
     setDistance(user.distance_max ?? 100);
+    setGoal(user.filter_goal ?? "");
+    setSubculture(user.filter_subculture ?? "");
+    setCity(user.filter_city ?? "");
+    setHeightOn(user.filter_height_min != null || user.filter_height_max != null);
+    setHeightMin(user.filter_height_min ?? 155);
+    setHeightMax(user.filter_height_max ?? 195);
     setSaveError("");
   }, [open, user]);
+
+  const reset = useCallback(() => {
+    haptic("light");
+    setLookingFor("any");
+    setAgeMin(18);
+    setAgeMax(45);
+    setDistance(100);
+    setGoal("");
+    setSubculture("");
+    setCity("");
+    setHeightOn(false);
+    setHeightMin(155);
+    setHeightMax(195);
+  }, []);
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -91,6 +127,11 @@ function FilterSheet({
         age_min: ageMin,
         age_max: ageMax,
         distance_max: distance,
+        filter_goal: goal,
+        filter_subculture: subculture,
+        filter_city: city.trim(),
+        filter_height_min: heightOn ? heightMin : null,
+        filter_height_max: heightOn ? heightMax : null,
       });
       const fresh = await getMyProfile();
       setUser(fresh);
@@ -106,7 +147,20 @@ function FilterSheet({
     } finally {
       setSaving(false);
     }
-  }, [lookingFor, ageMin, ageMax, distance, setUser, onClose]);
+  }, [
+    lookingFor,
+    ageMin,
+    ageMax,
+    distance,
+    goal,
+    subculture,
+    city,
+    heightOn,
+    heightMin,
+    heightMax,
+    setUser,
+    onClose,
+  ]);
 
   return (
     <AnimatePresence>
@@ -207,6 +261,98 @@ function FilterSheet({
               />
             </div>
 
+            {/* Цель знакомства */}
+            <div className="mb-7">
+              <p className="text-caption text-text-muted mb-2.5">Цель знакомства</p>
+              <div className="flex flex-wrap gap-2">
+                <Chip active={goal === ""} onClick={() => setGoal("")}>
+                  Любая
+                </Chip>
+                {GOALS.map((o) => (
+                  <Chip
+                    key={o.value}
+                    active={goal === o.value}
+                    onClick={() => setGoal(goal === o.value ? "" : o.value)}
+                  >
+                    {o.label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+
+            {/* Субкультура */}
+            <div className="mb-7">
+              <p className="text-caption text-text-muted mb-2.5">Субкультура</p>
+              <div className="flex flex-wrap gap-2">
+                <Chip active={subculture === ""} onClick={() => setSubculture("")}>
+                  Любая
+                </Chip>
+                {SUBCULTURES.map((o) => (
+                  <Chip
+                    key={o.value}
+                    active={subculture === o.value}
+                    onClick={() =>
+                      setSubculture(subculture === o.value ? "" : o.value)
+                    }
+                  >
+                    {o.label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+
+            {/* Город */}
+            <div className="mb-7">
+              <p className="text-caption text-text-muted mb-2.5">Город</p>
+              <input
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder="Любой"
+                aria-label="Город"
+                className="w-full px-3.5 py-3 rounded-[var(--radius-tile)]
+                           bg-surface-2 border border-hairline text-[15px]
+                           placeholder:text-text-muted focus:outline-none
+                           focus:border-accent/60"
+              />
+            </div>
+
+            {/* Рост */}
+            <div className="mb-8">
+              <div className="flex items-baseline justify-between mb-2.5">
+                <p className="text-caption text-text-muted">Рост</p>
+                <button
+                  onClick={() => {
+                    haptic("light");
+                    setHeightOn((v) => !v);
+                  }}
+                  className="text-[13px] font-semibold text-accent"
+                >
+                  {heightOn ? `${heightMin} – ${heightMax} см` : "Не важен"}
+                </button>
+              </div>
+              {heightOn && (
+                <>
+                  <Range
+                    label="Минимальный рост"
+                    min={HEIGHT_MIN}
+                    max={HEIGHT_MAX - 1}
+                    value={heightMin}
+                    onChange={(v) => setHeightMin(Math.min(v, heightMax - 1))}
+                  />
+                  <Range
+                    label="Максимальный рост"
+                    min={HEIGHT_MIN + 1}
+                    max={HEIGHT_MAX}
+                    value={heightMax}
+                    onChange={(v) => setHeightMax(Math.max(v, heightMin + 1))}
+                  />
+                  <p className="text-[12px] text-text-muted">
+                    Анкеты без указанного роста не попадут в выдачу
+                  </p>
+                </>
+              )}
+            </div>
+
             {saveError && (
               <p
                 role="alert"
@@ -217,9 +363,19 @@ function FilterSheet({
               </p>
             )}
 
-            <Button size="lg" fullWidth onClick={save} disabled={saving}>
-              {saving ? <Spinner size={20} /> : "Применить"}
-            </Button>
+            <div className="flex gap-2.5">
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={reset}
+                disabled={saving}
+              >
+                Сбросить
+              </Button>
+              <Button size="lg" fullWidth onClick={save} disabled={saving}>
+                {saving ? <Spinner size={20} /> : "Применить"}
+              </Button>
+            </div>
           </motion.div>
         </>
       )}

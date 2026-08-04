@@ -48,6 +48,10 @@ def reg_step(step: str) -> str:
         ),
         "gender": "Ваш пол?",
         "looking_for": "Кого вам показывать?",
+        "goal": (
+            "Что вы ищете?\n\n"
+            "<i>Так мы покажем вас тем, кто хочет того же.</i>"
+        ),
         "city": (
             "Из какого вы города?\n\n"
             "<i>Напишите название или отправьте геопозицию — "
@@ -94,13 +98,52 @@ REG_DONE = (
 )
 
 
+# Подписи нишевых полей. Значения обязаны совпадать с
+# web/src/lib/profileOptions.ts и keyboards.reg_goal_kb, иначе в боте и в
+# мини-аппе один и тот же человек будет выглядеть по-разному.
+GOAL_LABELS = {
+    "relationship": "Отношения",
+    "friendship": "Дружба",
+    "chat": "Общение",
+    "dates": "Свидания",
+}
+
+SUBCULTURE_LABELS = {
+    "alt": "Альт",
+    "anime": "Аниме",
+    "goth": "Гот",
+    "grunge": "Гранж",
+    "kpop": "K-pop",
+    "metal": "Металл",
+    "punk": "Панк",
+    "rap": "Рэп",
+    "skate": "Скейт",
+    "gamer": "Гейминг",
+    "casual": "Кэжуал",
+    "emo": "Эмо",
+}
+
+
 def profile_card(profile: dict) -> str:
     """Компактная карточка: имя, возраст, город, о себе — как в «Дайвинчике»."""
     line = f"<b>{_esc(profile.get('display_name', 'Без имени'))}</b>"
     if profile.get("age"):
         line += f", {profile['age']}"
+
+    # Город, рост и цель — одной строкой через «·», как на карточке в мини-аппе
+    facts = []
     if profile.get("city"):
-        line += f" — {_esc(profile['city'])}"
+        facts.append(_esc(profile["city"]))
+    if profile.get("height_cm"):
+        facts.append(f"{profile['height_cm']} см")
+    goal = profile.get("goal")
+    if goal:
+        facts.append(_esc(GOAL_LABELS.get(goal, goal)))
+    subculture = profile.get("subculture")
+    if subculture:
+        facts.append(_esc(SUBCULTURE_LABELS.get(subculture, subculture)))
+    if facts:
+        line += " — " + " · ".join(facts)
 
     if profile.get("bio"):
         line += f"\n\n{_esc(profile['bio'])}"

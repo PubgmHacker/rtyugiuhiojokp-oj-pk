@@ -55,6 +55,15 @@ export interface UserProfile {
   age_min?: number;
   age_max?: number;
   distance_max?: number;
+  // Нишевые поля анкеты и фильтры по ним: пусто — не указано / не фильтруем
+  goal?: string;
+  subculture?: string;
+  height_cm?: number | null;
+  filter_goal?: string;
+  filter_subculture?: string;
+  filter_city?: string;
+  filter_height_min?: number | null;
+  filter_height_max?: number | null;
   has_location?: boolean;
   invited_count?: number;
   referral_boost?: boolean;
@@ -74,6 +83,9 @@ export interface DeckProfile {
   distance?: number | null;
   match_score?: number | null;
   match_reason?: string | null;
+  goal?: string;
+  subculture?: string;
+  height_cm?: number | null;
 }
 
 export interface MatchResponse {

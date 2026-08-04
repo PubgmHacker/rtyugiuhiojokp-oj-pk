@@ -596,6 +596,25 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         if my and my.looking_for and my.looking_for != "any":
             filters.append(Profile.gender.in_([my.looking_for, "other"]))
 
+        # Нишевые фильтры задаются в мини-аппе, а действовать должны и здесь:
+        # иначе человек выставил «гот» в приложении, а бот показывает всех.
+        # Анкеты с незаполненным полем не отсеиваем — они не виноваты, что
+        # графа пустая, и иначе выдача схлопнулась бы почти до нуля.
+        if my and my.filter_goal:
+            filters.append(Profile.goal.in_([my.filter_goal, ""]))
+        if my and my.filter_subculture:
+            filters.append(Profile.subculture.in_([my.filter_subculture, ""]))
+        if my and my.filter_city:
+            filters.append(func.lower(Profile.city) == my.filter_city.strip().lower())
+        # Рост — исключение: если диапазон задан, анкеты без роста проверить
+        # нечем, поэтому они выпадают.
+        if my and (my.filter_height_min or my.filter_height_max):
+            filters.append(Profile.height_cm.isnot(None))
+            if my.filter_height_min:
+                filters.append(Profile.height_cm >= my.filter_height_min)
+            if my.filter_height_max:
+                filters.append(Profile.height_cm <= my.filter_height_max)
+
         # Выборка от случайной точки sample_key по индексу вместо
         # ORDER BY RANDOM(): тому нужна сортировка всей таблицы на каждый
         # показ анкеты. У конца диапазона строк не хватит — добираем
@@ -717,4 +736,7 @@ def _profile_to_dict(profile: Profile) -> dict:
         "interests": interests,
         "ai_bio": profile.ai_bio,
         "looking_for": profile.looking_for,
+        "goal": profile.goal or "",
+        "subculture": profile.subculture or "",
+        "height_cm": profile.height_cm,
     }

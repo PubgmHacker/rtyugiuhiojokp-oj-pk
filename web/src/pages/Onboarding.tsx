@@ -12,6 +12,12 @@ import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { getCurrentPosition } from "../lib/native";
 import { Button, Chip, Spinner } from "../components/ui";
+import {
+  GOALS,
+  SUBCULTURES,
+  HEIGHT_MIN,
+  HEIGHT_MAX,
+} from "../lib/profileOptions";
 
 const INTERESTS = [
   "Музыка", "Кино", "Сериалы", "Книги",
@@ -34,6 +40,7 @@ type StepId =
   | "city"
   | "photos"
   | "interests"
+  | "about"
   | "bio"
   | "done";
 
@@ -45,6 +52,7 @@ const STEPS: StepId[] = [
   "city",
   "photos",
   "interests",
+  "about",
   "bio",
   "done",
 ];
@@ -80,6 +88,11 @@ export default function Onboarding() {
     (user?.photos ?? []).map((url) => ({ id: `init-${photoSeq++}`, url }))
   );
   const [interests, setInterests] = useState<string[]>(user?.interests ?? []);
+  const [goal, setGoal] = useState(user?.goal ?? "");
+  const [subculture, setSubculture] = useState(user?.subculture ?? "");
+  const [height, setHeight] = useState(
+    user?.height_cm != null ? String(user.height_cm) : ""
+  );
   const [bio, setBio] = useState(user?.bio ?? "");
 
   const step = STEPS[index];
@@ -99,10 +112,17 @@ export default function Onboarding() {
         return city.trim().length >= 2;
       case "photos":
         return photos.some((p) => p.url);
+      // Шаг необязателен целиком, но заведомо неверный рост дальше не пускаем:
+      // сервер всё равно отклонит патч, и человек не поймёт, что пошло не так
+      case "about":
+        return (
+          !height.trim() ||
+          (Number(height) >= HEIGHT_MIN && Number(height) <= HEIGHT_MAX)
+        );
       default:
         return true;
     }
-  }, [step, name, ageNum, gender, lookingFor, city, photos]);
+  }, [step, name, ageNum, gender, lookingFor, city, photos, height]);
 
   const go = useCallback((delta: number) => {
     setDirection(delta);
@@ -164,8 +184,16 @@ export default function Onboarding() {
         city: city.trim(),
         photos: photos.filter((p) => p.url).map((p) => p.url as string),
         interests,
+        goal,
+        subculture,
         bio: bio.trim(),
       };
+      // Рост необязателен: пустое поле не отправляем вовсе, иначе схема
+      // отклонит null как «меньше 120»
+      const heightNum = Number(height);
+      if (height.trim() && Number.isInteger(heightNum)) {
+        patch.height_cm = heightNum;
+      }
       if (coords) {
         patch.latitude = coords.lat;
         patch.longitude = coords.lon;
@@ -192,6 +220,9 @@ export default function Onboarding() {
     city,
     photos,
     interests,
+    goal,
+    subculture,
+    height,
     bio,
     coords,
     navigate,
@@ -372,6 +403,61 @@ export default function Onboarding() {
                     </Chip>
                   ))}
                 </div>
+              </StepShell>
+            )}
+
+            {step === "about" && (
+              <StepShell
+                title="Что о вас скажет больше?"
+                hint="Всё необязательно — но по этому вас найдут свои"
+              >
+                <p className="text-caption text-text-muted mb-2.5">Цель знакомства</p>
+                <div className="flex flex-wrap gap-2 mb-7">
+                  {GOALS.map((o) => (
+                    <Chip
+                      key={o.value}
+                      active={goal === o.value}
+                      onClick={() => setGoal(goal === o.value ? "" : o.value)}
+                    >
+                      {o.label}
+                    </Chip>
+                  ))}
+                </div>
+
+                <p className="text-caption text-text-muted mb-2.5">Субкультура</p>
+                <div className="flex flex-wrap gap-2 mb-7">
+                  {SUBCULTURES.map((o) => (
+                    <Chip
+                      key={o.value}
+                      active={subculture === o.value}
+                      onClick={() =>
+                        setSubculture(subculture === o.value ? "" : o.value)
+                      }
+                    >
+                      {o.label}
+                    </Chip>
+                  ))}
+                </div>
+
+                <p className="text-caption text-text-muted mb-2.5">Рост, см</p>
+                <input
+                  value={height}
+                  onChange={(e) =>
+                    setHeight(e.target.value.replace(/\D/g, "").slice(0, 3))
+                  }
+                  inputMode="numeric"
+                  placeholder="Не указывать"
+                  aria-label="Рост в сантиметрах"
+                  className="w-full px-3.5 py-3 rounded-[var(--radius-tile)]
+                             bg-surface-2 border border-hairline text-[15px]
+                             placeholder:text-text-muted focus:outline-none
+                             focus:border-accent/60"
+                />
+                {!!height && (Number(height) < HEIGHT_MIN || Number(height) > HEIGHT_MAX) && (
+                  <p className="mt-2 text-[12px] text-danger">
+                    Укажите рост от {HEIGHT_MIN} до {HEIGHT_MAX} см
+                  </p>
+                )}
               </StepShell>
             )}
 

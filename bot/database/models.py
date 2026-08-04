@@ -52,6 +52,16 @@ class Profile(Base):
             "sample_key",
             postgresql_where=text("NOT is_incognito AND display_name <> ''"),
         ),
+        Index(
+            "ix_profile_subculture",
+            "subculture",
+            postgresql_where=text("subculture <> ''"),
+        ),
+        Index(
+            "ix_profile_goal",
+            "goal",
+            postgresql_where=text("goal <> ''"),
+        ),
     )
 
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), primary_key=True)
@@ -65,12 +75,19 @@ class Profile(Base):
     photos: Mapped[dict | list] = mapped_column(JSON, default=list)
     interests: Mapped[dict | list] = mapped_column(JSON, default=list)
     ai_bio: Mapped[str | None] = mapped_column(String, nullable=True)
-    verification_status: Mapped[str] = mapped_column(String, default="none")
+    goal: Mapped[str] = mapped_column(String, default="")
+    subculture: Mapped[str] = mapped_column(String, default="")
+    height_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_incognito: Mapped[bool] = mapped_column(Boolean, default=False)
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
     distance_max: Mapped[int] = mapped_column(Integer, default=100)
+    filter_goal: Mapped[str] = mapped_column(String, default="")
+    filter_subculture: Mapped[str] = mapped_column(String, default="")
+    filter_city: Mapped[str] = mapped_column(String, default="")
+    filter_height_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    filter_height_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Случайное место анкеты в порядке выдачи деки — см. api/models/models.py
     sample_key: Mapped[float] = mapped_column(
         Float, default=random.random, server_default=text("random()"), nullable=False,

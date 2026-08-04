@@ -43,6 +43,15 @@ class UserProfile(BaseModel):
     age_min: int = 18
     age_max: int = 99
     distance_max: int = 100
+    # Нишевые поля анкеты и фильтры по ним. Пусто — не указано / не фильтруем.
+    goal: str = ""
+    subculture: str = ""
+    height_cm: Optional[int] = None
+    filter_goal: str = ""
+    filter_subculture: str = ""
+    filter_city: str = ""
+    filter_height_min: Optional[int] = None
+    filter_height_max: Optional[int] = None
     has_location: bool = False
     invited_count: int = 0
     referral_boost: bool = False
@@ -68,6 +77,15 @@ class ProfileUpdate(BaseModel):
     age_min: Optional[int] = Field(None, ge=18, le=99)
     age_max: Optional[int] = Field(None, ge=18, le=99)
     distance_max: Optional[int] = Field(None, ge=1, le=500)
+    # Пустая строка — осознанное «сбросить», поэтому min_length не ставим.
+    goal: Optional[str] = Field(None, max_length=32)
+    subculture: Optional[str] = Field(None, max_length=32)
+    height_cm: Optional[int] = Field(None, ge=120, le=230)
+    filter_goal: Optional[str] = Field(None, max_length=32)
+    filter_subculture: Optional[str] = Field(None, max_length=32)
+    filter_city: Optional[str] = Field(None, max_length=100)
+    filter_height_min: Optional[int] = Field(None, ge=120, le=230)
+    filter_height_max: Optional[int] = Field(None, ge=120, le=230)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -119,6 +137,9 @@ class DeckProfile(BaseModel):
     distance: Optional[int] = None  # км от текущего пользователя
     match_score: Optional[int] = None
     match_reason: Optional[str] = None
+    goal: str = ""
+    subculture: str = ""
+    height_cm: Optional[int] = None
 
 
 # ════════════════════════════════════════════════════════════════

@@ -341,6 +341,49 @@ def test_схема_бота_совпадает_с_api():
     )
 
 
+def test_колонки_анкеты_совпадают_в_боте_и_api():
+    """Совпадения имён таблиц мало: разъехавшиеся колонки ломают прод так же.
+
+    Бот и API оба пишут `dating_profiles`. Если в одном месте появилось поле,
+    которого нет в другом, то запись из бота упадёт на неизвестной колонке —
+    ровно это и произошло, когда в API добавили нишевые фильтры.
+    """
+    import ast
+    from pathlib import Path
+
+    bot_models = Path(__file__).resolve().parents[2] / "bot" / "database" / "models.py"
+    tree = ast.parse(bot_models.read_text(encoding="utf-8"))
+
+    колонки_бота: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        имя_таблицы = None
+        поля: set[str] = set()
+        for stmt in node.body:
+            if (
+                isinstance(stmt, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "__tablename__" for t in stmt.targets)
+                and isinstance(stmt.value, ast.Constant)
+            ):
+                имя_таблицы = stmt.value.value
+            # Колонки объявлены как аннотированные присваивания с mapped_column
+            if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                поля.add(stmt.target.id)
+        if имя_таблицы == "dating_profiles":
+            колонки_бота = поля
+
+    assert колонки_бота, "не удалось разобрать модель анкеты в боте"
+
+    from models.models import Profile
+
+    колонки_api = set(Profile.__table__.columns.keys())
+    assert колонки_api == колонки_бота, (
+        f"только в API: {sorted(колонки_api - колонки_бота)}; "
+        f"только в боте: {sorted(колонки_бота - колонки_api)}"
+    )
+
+
 # ── Отзыв сессий (JWT) ──────────────────────────────────────────
 
 
@@ -1043,3 +1086,116 @@ def test_причина_объясняет_город_когда_интерес�
     чужой = _профиль(city="казань")
     _, причина = _compatibility(мой, чужой, None, set())
     assert причина == "Вы в одном городе"
+
+
+# ════════════════════════════════════════════════════════════════
+#  Нишевые фильтры деки (цель, субкультура, город, рост)
+# ════════════════════════════════════════════════════════════════
+
+def _анкета(**поля):
+    """Заглушка: _passes_niche_filters читает только эти поля."""
+    from types import SimpleNamespace
+
+    поля.setdefault("goal", "")
+    поля.setdefault("subculture", "")
+    поля.setdefault("city", "")
+    поля.setdefault("height_cm", None)
+    поля.setdefault("filter_goal", "")
+    поля.setdefault("filter_subculture", "")
+    поля.setdefault("filter_city", "")
+    поля.setdefault("filter_height_min", None)
+    поля.setdefault("filter_height_max", None)
+    return SimpleNamespace(**поля)
+
+
+def test_пустые_фильтры_пропускают_всех():
+    """Новичок с незаполненной анкетой обязан видеть людей."""
+    from services.matching import _passes_niche_filters
+
+    assert _passes_niche_filters(_анкета(), _анкета(subculture="гот", height_cm=180))
+
+
+def test_фильтр_субкультуры_отсекает_чужую_но_не_незаполненную():
+    """Иначе фильтр прятал бы тех, кто просто не заполнил графу."""
+    from services.matching import _passes_niche_filters
+
+    мой = _анкета(filter_subculture="гот")
+    assert not _passes_niche_filters(мой, _анкета(subculture="нормис"))
+    assert _passes_niche_filters(мой, _анкета(subculture="гот"))
+    assert _passes_niche_filters(мой, _анкета(subculture=""))
+
+
+def test_фильтр_города_не_зависит_от_регистра():
+    from services.matching import _passes_niche_filters
+
+    мой = _анкета(filter_city="Казань")
+    assert _passes_niche_filters(мой, _анкета(city="  казань "))
+    assert not _passes_niche_filters(мой, _анкета(city="Москва"))
+
+
+def test_фильтр_роста_отсекает_анкеты_без_роста():
+    """Задан диапазон — «подойдёт ли» у анкеты без роста проверить нечем."""
+    from services.matching import _passes_niche_filters
+
+    мой = _анкета(filter_height_min=170, filter_height_max=190)
+    assert _passes_niche_filters(мой, _анкета(height_cm=175))
+    assert not _passes_niche_filters(мой, _анкета(height_cm=165))
+    assert not _passes_niche_filters(мой, _анкета(height_cm=200))
+    assert not _passes_niche_filters(мой, _анкета(height_cm=None))
+
+
+def test_фильтр_цели_знакомства():
+    from services.matching import _passes_niche_filters
+
+    мой = _анкета(filter_goal="дружба")
+    assert _passes_niche_filters(мой, _анкета(goal="дружба"))
+    assert not _passes_niche_filters(мой, _анкета(goal="отношения"))
+
+
+# ════════════════════════════════════════════════════════════════
+#  Согласованность значений между ботом и мини-аппом
+# ════════════════════════════════════════════════════════════════
+
+def _значения_ts_списка(текст: str, имя: str) -> set[str]:
+    """Значения `value:` внутри объявления `export const ИМЯ: Option[] = [...]`."""
+    import re
+
+    начало = текст.index(f"export const {имя}")
+    конец = текст.index("];", начало)
+    return set(re.findall(r'value:\s*"([^"]+)"', текст[начало:конец]))
+
+
+def _ключи_py_словаря(текст: str, имя: str) -> set[str]:
+    """Ключи словаря `ИМЯ = {...}` в исходнике на Python."""
+    import re
+
+    начало = текст.index(f"{имя} = {{")
+    конец = текст.index("}", начало)
+    return set(re.findall(r'"(\w+)":', текст[начало:конец]))
+
+
+def test_значения_цели_и_субкультуры_совпадают_в_боте_и_вебе():
+    """Разъехавшиеся значения — это молча пустая выдача.
+
+    Цель и субкультуру выбирают и в боте, и в мини-аппе, а фильтр сравнивает
+    строки. Если бот запишет «дружба», а веб отфильтрует «friendship», фильтр
+    не найдёт никого — и объяснить человеку, почему пусто, будет нечем.
+    """
+    import re
+    from pathlib import Path
+
+    корень = Path(__file__).resolve().parents[2]
+    веб = (корень / "web" / "src" / "lib" / "profileOptions.ts").read_text(encoding="utf-8")
+    кнопки = (корень / "bot" / "keyboards.py").read_text(encoding="utf-8")
+    тексты = (корень / "bot" / "texts.py").read_text(encoding="utf-8")
+
+    цели = _значения_ts_списка(веб, "GOALS")
+    субкультуры = _значения_ts_списка(веб, "SUBCULTURES")
+    assert цели and субкультуры, "не удалось разобрать списки в profileOptions.ts"
+
+    # Пустое значение кнопки «Пока не решил» в наборе не участвует
+    цели_бота = {v for v in re.findall(r'callback_data="reg:goal:(\w*)"', кнопки) if v}
+    assert цели_бота == цели, f"расходятся: {цели_бота ^ цели}"
+
+    assert _ключи_py_словаря(тексты, "GOAL_LABELS") == цели
+    assert _ключи_py_словаря(тексты, "SUBCULTURE_LABELS") == субкультуры

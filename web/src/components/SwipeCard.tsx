@@ -11,6 +11,7 @@ import { MapPin, Sparkles } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { VerifiedBadge } from "./ui";
+import { GOALS, SUBCULTURES, optionLabel } from "../lib/profileOptions";
 
 export type SwipeDirection = "left" | "right" | "up";
 
@@ -246,13 +247,33 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
           )}
         </div>
 
-        {(profile.city || profile.distance != null) && (
+        {(profile.city || profile.distance != null || profile.height_cm != null) && (
           <div className="flex items-center gap-1.5 text-[13px] text-white/75 mb-2.5">
             <MapPin size={13} className="shrink-0" />
             <span className="truncate">
-              {profile.city}
-              {profile.distance != null && ` · ${profile.distance} км`}
+              {[
+                profile.city,
+                profile.distance != null ? `${profile.distance} км` : null,
+                profile.height_cm != null ? `${profile.height_cm} см` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
+          </div>
+        )}
+
+        {(profile.goal || profile.subculture) && (
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {profile.goal && (
+              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+                {optionLabel(GOALS, profile.goal)}
+              </span>
+            )}
+            {profile.subculture && (
+              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+                {optionLabel(SUBCULTURES, profile.subculture)}
+              </span>
+            )}
           </div>
         )}
 

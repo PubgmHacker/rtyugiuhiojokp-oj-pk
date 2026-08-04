@@ -39,6 +39,39 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
     return int(R * c)
 
 
+def _passes_niche_filters(mine: Profile, other: Profile) -> bool:
+    """Проходит ли анкета нишевые фильтры (цель, субкультура, город, рост).
+
+    Правило одно на все фильтры: пустой фильтр пропускает всех, а анкета без
+    указанного поля НЕ отсеивается по этому полю. Иначе включённый фильтр
+    «гот» прятал бы и тех, кто просто не заполнил графу, и человек решил бы,
+    что в приложении никого нет.
+
+    Рост — исключение: если фильтр по росту задан, анкеты без роста
+    отсеиваются, потому что «подойдёт ли» тут проверить нечем.
+    """
+    if mine.filter_goal and other.goal and other.goal != mine.filter_goal:
+        return False
+    if (
+        mine.filter_subculture
+        and other.subculture
+        and other.subculture != mine.filter_subculture
+    ):
+        return False
+    if mine.filter_city and (other.city or "").strip().lower() != mine.filter_city.strip().lower():
+        return False
+
+    if mine.filter_height_min or mine.filter_height_max:
+        if other.height_cm is None:
+            return False
+        if mine.filter_height_min and other.height_cm < mine.filter_height_min:
+            return False
+        if mine.filter_height_max and other.height_cm > mine.filter_height_max:
+            return False
+
+    return True
+
+
 def _compatibility(
     my_profile: Optional[Profile],
     other: Profile,
@@ -226,6 +259,12 @@ async def get_deck_profiles(
             if profile.looking_for != my_profile.gender and my_profile.gender != "other":
                 continue
 
+        # Нишевые фильтры. Каждый включается только если человек его задал:
+        # незаполненный фильтр не должен сужать выдачу, иначе новичок с пустой
+        # анкетой не увидел бы никого.
+        if my_profile and not _passes_niche_filters(my_profile, profile):
+            continue
+
         # Distance
         distance = None
         if (my_profile and my_profile.latitude and my_profile.longitude
@@ -257,6 +296,9 @@ async def get_deck_profiles(
             distance=distance,
             match_score=compat_score,
             match_reason=compat_reason,
+            goal=profile.goal or "",
+            subculture=profile.subculture or "",
+            height_cm=profile.height_cm,
         ))
 
     # Умная сортировка вместо рандома: общие интересы, город, близость,

@@ -75,6 +75,27 @@ def reg_looking_kb(back_to: str | None = "gender") -> InlineKeyboardMarkup:
     )
 
 
+def reg_goal_kb(back_to: str | None = "looking_for") -> InlineKeyboardMarkup:
+    """Цель знакомства. Значения совпадают с web/src/lib/profileOptions.ts —
+    иначе выбранное в боте не найдётся фильтром в мини-аппе."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=_with_back(
+            [
+                [
+                    InlineKeyboardButton(text="Отношения", callback_data="reg:goal:relationship"),
+                    InlineKeyboardButton(text="Дружба", callback_data="reg:goal:friendship"),
+                ],
+                [
+                    InlineKeyboardButton(text="Общение", callback_data="reg:goal:chat"),
+                    InlineKeyboardButton(text="Свидания", callback_data="reg:goal:dates"),
+                ],
+                [InlineKeyboardButton(text="Пока не решил", callback_data="reg:goal:")],
+            ],
+            back_to,
+        )
+    )
+
+
 def reg_back_kb(back_to: str) -> InlineKeyboardMarkup:
     """Только «Назад» — для шагов со свободным вводом."""
     return InlineKeyboardMarkup(
