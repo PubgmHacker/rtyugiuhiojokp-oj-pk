@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from datetime import datetime
 from typing import Any
 
@@ -685,14 +686,26 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         if my and my.looking_for and my.looking_for != "any":
             filters.append(Profile.gender.in_([my.looking_for, "other"]))
 
-        result = await session.execute(
-            select(Profile)
-            .join(User, Profile.user_id == User.id)
-            .where(*filters)
-            .order_by(text("RANDOM()"))
-            .limit(limit * 3)
-        )
-        profiles = [_profile_to_dict(p) for p in result.scalars().all()]
+        # Выборка от случайной точки sample_key по индексу вместо
+        # ORDER BY RANDOM(): тому нужна сортировка всей таблицы на каждый
+        # показ анкеты. У конца диапазона строк не хватит — добираем
+        # с начала, иначе анкеты с большим ключом видели бы полупустую деку.
+        async def _scan(*extra) -> list[Profile]:
+            result = await session.execute(
+                select(Profile)
+                .join(User, Profile.user_id == User.id)
+                .where(*filters, *extra)
+                .order_by(Profile.sample_key)
+                .limit(limit * 3)
+            )
+            return list(result.scalars().all())
+
+        cut = random.random()
+        rows = await _scan(Profile.sample_key >= cut)
+        if len(rows) < limit * 3:
+            rows += await _scan(Profile.sample_key < cut)
+
+        profiles = [_profile_to_dict(p) for p in rows[: limit * 3]]
 
         # Встречный фильтр + сортировка по общим интересам
         my_gender = my.gender if my else "other"

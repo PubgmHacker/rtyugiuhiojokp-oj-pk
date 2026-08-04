@@ -39,6 +39,50 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
     return int(R * c)
 
 
+async def _sample_candidates(
+    session: AsyncSession,
+    exclude_ids: set[str],
+    limit: int,
+    extra_filters: Optional[list] = None,
+) -> list[Profile]:
+    """Случайные кандидаты для деки без сортировки всей таблицы.
+
+    `ORDER BY random()` заставляет Postgres присвоить случайное число каждой
+    подходящей строке и отсортировать весь набор — индекс тут бесполезен, и
+    на десятках тысяч анкет это Seq Scan на каждый запрос деки.
+
+    Вместо этого берём случайную точку на `sample_key` и читаем следующие
+    строки по индексу. Ключ упорядочен, поэтому это Index Scan с ранним
+    выходом. У конца диапазона строк не хватит, поэтому добираем с начала —
+    иначе анкеты с большим ключом систематически видели бы полупустую деку.
+    """
+    base_filters = [
+        User.is_banned == False,
+        not_(Profile.is_incognito),
+        Profile.display_name != "",
+        *(extra_filters or []),
+    ]
+    if exclude_ids:
+        base_filters.append(not_(Profile.user_id.in_(exclude_ids)))
+
+    async def _scan(*extra) -> list[Profile]:
+        result = await session.execute(
+            select(Profile)
+            .join(User, Profile.user_id == User.id)
+            .where(and_(*base_filters, *extra))
+            .order_by(Profile.sample_key)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    cut = random.random()
+    profiles = await _scan(Profile.sample_key >= cut)
+    if len(profiles) < limit:
+        profiles += await _scan(Profile.sample_key < cut)
+
+    return profiles[:limit]
+
+
 async def get_deck_profiles(
     session: AsyncSession,
     user_id: str,
@@ -81,21 +125,7 @@ async def get_deck_profiles(
     # запрос деки (перезагрузка страницы) сжигает непросмотренные анкеты.
     exclude_ids = liked_ids | blocked_ids | passed_me_ids | {user_id}
 
-    result = await session.execute(
-        select(Profile)
-        .join(User, Profile.user_id == User.id)
-        .where(
-            and_(
-                User.is_banned == False,
-                not_(Profile.is_incognito),  # Hide incognito users from deck
-                Profile.display_name != "",  # Пустые (незаполненные) анкеты не показываем
-                not_(Profile.user_id.in_(exclude_ids)) if exclude_ids else True,
-            )
-        )
-        .order_by(func.random())
-        .limit(limit * 3)  # Fetch extra for filtering + smart sort
-    )
-    profiles = result.scalars().all()
+    profiles = await _sample_candidates(session, exclude_ids, limit * 3)
 
     # Активные премиумы среди кандидатов — буст в выдаче
     premium_ids: set[str] = set()

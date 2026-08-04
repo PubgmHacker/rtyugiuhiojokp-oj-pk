@@ -481,3 +481,108 @@ def test_роуты_выхода_есть(openapi):
     paths = openapi["paths"]
     assert "/api/auth/logout" in paths
     assert "/api/auth/logout-all" in paths
+
+
+# ── Выборка деки ────────────────────────────────────────────────
+
+
+def test_дека_не_сортирует_таблицу_рандомом():
+    """ORDER BY random() — Seq Scan с сортировкой всей таблицы на каждый свайп."""
+    from pathlib import Path
+
+    api_deck = Path(__file__).resolve().parents[1] / "services" / "matching.py"
+    bot_deck = (
+        Path(__file__).resolve().parents[2] / "bot" / "database" / "connection.py"
+    )
+
+    for path in (api_deck, bot_deck):
+        source = path.read_text(encoding="utf-8")
+        assert "func.random()" not in source, f"{path.name}: остался ORDER BY random()"
+        assert 'text("RANDOM()")' not in source, f"{path.name}: остался ORDER BY RANDOM()"
+        assert "sample_key" in source, f"{path.name}: выборка не переведена на ключ"
+
+
+def test_ключ_выборки_в_схеме_и_под_индексом():
+    from models.models import Profile
+
+    column = Profile.__table__.columns.get("sample_key")
+    assert column is not None, "нет колонки sample_key"
+    assert not column.nullable, "NULL выбросил бы анкету из выдачи"
+    assert column.server_default is not None, "существующие анкеты остались бы без ключа"
+
+    indexes = {idx.name: idx for idx in Profile.__table__.indexes}
+    assert "ix_profile_sample" in indexes, "без индекса выборка снова станет Seq Scan"
+
+
+def test_миграция_ключа_выборки_есть():
+    """Колонка в модели без миграции — падение на проде, а не в тестах."""
+    from pathlib import Path
+
+    versions = Path(__file__).resolve().parents[1] / "migrations" / "versions"
+    sources = [p.read_text(encoding="utf-8") for p in versions.glob("*.py")]
+
+    assert any("sample_key" in s and "ix_profile_sample" in s for s in sources), (
+        "нет миграции, добавляющей sample_key и индекс"
+    )
+
+
+async def test_выборка_добирает_анкеты_с_начала_ключа(monkeypatch):
+    """У конца диапазона строк не хватает — иначе дека была бы полупустой.
+
+    БД здесь не нужна: проверяем сам алгоритм двух проходов, подменив
+    выполнение запроса на срез по ключу в памяти.
+    """
+    from services import matching
+
+    профили = [type("P", (), {"user_id": f"u{i}", "sample_key": i / 100})() for i in range(100)]
+
+    class _FakeSession:
+        def __init__(self):
+            self.запросов = 0
+
+        async def execute(self, stmt):
+            self.запросов += 1
+            текст = str(stmt.whereclause) if stmt.whereclause is not None else ""
+            выборка = self._отобрать(текст)
+            limit = stmt._limit
+            return type("R", (), {"scalars": lambda _self, rows=выборка[:limit]: type(
+                "S", (), {"all": lambda _s: rows})()})()
+
+        def _отобрать(self, текст):
+            # ">=" — первый проход от точки среза, "<" — добор с начала
+            if ">=" in текст:
+                return [p for p in профили if p.sample_key >= _cut]
+            return [p for p in профили if p.sample_key < _cut]
+
+    # Срез почти у конца: после точки всего 2 анкеты из 30 нужных
+    _cut = 0.98
+    monkeypatch.setattr(matching.random, "random", lambda: _cut)
+
+    session = _FakeSession()
+    результат = await matching._sample_candidates(session, set(), 30)
+
+    assert len(результат) == 30, "не добрали анкеты с начала ключа"
+    assert session.запросов == 2, "добор должен быть вторым запросом, а не всегда"
+
+
+async def test_выборка_не_добирает_когда_анкет_достаточно(monkeypatch):
+    """Второй запрос на каждый свайп — лишняя работа, если хватило первого."""
+    from services import matching
+
+    class _FakeSession:
+        def __init__(self):
+            self.запросов = 0
+
+        async def execute(self, stmt):
+            self.запросов += 1
+            rows = [type("P", (), {"user_id": f"u{i}"})() for i in range(30)]
+            return type("R", (), {"scalars": lambda _self: type(
+                "S", (), {"all": lambda _s: rows})()})()
+
+    monkeypatch.setattr(matching.random, "random", lambda: 0.1)
+
+    session = _FakeSession()
+    результат = await matching._sample_candidates(session, set(), 30)
+
+    assert len(результат) == 30
+    assert session.запросов == 1, "хватило первого прохода — второй не нужен"

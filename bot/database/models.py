@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import datetime
 
@@ -14,6 +15,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -43,6 +45,14 @@ class User(Base):
 
 class Profile(Base):
     __tablename__ = "dating_profiles"
+    # Схема ДОЛЖНА совпадать с api/models/models.py
+    __table_args__ = (
+        Index(
+            "ix_profile_sample",
+            "sample_key",
+            postgresql_where=text("NOT is_incognito AND display_name <> ''"),
+        ),
+    )
 
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), primary_key=True)
     display_name: Mapped[str] = mapped_column(String, default="")
@@ -61,6 +71,10 @@ class Profile(Base):
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
     distance_max: Mapped[int] = mapped_column(Integer, default=100)
+    # Случайное место анкеты в порядке выдачи деки — см. api/models/models.py
+    sample_key: Mapped[float] = mapped_column(
+        Float, default=random.random, server_default=text("random()"), nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
