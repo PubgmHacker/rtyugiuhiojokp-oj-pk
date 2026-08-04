@@ -20,6 +20,7 @@ from models.schemas import (
 )
 from services.realtime import publish_match, publish_new_like, publish_new_match_for_bot
 from services.ai_matchmaker import score_match
+from services.premium import is_premium as _is_premium
 from services.push import notify_new_match
 from utils import as_list
 
@@ -73,20 +74,6 @@ async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> Matc
         ai_reason=match.ai_reason, created_at=match.created_at,
         partner=_profile_to_user(profile, partner_id),
     )
-
-
-async def _is_premium(session: AsyncSession, user_id: str) -> bool:
-    result = await session.execute(
-        select(Subscription.id).where(and_(
-            Subscription.user_id == user_id,
-            Subscription.plan != "free",
-            or_(
-                Subscription.expires_at.is_(None),
-                Subscription.expires_at > datetime.now(timezone.utc),
-            ),
-        ))
-    )
-    return result.scalar_one_or_none() is not None
 
 
 async def _superlikes_left(session: AsyncSession, user_id: str) -> int:

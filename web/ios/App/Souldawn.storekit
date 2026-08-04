@@ -1,0 +1,75 @@
+{
+  "identifier" : "8A5F2C10",
+  "nonRenewingSubscriptions" : [ ],
+  "products" : [ ],
+  "settings" : {
+    "_applicationInternalID" : "1234567890",
+    "_developerTeamID" : "TEAMID0000",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 776000000,
+    "_locale" : "ru_RU",
+    "_storefront" : "RUS",
+    "_storeKitErrors" : [ ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21390971",
+      "localizations" : [
+        {
+          "description" : "",
+          "displayName" : "Souldawn Premium",
+          "locale" : "ru_RU"
+        }
+      ],
+      "name" : "Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [ ],
+          "codeOffers" : [ ],
+          "displayPrice" : "299",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6F3A1B22",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Инкогнито, приоритет в выдаче и 5 суперлайков в день",
+              "displayName" : "Premium на месяц",
+              "locale" : "ru_RU"
+            }
+          ],
+          "productID" : "com.souldawn.dating.premium.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Premium Monthly",
+          "subscriptionGroupID" : "21390971",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [ ],
+          "codeOffers" : [ ],
+          "displayPrice" : "2390",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "9C4D7E15",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Год Premium со скидкой относительно месячной подписки",
+              "displayName" : "Premium на год",
+              "locale" : "ru_RU"
+            }
+          ],
+          "productID" : "com.souldawn.dating.premium.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Premium Yearly",
+          "subscriptionGroupID" : "21390971",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

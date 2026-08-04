@@ -1,0 +1,20 @@
+{
+  "name": "@souldawn/capacitor-iap",
+  "version": "1.0.0",
+  "description": "Покупка Premium через StoreKit 2 в нативной сборке Souldawn",
+  "license": "UNLICENSED",
+  "private": true,
+  "author": "Souldawn",
+  "files": [
+    "ios/Sources",
+    "Package.swift"
+  ],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

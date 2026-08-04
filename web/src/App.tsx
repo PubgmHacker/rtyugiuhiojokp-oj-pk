@@ -12,6 +12,7 @@ import { Flame, MessageCircle, User, Sparkles, WifiOff } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
 import { initNative, registerPushNotifications } from "./lib/native";
+import { startTransactionListener } from "./lib/iap";
 import { registerDevice } from "./lib/api";
 import { haptic } from "./lib/haptics";
 import { Spinner } from "./components/ui";
@@ -192,6 +193,14 @@ export default function App() {
         // Токен пришлём при следующем запуске — молчим, чтобы не пугать
       })
     );
+  }, [token]);
+
+  // Продления подписки и покупки с другого устройства приходят только сюда.
+  // Без этого слушателя сервер не узнает о продлении и Premium погаснет
+  // у человека, который продолжает платить.
+  useEffect(() => {
+    if (!token) return;
+    startTransactionListener();
   }, [token]);
 
   return (

@@ -28,6 +28,7 @@ from models.models import (
 from models.schemas import DeckProfile, DeviceRegistration, ProfileUpdate, UserProfile
 from services.matching import get_deck_profiles
 from services.ai_moderation import moderate_text
+from services.premium import is_premium as _is_premium
 from services.push import register_device
 from utils import as_list
 
@@ -73,20 +74,6 @@ async def _referral_stats(session: AsyncSession, user_id: str) -> dict:
         "referral_target": settings.REFERRAL_MIN_INVITES,
         "referral_boost_percent": settings.REFERRAL_BOOST_PERCENT,
     }
-
-
-async def _is_premium(session: AsyncSession, user_id: str) -> bool:
-    result = await session.execute(
-        select(Subscription.id).where(and_(
-            Subscription.user_id == user_id,
-            Subscription.plan != "free",
-            or_(
-                Subscription.expires_at.is_(None),
-                Subscription.expires_at > datetime.now(timezone.utc),
-            ),
-        ))
-    )
-    return result.scalar_one_or_none() is not None
 
 
 @router.get("/me", response_model=UserProfile)

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from config import get_settings
 from middleware.rate_limit import RateLimitMiddleware
-from routers import auth, profiles, likes, matches, chat, upload, report, admin, blocks
+from routers import auth, profiles, likes, matches, chat, upload, report, admin, blocks, iap
 
 settings = get_settings()
 logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
@@ -104,6 +104,7 @@ app.include_router(chat.router)
 app.include_router(upload.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(blocks.router, prefix="/api")
+app.include_router(iap.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
 

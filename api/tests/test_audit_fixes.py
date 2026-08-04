@@ -716,3 +716,270 @@ def test_клиент_регистрирует_устройство_после_�
 
     assert "registerPushNotifications" in app, "регистрация пушей не подключена"
     assert "registerDevice" in app, "токен не отправляется на сервер"
+
+
+# ── Покупки в приложении (App Store IAP) ────────────────────────
+
+
+@pytest.fixture
+def appstore_configured(monkeypatch):
+    """Полностью настроенная проверка чеков — иначе отказы будут по конфигу."""
+    from services import appstore
+
+    monkeypatch.setattr(appstore.settings, "APPSTORE_APP_APPLE_ID", 1234567890)
+    monkeypatch.setattr(appstore.settings, "APPSTORE_USE_SANDBOX", False)
+    return appstore
+
+
+def test_роуты_покупок(openapi):
+    paths = openapi["paths"]
+    assert "/api/iap/products" in paths
+    assert "/api/iap/verify" in paths
+
+
+def test_корневой_сертификат_apple_на_месте():
+    """Без корня Apple подпись чека проверить нечем."""
+    from cryptography import x509
+
+    from services.appstore import _ROOT_CERT_PATH
+
+    assert _ROOT_CERT_PATH.exists(), "нет AppleRootCA-G3.cer"
+
+    cert = x509.load_der_x509_certificate(_ROOT_CERT_PATH.read_bytes())
+    assert "Apple Root CA - G3" in cert.subject.rfc4514_string()
+    # Корень самоподписан — иначе это не корень
+    assert cert.subject == cert.issuer
+
+
+def test_покупка_не_предлагается_без_apple_id(monkeypatch):
+    """В Production библиотека Apple не работает без app_apple_id: кнопка
+    появилась бы, а оплата падала бы на проверке."""
+    from services import appstore
+
+    monkeypatch.setattr(appstore.settings, "APPSTORE_USE_SANDBOX", False)
+    monkeypatch.setattr(appstore.settings, "APPSTORE_APP_APPLE_ID", 0)
+
+    assert appstore.is_configured() is False
+
+
+def test_покупка_доступна_при_полной_настройке(appstore_configured):
+    assert appstore_configured.is_configured() is True
+
+
+def test_подделанный_чек_отклоняется(appstore_configured):
+    """Подпись Apple — единственное, что отделяет оплату от подделки."""
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    # Похоже на JWS по форме, но подписано не Apple
+    forged = "eyJhbGciOiJFUzI1NiJ9." + "e30." + "x" * 90
+
+    with pytest.raises(ReceiptInvalid):
+        verify_transaction(forged, expected_account_token="user-1")
+
+
+def test_мусор_вместо_чека_отклоняется(appstore_configured):
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    for garbage in ("", "не-jws", "a.b.c"):
+        with pytest.raises(ReceiptInvalid):
+            verify_transaction(garbage, expected_account_token="user-1")
+
+
+def _payload(**over):
+    """Payload транзакции, как его отдаёт библиотека Apple."""
+    import time
+    import types
+
+    from appstoreserverlibrary.models.Environment import Environment
+    from config import get_settings
+
+    s = get_settings()
+    now_ms = int(time.time() * 1000)
+    base = dict(
+        transactionId="2000000000000001",
+        originalTransactionId="2000000000000000",
+        bundleId=s.APPSTORE_BUNDLE_ID,
+        productId=s.APPSTORE_PRODUCT_MONTHLY,
+        purchaseDate=now_ms,
+        expiresDate=now_ms + 30 * 86400 * 1000,
+        appAccountToken="11111111-1111-1111-1111-111111111111",
+        environment=Environment.PRODUCTION,
+        revocationDate=None,
+    )
+    base.update(over)
+    return types.SimpleNamespace(**base)
+
+
+def _with_verified_payload(monkeypatch, payload):
+    """Подменяем верификатор: подпись Apple подделать нельзя, а проверить
+    прикладные правила после успешной подписи нужно."""
+    from services import appstore
+
+    class _FakeVerifier:
+        def verify_and_decode_signed_transaction(self, _jws):
+            return payload
+
+    monkeypatch.setattr(appstore, "_load_verifier", lambda: _FakeVerifier())
+
+
+ВЛАДЕЛЕЦ = "11111111-1111-1111-1111-111111111111"
+
+
+def test_честная_покупка_проходит(appstore_configured, monkeypatch):
+    from services.appstore import verify_transaction
+
+    _with_verified_payload(monkeypatch, _payload())
+    purchase = verify_transaction("x" * 200, expected_account_token=ВЛАДЕЛЕЦ)
+
+    assert purchase.is_subscription is True
+    assert purchase.expires_at is not None
+    # У продления transactionId новый, а этот остаётся прежним
+    assert purchase.original_transaction_id == "2000000000000000"
+
+
+def test_чужая_покупка_не_принимается(appstore_configured, monkeypatch):
+    """Иначе валидный чужой чек можно приклеить к любому аккаунту."""
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    _with_verified_payload(monkeypatch, _payload())
+
+    with pytest.raises(ReceiptInvalid, match="другому аккаунту"):
+        verify_transaction("x" * 200, expected_account_token="22222222-2222-2222-2222-222222222222")
+
+
+def test_покупка_без_привязки_к_аккаунту_отклоняется(appstore_configured, monkeypatch):
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    _with_verified_payload(monkeypatch, _payload(appAccountToken=None))
+
+    with pytest.raises(ReceiptInvalid, match="не привязана"):
+        verify_transaction("x" * 200, expected_account_token=ВЛАДЕЛЕЦ)
+
+
+def test_чек_другого_приложения_отклоняется(appstore_configured, monkeypatch):
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    _with_verified_payload(monkeypatch, _payload(bundleId="com.attacker.app"))
+
+    with pytest.raises(ReceiptInvalid, match="другого приложения"):
+        verify_transaction("x" * 200, expected_account_token=ВЛАДЕЛЕЦ)
+
+
+def test_песочница_не_даёт_платный_доступ(appstore_configured, monkeypatch):
+    """Sandbox-покупки бесплатны — в проде они не должны открывать Premium."""
+    from appstoreserverlibrary.models.Environment import Environment
+
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    _with_verified_payload(monkeypatch, _payload(environment=Environment.SANDBOX))
+
+    with pytest.raises(ReceiptInvalid, match="окружения"):
+        verify_transaction("x" * 200, expected_account_token=ВЛАДЕЛЕЦ)
+
+
+def test_возврат_закрывает_доступ(appstore_configured, monkeypatch):
+    import time
+
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    _with_verified_payload(monkeypatch, _payload(revocationDate=int(time.time() * 1000)))
+
+    with pytest.raises(ReceiptInvalid, match="отозвана"):
+        verify_transaction("x" * 200, expected_account_token=ВЛАДЕЛЕЦ)
+
+
+def test_истёкшая_подписка_не_принимается(appstore_configured, monkeypatch):
+    import time
+
+    from services.appstore import ReceiptInvalid, verify_transaction
+
+    past = int(time.time() * 1000) - 1000
+    _with_verified_payload(monkeypatch, _payload(expiresDate=past))
+
+    with pytest.raises(ReceiptInvalid, match="истёк"):
+        verify_transaction("x" * 200, expected_account_token=ВЛАДЕЛЕЦ)
+
+
+def test_срок_подписки_берётся_у_apple(appstore_configured, monkeypatch):
+    """Считать срок самим — значит разойтись с Apple после продления."""
+    import time
+    from datetime import timezone
+
+    from services.appstore import verify_transaction
+
+    expires_ms = int(time.time() * 1000) + 77 * 86400 * 1000
+    _with_verified_payload(monkeypatch, _payload(expiresDate=expires_ms))
+
+    purchase = verify_transaction("x" * 200, expected_account_token=ВЛАДЕЛЕЦ)
+
+    assert purchase.expires_at.astimezone(timezone.utc).timestamp() == pytest.approx(
+        expires_ms / 1000, abs=1
+    )
+
+
+def test_нативный_плагин_подключён_к_ios():
+    """Плагин должен попасть в автогенерируемый Package.swift, иначе
+    в приложении покупки просто нет."""
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[2] / "web"
+
+    plugin = web / "native-plugins" / "capacitor-iap"
+    assert (plugin / "Package.swift").exists()
+    assert (plugin / "ios" / "Sources" / "IAPPlugin" / "IAPPlugin.swift").exists()
+
+    spm = (web / "ios" / "App" / "CapApp-SPM" / "Package.swift").read_text(encoding="utf-8")
+    assert "capacitor-iap" in spm, "плагин не подключён — нужен npx cap sync ios"
+
+
+def test_имя_продукта_плагина_совпадает_с_ios_проектом():
+    """Capacitor выводит имя продукта из имени npm-пакета: расхождение
+    ломает сборку на этапе разрешения зависимостей."""
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[2] / "web"
+    plugin_manifest = (web / "native-plugins" / "capacitor-iap" / "Package.swift").read_text(
+        encoding="utf-8"
+    )
+    spm = (web / "ios" / "App" / "CapApp-SPM" / "Package.swift").read_text(encoding="utf-8")
+
+    assert 'name: "SouldawnCapacitorIap"' in plugin_manifest
+    assert 'product(name: "SouldawnCapacitorIap"' in spm
+
+
+def test_клиент_покупки_подключён_к_профилю():
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+
+    assert (web / "lib" / "iap.ts").exists()
+    profile = (web / "pages" / "Profile.tsx").read_text(encoding="utf-8")
+    assert "PremiumOffer" in profile, "блок покупки не подключён в профиль"
+
+    offer = (web / "components" / "PremiumOffer.tsx").read_text(encoding="utf-8")
+    # Обязательный пункт ревью: сменивший устройство должен вернуть оплаченное
+    assert "restorePurchases" in offer, "нет восстановления покупок"
+
+    app = (web / "App.tsx").read_text(encoding="utf-8")
+    # Без слушателя продления не дойдут до сервера и Premium погаснет
+    assert "startTransactionListener" in app
+
+
+def test_транзакция_подтверждается_после_сервера():
+    """finish() до ответа сервера — деньги списаны, доступа нет."""
+    from pathlib import Path
+
+    iap = (
+        Path(__file__).resolve().parents[2] / "web" / "src" / "lib" / "iap.ts"
+    ).read_text(encoding="utf-8")
+
+    # Смотрим тело redeem — там оба вызова; в остальном файле встречаются
+    # объявления интерфейса, порядок в которых ничего не значит
+    начало = iap.index("async function redeem")
+    конец = iap.index("\n}", начало)
+    redeem = iap[начало:конец]
+
+    assert "/iap/verify" in redeem and "finishTransaction" in redeem
+    assert redeem.index("/iap/verify") < redeem.index("finishTransaction"), (
+        "подтверждение раньше проверки на сервере"
+    )

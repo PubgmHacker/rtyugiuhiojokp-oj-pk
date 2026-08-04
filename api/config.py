@@ -42,6 +42,31 @@ class Settings(BaseSettings):
     # ── Zhipu AI (GLM-5.2) ──────────────────────────────────────
     ZHIPU_API_KEY: str = ""
 
+    # ── App Store IAP (покупка Premium в iOS) ───────────────────
+    # Идентификаторы продуктов из App Store Connect и срок, который
+    # начисляется по каждому. Пока bundle id не задан вместе с корневым
+    # сертификатом Apple, покупка в приложении не предлагается.
+    APPSTORE_BUNDLE_ID: str = "com.souldawn.dating"
+    # Числовой Apple ID приложения из App Store Connect — библиотека Apple
+    # требует его для проверки в Production
+    APPSTORE_APP_APPLE_ID: int = 0
+    APPSTORE_PRODUCT_MONTHLY: str = "com.souldawn.dating.premium.monthly"
+    APPSTORE_PRODUCT_YEARLY: str = "com.souldawn.dating.premium.yearly"
+    # Сборки из Xcode, TestFlight и App Review работают в песочнице
+    APPSTORE_USE_SANDBOX: bool = False
+
+    @property
+    def appstore_product_days(self) -> dict[str, int]:
+        """Сколько дней подписки даёт каждый продукт.
+
+        Срок нужен только как запасной вариант: у подписки App Store
+        настоящий `expiresDate` приходит в самой транзакции.
+        """
+        return {
+            self.APPSTORE_PRODUCT_MONTHLY: 30,
+            self.APPSTORE_PRODUCT_YEARLY: 365,
+        }
+
     # ── APNs (пуши в iOS-приложение) ────────────────────────────
     # Ключ .p8 из Apple Developer Portal — целиком, включая заголовок
     # BEGIN PRIVATE KEY. В .env переводы строк пишутся как \n.

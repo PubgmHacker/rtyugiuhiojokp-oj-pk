@@ -169,3 +169,32 @@ class DeviceRegistration(BaseModel):
 
     token: str = Field(min_length=32, max_length=200)
     platform: str = Field(default="ios", pattern="^(ios|android)$")
+
+
+# ════════════════════════════════════════════════════════════════
+#  IN-APP PURCHASES
+# ════════════════════════════════════════════════════════════════
+
+class IAPProducts(BaseModel):
+    """Что доступно к покупке. `available=false` — кнопку покупки не показываем."""
+
+    available: bool
+    product_ids: list[str] = Field(default_factory=list)
+
+
+class IAPVerifyRequest(BaseModel):
+    """Подписанная транзакция StoreKit 2 в формате JWS Compact.
+
+    Длина не фиксирована: внутри лежит цепочка сертификатов Apple, поэтому
+    строка занимает килобайты.
+    """
+
+    jws: str = Field(min_length=100, max_length=20000)
+
+
+class IAPVerifyResponse(BaseModel):
+    success: bool
+    plan: str = "free"
+    expires_at: str = ""
+    # Транзакция уже была зачтена ранее — повторное начисление не произошло
+    already_processed: bool = False

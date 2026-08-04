@@ -26,8 +26,9 @@ import {
 } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
-import { getCurrentPosition, openExternal, isNative } from "../lib/native";
+import { getCurrentPosition, openExternal } from "../lib/native";
 import { Button, Card, Chip, Skeleton, VerifiedBadge, Spinner } from "../components/ui";
+import PremiumOffer from "../components/PremiumOffer";
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
 const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
@@ -295,30 +296,7 @@ export default function Profile() {
           </button>
         </Card>
       ) : (
-        /* Apple запрещает вести к внешней оплате из приложения
-           (Guideline 3.1.1), поэтому в нативной сборке предложение
-           Premium не показываем вовсе — до появления StoreKit IAP */
-        !isNative() && (
-          <button
-            onClick={() => {
-              haptic("light");
-              openExternal(`https://t.me/${BOT_USERNAME}?start=premium`);
-            }}
-            className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
-                       border border-accent/25 bg-accent/8 relative overflow-hidden"
-          >
-            <div className="flex items-center gap-3">
-              <Crown size={20} className="text-accent shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-[15px]">Souldawn Premium</p>
-                <p className="text-caption text-text-muted">
-                  Инкогнито и приоритет в выдаче
-                </p>
-              </div>
-              <ChevronRight size={18} className="text-text-faint shrink-0" />
-            </div>
-          </button>
-        )
+        <PremiumOffer userId={profile?.id || ""} onPurchased={load} />
       )}
 
       {/* ── Реферальная программа ─────────────────────────────── */}
