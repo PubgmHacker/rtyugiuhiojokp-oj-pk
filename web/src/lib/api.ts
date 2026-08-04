@@ -312,6 +312,35 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/* ── Оценка фото ────────────────────────────────────────────── */
+
+export interface PhotoRatingTarget {
+  user_id: string;
+  display_name: string;
+  photo: string;
+}
+
+export interface MyPhotoRating {
+  photo: string;
+  /** null — оценок ещё нет. */
+  average?: number | null;
+  total: number;
+}
+
+export async function getRatingQueue(): Promise<PhotoRatingTarget[]> {
+  const { data } = await api.get("/photo-ratings/queue");
+  return data.targets;
+}
+
+export async function ratePhoto(targetId: string, score: number): Promise<void> {
+  await api.post("/photo-ratings", { target_id: targetId, score });
+}
+
+export async function getMyPhotoRating(): Promise<MyPhotoRating> {
+  const { data } = await api.get("/photo-ratings/mine");
+  return data;
+}
+
 /* ── Топ по лайкам ──────────────────────────────────────────── */
 
 export interface LeaderboardEntry {

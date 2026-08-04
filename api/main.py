@@ -12,7 +12,7 @@ from config import get_settings
 from middleware.rate_limit import RateLimitMiddleware
 from routers import (
     auth, profiles, likes, matches, chat, upload, report, admin, blocks, iap, reels,
-    leaderboard,
+    leaderboard, photo_ratings,
 )
 
 settings = get_settings()
@@ -110,6 +110,7 @@ app.include_router(blocks.router, prefix="/api")
 app.include_router(iap.router, prefix="/api")
 app.include_router(reels.router, prefix="/api")
 app.include_router(leaderboard.router, prefix="/api")
+app.include_router(photo_ratings.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
 

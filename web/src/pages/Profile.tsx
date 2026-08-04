@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Film,
+  Star,
   Ban,
 } from "lucide-react";
 import {
@@ -280,6 +281,24 @@ export default function Profile() {
 
       {/* ── Мои ролики ────────────────────────────────────────── */}
       <MyReelsCard />
+
+      {/* ── Оценка фото ───────────────────────────────────────── */}
+      {/* Вход в отдельный формат: и оценить чужие, и посмотреть свою оценку */}
+      <Link
+        to="/photo-ratings"
+        onClick={() => haptic("light")}
+        className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
+                   bg-surface border border-hairline flex items-center gap-3"
+      >
+        <Star size={18} className="text-accent shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-[15px]">Оценка фото</p>
+          <p className="text-caption text-text-muted">
+            Оцените чужие и узнайте оценку своего
+          </p>
+        </div>
+        <ChevronRight size={18} className="text-text-faint shrink-0" />
+      </Link>
 
       {/* ── Интересы ──────────────────────────────────────────── */}
       {!!profile?.interests?.length && (

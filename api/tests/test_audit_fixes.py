@@ -1917,3 +1917,92 @@ def test_заблокированные_не_видны_в_рейтинге():
     исходник = inspect.getsource(leaderboard.get_leaderboard)
     assert "Block.blocker_id == user.id" in исходник
     assert "Block.blocked_id == user.id" in исходник
+
+
+# ════════════════════════════════════════════════════════════════
+#  Оценка фото
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_оценки_фото(openapi):
+    paths = openapi["paths"]
+    assert "/api/photo-ratings" in paths
+    assert "/api/photo-ratings/queue" in paths
+    assert "/api/photo-ratings/mine" in paths
+
+
+def test_оценка_только_от_одного_до_пяти():
+    """Ноль означал бы «не оценил», а не оценку."""
+    import pytest as _pytest
+
+    from models.schemas import PhotoRatingRequest
+
+    for балл in (1, 3, 5):
+        PhotoRatingRequest(target_id="u1", score=балл)
+    for мусор in (0, 6, -1, 100):
+        with _pytest.raises(Exception):
+            PhotoRatingRequest(target_id="u1", score=мусор)
+
+
+def test_одна_оценка_на_пару_с_возможностью_переоценить():
+    """Иначе один человек наставил бы шесть оценок одному лицу — по одной на
+    каждое фото. А два быстрых тапа подряд упали бы на уникальном ключе."""
+    import inspect
+
+    from models.models import PhotoRating
+    from routers import photo_ratings
+
+    constraints = {
+        tuple(col.name for col in c.columns)
+        for c in PhotoRating.__table__.constraints
+        if c.__class__.__name__ == "UniqueConstraint"
+    }
+    assert ("rater_id", "target_id") in constraints
+
+    исходник = inspect.getsource(photo_ratings.rate_photo)
+    assert "on_conflict_do_update" in исходник
+    assert "uq_photo_rating" in исходник
+
+
+def test_оценка_анонимна():
+    """За тройку прилетела бы обида конкретному человеку, и честных оценок
+    не стало бы вовсе."""
+    import inspect
+
+    from models.schemas import MyPhotoRating
+    from routers import photo_ratings
+
+    # В ответе только среднее и количество — ни одного идентификатора
+    поля = set(MyPhotoRating.model_fields)
+    assert поля == {"photo", "average", "total"}
+
+    assert "rater_id" not in inspect.getsource(photo_ratings.get_my_rating)
+
+
+def test_оценка_не_влияет_на_подбор():
+    """Скрытый рейтинг привлекательности сделал бы сервис, где «некрасивых»
+    никто не видит."""
+    import inspect
+
+    from services import matching
+
+    assert "PhotoRating" not in inspect.getsource(matching)
+
+
+def test_себя_оценить_нельзя():
+    import inspect
+
+    from routers import photo_ratings
+
+    assert "data.target_id == user.id" in inspect.getsource(photo_ratings.rate_photo)
+
+
+def test_очередь_не_сравнивает_json_в_sql():
+    """Тип JSON в Postgres не поддерживает равенство: `photos != '[]'` уронил
+    бы запрос. Анкеты без фото отсеиваются в Python."""
+    import inspect
+
+    from routers import photo_ratings
+
+    исходник = inspect.getsource(photo_ratings.get_rating_queue)
+    assert "Profile.photos !=" not in исходник
+    assert "if as_list(p.photos)" in исходник

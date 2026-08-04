@@ -283,6 +283,38 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PhotoRating(Base):
+    """Оценка чужого фото по шкале 1–5.
+
+    Одна оценка на пару «кто оценил + чью анкету»: оценивается первое фото
+    анкеты, а не каждое по отдельности — иначе один человек мог бы наставить
+    шесть оценок одному и тому же лицу.
+
+    Переоценить можно: повторный голос обновляет прежний, но не добавляет
+    новый. Средняя оценка считается запросом по этой таблице, а не хранится
+    в анкете: оценок на человека немного, а расходящийся кеш пришлось бы
+    пересчитывать.
+    """
+
+    __tablename__ = "dating_photo_ratings"
+    __table_args__ = (
+        UniqueConstraint("rater_id", "target_id", name="uq_photo_rating"),
+        # Свои оценки читаются по target_id
+        Index("ix_photo_rating_target", "target_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    rater_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    target_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: 1..5. Ограничение проверяется схемой запроса: в БД оно потребовало бы
+    #: миграции при каждом изменении шкалы.
+    score: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class BoostActivation(Base):
     """Журнал включений буста — по нему считается суточный остаток.
 

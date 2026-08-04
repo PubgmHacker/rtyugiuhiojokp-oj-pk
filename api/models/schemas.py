@@ -239,6 +239,32 @@ class ReelsOut(BaseModel):
     next_before: Optional[str] = None
 
 
+class PhotoRatingTarget(BaseModel):
+    """Чьё фото показать на оценку."""
+
+    user_id: str
+    display_name: str = ""
+    photo: str
+
+
+class PhotoRatingTargets(BaseModel):
+    targets: list[PhotoRatingTarget] = Field(default_factory=list)
+
+
+class PhotoRatingRequest(BaseModel):
+    target_id: str
+    #: Шкала 1–5, как у конкурента. Ноль означал бы «не оценил», а не оценку.
+    score: int = Field(ge=1, le=5)
+
+
+class MyPhotoRating(BaseModel):
+    """Своя средняя оценка. `average=None` — оценок ещё нет."""
+
+    photo: str = ""
+    average: Optional[float] = None
+    total: int = 0
+
+
 class LeaderboardEntry(BaseModel):
     """Одна строка рейтинга."""
 

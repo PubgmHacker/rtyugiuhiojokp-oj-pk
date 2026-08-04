@@ -214,6 +214,26 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PhotoRating(Base):
+    """Оценка фото 1-5 — см. api/models/models.py. Бот оценки не принимает,
+    но обе схемы создают таблицы в одной БД."""
+
+    __tablename__ = "dating_photo_ratings"
+    __table_args__ = (
+        UniqueConstraint("rater_id", "target_id", name="uq_photo_rating"),
+        Index("ix_photo_rating_target", "target_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    rater_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    target_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    score: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class BoostActivation(Base):
     """Журнал включений буста — см. api/models/models.py. Бот бусты не
     включает, но обе схемы создают таблицы в одной БД."""
