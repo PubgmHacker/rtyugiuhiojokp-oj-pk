@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import async_session_factory
 from middleware.auth import verify_access_token
-from models.models import Match, Message, User
+from models.models import Match, Message, Profile, User
 from services.ws_manager import manager
 from services.realtime import publish_bot_event
+from services.push import is_configured, notify_new_message
 from services.token_revocation import is_revoked
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,26 @@ async def _mark_read(match_id: str, reader_id: str) -> None:
                 ))
                 .values(read_at=datetime.now(timezone.utc))
             )
+
+
+async def _push_message_notification(
+    match_id: str, sender_id: str, receiver_id: str, text: str,
+) -> None:
+    """Пуш о сообщении в iOS-приложение — своя сессия, сокет её не держит."""
+    if not is_configured():
+        return
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(Profile.display_name).where(Profile.user_id == sender_id)
+                )
+                sender_name = result.scalar_one_or_none() or ""
+                await notify_new_message(
+                    session, receiver_id, sender_name, text, match_id,
+                )
+    except Exception as e:
+        logger.error(f"Message push failed ({match_id}): {e}")
 
 
 @router.websocket("/ws/chat/{match_id}")
@@ -179,6 +200,9 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
                     "receiver_id": partner_id,
                     "text": text[:200],
                 })
+                await _push_message_notification(
+                    match_id, user_id, partner_id, text,
+                )
 
     except WebSocketDisconnect:
         pass

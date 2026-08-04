@@ -157,3 +157,15 @@ class ReportRequest(BaseModel):
 class ReportResponse(BaseModel):
     success: bool
     message: str = ""
+
+
+# ════════════════════════════════════════════════════════════════
+#  PUSH NOTIFICATIONS
+# ════════════════════════════════════════════════════════════════
+
+class DeviceRegistration(BaseModel):
+    """Токен устройства из нативной обёртки. APNs-токен — 64 hex-символа,
+    но лимит взят с запасом: формат задаёт Apple, и он менялся."""
+
+    token: str = Field(min_length=32, max_length=200)
+    platform: str = Field(default="ios", pattern="^(ios|android)$")

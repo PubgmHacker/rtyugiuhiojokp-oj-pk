@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     # ── Zhipu AI (GLM-5.2) ──────────────────────────────────────
     ZHIPU_API_KEY: str = ""
 
+    # ── APNs (пуши в iOS-приложение) ────────────────────────────
+    # Ключ .p8 из Apple Developer Portal — целиком, включая заголовок
+    # BEGIN PRIVATE KEY. В .env переводы строк пишутся как \n.
+    # Пока не задан, пуши просто не отправляются: приложение работает,
+    # уведомления приходят только внутри Telegram.
+    APNS_KEY_P8: str = ""
+    APNS_KEY_ID: str = ""
+    APNS_TEAM_ID: str = ""
+    APNS_BUNDLE_ID: str = "com.souldawn.dating"
+    # Сборки из Xcode и TestFlight регистрируются в песочнице APNs,
+    # прод-хост для них возвращает BadDeviceToken
+    APNS_USE_SANDBOX: bool = False
+
     # ── Referral program ─────────────────────────────────────────
     REFERRAL_MIN_INVITES: int = 3     # друзей для активации буста
     REFERRAL_BOOST_PERCENT: int = 12  # +% к скору анкеты в выдаче (10–15)

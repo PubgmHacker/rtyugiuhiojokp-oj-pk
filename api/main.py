@@ -64,9 +64,11 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("SOULDAWN DATING API shutting down...")
+    from services.push import close as close_push
     from services.realtime import _redis
     if _redis:
         await _redis.close()
+    await close_push()
 
 
 app = FastAPI(

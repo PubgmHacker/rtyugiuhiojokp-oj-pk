@@ -586,3 +586,133 @@ async def test_выборка_не_добирает_когда_анкет_дос
 
     assert len(результат) == 30
     assert session.запросов == 1, "хватило первого прохода — второй не нужен"
+
+
+# ── Пуш-уведомления (APNs) ──────────────────────────────────────
+
+
+def test_таблица_токенов_устройств_в_схеме():
+    from models.models import Base, DeviceToken
+
+    assert "dating_device_tokens" in Base.metadata.tables
+
+    constraints = {
+        tuple(col.name for col in c.columns)
+        for c in DeviceToken.__table__.constraints
+        if c.__class__.__name__ == "UniqueConstraint"
+    }
+    assert ("token",) in constraints, "один токен не может висеть на двух аккаунтах"
+
+    indexes = {idx.name for idx in DeviceToken.__table__.indexes}
+    assert "ix_device_user" in indexes, "отправка ищет устройства по user_id"
+
+
+def test_миграция_токенов_устройств_есть():
+    from pathlib import Path
+
+    versions = Path(__file__).resolve().parents[1] / "migrations" / "versions"
+    sources = [p.read_text(encoding="utf-8") for p in versions.glob("*.py")]
+
+    assert any("dating_device_tokens" in s for s in sources), (
+        "нет миграции, создающей таблицу токенов устройств"
+    )
+
+
+def test_роут_регистрации_устройства(openapi):
+    assert "/api/profiles/me/devices" in openapi["paths"]
+
+
+def test_пуши_молчат_без_ключей(monkeypatch):
+    """Без ключей APNs приложение работает — уведомления просто не уходят."""
+    from services import push
+
+    monkeypatch.setattr(push.settings, "APNS_KEY_P8", "")
+    assert push.is_configured() is False
+
+
+def test_пуши_включаются_когда_ключи_заданы(monkeypatch):
+    from services import push
+
+    for name, value in (
+        ("APNS_KEY_P8", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----"),
+        ("APNS_KEY_ID", "ABC123"),
+        ("APNS_TEAM_ID", "TEAM123"),
+        ("APNS_BUNDLE_ID", "com.souldawn.dating"),
+    ):
+        monkeypatch.setattr(push.settings, name, value)
+
+    assert push.is_configured() is True
+
+
+async def test_без_ключей_отправка_не_ходит_в_сеть(monkeypatch):
+    from services import push
+
+    monkeypatch.setattr(push.settings, "APNS_KEY_P8", "")
+
+    async def _fail(*a, **kw):
+        raise AssertionError("не должны обращаться к APNs без ключей")
+
+    monkeypatch.setattr(push, "_send_one", _fail)
+    assert await push.send_to_user(None, "user-1", "t", "b") == 0
+
+
+async def test_мёртвые_токены_удаляются(monkeypatch):
+    """410 от Apple значит «приложение удалено» — иначе таблица копит мусор."""
+    from services import push
+
+    for name, value in (
+        ("APNS_KEY_P8", "key"),
+        ("APNS_KEY_ID", "ABC123"),
+        ("APNS_TEAM_ID", "TEAM123"),
+    ):
+        monkeypatch.setattr(push.settings, name, value)
+
+    устройства = [
+        type("D", (), {"token": "живой", "user_id": "user-1"})(),
+        type("D", (), {"token": "мёртвый", "user_id": "user-1"})(),
+    ]
+
+    удалено: list = []
+
+    class _FakeSession:
+        async def execute(self, stmt):
+            if stmt.__class__.__name__ == "Delete":
+                удалено.append(stmt)
+                return None
+            return type("R", (), {"scalars": lambda _s: type(
+                "S", (), {"all": lambda _x: устройства})()})()
+
+    async def _send(token, payload, collapse_id):
+        return 200 if token == "живой" else 410
+
+    monkeypatch.setattr(push, "_send_one", _send)
+
+    доставлено = await push.send_to_user(_FakeSession(), "user-1", "Мэтч", "текст")
+
+    assert доставлено == 1
+    assert len(удалено) == 1, "мёртвый токен должен быть удалён"
+
+
+async def test_сбой_apns_не_ломает_мэтч(monkeypatch):
+    """Мэтч уже сохранён — падение уведомления не должно всплывать наружу."""
+    from services import push
+
+    async def _boom(*a, **kw):
+        raise RuntimeError("APNs недоступен")
+
+    monkeypatch.setattr(push, "send_to_user", _boom)
+
+    # Не должно бросить
+    await push.notify_new_match(None, "user-1", "Аня", "match-1")
+    await push.notify_new_message(None, "user-1", "Аня", "привет", "match-1")
+
+
+def test_клиент_регистрирует_устройство_после_входа():
+    """Регистрация была написана, но никогда не вызывалась."""
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    app = (web / "App.tsx").read_text(encoding="utf-8")
+
+    assert "registerPushNotifications" in app, "регистрация пушей не подключена"
+    assert "registerDevice" in app, "токен не отправляется на сервер"

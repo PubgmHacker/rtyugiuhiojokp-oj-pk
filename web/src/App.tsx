@@ -11,7 +11,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Flame, MessageCircle, User, Sparkles, WifiOff } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
-import { initNative } from "./lib/native";
+import { initNative, registerPushNotifications } from "./lib/native";
+import { registerDevice } from "./lib/api";
 import { haptic } from "./lib/haptics";
 import { Spinner } from "./components/ui";
 
@@ -181,6 +182,17 @@ export default function App() {
       }
     }
   }, [setUser]);
+
+  // Разрешение на уведомления спрашиваем только после входа: системный
+  // запрос на экране логина выглядит необъяснимо, и его чаще отклоняют.
+  useEffect(() => {
+    if (!token) return;
+    registerPushNotifications((deviceToken, platform) =>
+      registerDevice(deviceToken, platform).catch(() => {
+        // Токен пришлём при следующем запуске — молчим, чтобы не пугать
+      })
+    );
+  }, [token]);
 
   return (
     <BrowserRouter>

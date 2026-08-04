@@ -20,6 +20,7 @@ from models.schemas import (
 )
 from services.realtime import publish_match, publish_new_like, publish_new_match_for_bot
 from services.ai_matchmaker import score_match
+from services.push import notify_new_match
 from utils import as_list
 
 router = APIRouter(prefix="/likes", tags=["likes"])
@@ -219,8 +220,30 @@ async def create_like(
         await publish_match(data.target_id, user.id, match_id, match_score, ai_reason)
         # Уведомление обоим в Telegram через бота
         await publish_new_match_for_bot(match_id, u1, u2)
+        # И пуш в iOS-приложение — тем, кто зарегистрировал устройство
+        await _push_match_notifications(session, user.id, data.target_id, match_id)
 
     return response
+
+
+async def _push_match_notifications(
+    session: AsyncSession,
+    user_id: str,
+    partner_id: str,
+    match_id: str,
+) -> None:
+    """Пуши обоим участникам мэтча: каждому — имя собеседника."""
+    result = await session.execute(
+        select(Profile.user_id, Profile.display_name).where(
+            Profile.user_id.in_([user_id, partner_id])
+        )
+    )
+    names = {row[0]: row[1] or "" for row in result.all()}
+
+    await notify_new_match(session, user_id, names.get(partner_id, ""), match_id)
+    await notify_new_match(session, partner_id, names.get(user_id, ""), match_id)
+    # Мёртвые токены могли быть вычищены при отправке
+    await session.commit()
 
 
 @router.get("/received", response_model=list[UserProfile])

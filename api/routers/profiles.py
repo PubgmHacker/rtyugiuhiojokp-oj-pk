@@ -25,9 +25,10 @@ from models.models import (
     Subscription,
     SwipeSession,
 )
-from models.schemas import DeckProfile, ProfileUpdate, UserProfile
+from models.schemas import DeckProfile, DeviceRegistration, ProfileUpdate, UserProfile
 from services.matching import get_deck_profiles
 from services.ai_moderation import moderate_text
+from services.push import register_device
 from utils import as_list
 
 logger = logging.getLogger(__name__)
@@ -216,6 +217,17 @@ async def update_my_profile(
         has_location=profile.latitude is not None,
         **(await _referral_stats(session, user.id)),
     )
+
+
+@router.post("/me/devices")
+async def register_push_device(
+    data: DeviceRegistration,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Принять токен устройства для пуш-уведомлений из нативной обёртки."""
+    await register_device(session, user.id, data.token, data.platform)
+    return {"success": True}
 
 
 @router.get("/me/export")
