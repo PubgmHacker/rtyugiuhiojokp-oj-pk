@@ -29,7 +29,6 @@ from models.schemas import VoiceIceServers
 from services.ws_manager import manager
 from services.voice import (
     ICE_SERVERS,
-    WAITING_KEY,
     pop_waiting,
     push_waiting,
     remove_waiting,

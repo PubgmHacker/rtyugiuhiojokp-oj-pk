@@ -13,6 +13,7 @@ from models.schemas import (
 
 __all__ = [
     "Base", "User", "Profile", "Like", "Match", "Message", "Report", "Subscription",
+    "AiModerationLog",
     "AuthResponse", "DeckProfile", "LikeRequest", "LikeResponse", "MatchResponse",
     "ProfileUpdate", "ReportRequest", "ReportResponse",
     "UserProfile",
