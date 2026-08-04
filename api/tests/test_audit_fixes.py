@@ -1639,3 +1639,71 @@ def test_модерация_роликов_доступна_админу(openapi
     # Не удаляем: жалоба могла быть ложной, а вернуть удалённое нечем
     assert "delete" not in исходник.lower()
     assert 'data.action == "hide"' in исходник
+
+
+# ════════════════════════════════════════════════════════════════
+#  Тонкие настройки приватности (был один перегруженный is_incognito)
+# ════════════════════════════════════════════════════════════════
+
+def test_флаги_приватности_есть_в_схеме_и_принимаются():
+    from models.models import Profile
+    from models.schemas import ProfileUpdate, UserProfile
+
+    for поле in ("hide_age", "hide_distance", "hide_from_visitors"):
+        assert поле in Profile.__table__.columns
+        assert поле in ProfileUpdate.model_fields
+        assert поле in UserProfile.model_fields
+
+    # По умолчанию выключены: анкета, вдруг перестающая показывать возраст,
+    # выглядит поломанной
+    профиль = UserProfile(id="u1")
+    assert not профиль.hide_age
+    assert not профиль.hide_distance
+    assert not профиль.hide_from_visitors
+
+
+def test_скрытый_возраст_не_выпадает_из_подбора():
+    """Спрятать возраст в карточке — не то же, что исключить анкету из
+    фильтров по возрасту: во втором случае её просто перестанут находить."""
+    import inspect
+
+    from services import matching
+
+    исходник = inspect.getsource(matching.get_deck_profiles)
+    # Прячем в ответе, а не в условиях выборки
+    assert "age=None if profile.hide_age else profile_age" in исходник
+    assert "distance=None if profile.hide_distance else distance" in исходник
+    assert "hide_age" not in inspect.getsource(matching._sample_candidates)
+
+
+def test_невидимка_не_попадает_в_чужие_гости():
+    """Проверка на записи, а не на чтении: включивший настройку позже иначе
+    остался бы в чужих списках навсегда."""
+    import inspect
+
+    from services import visits
+
+    исходник = inspect.getsource(visits.record_visit)
+    assert "Profile.hide_from_visitors" in исходник
+    assert исходник.index("hide_from_visitors") < исходник.index("on_conflict_do_update")
+
+
+def test_настройки_приватности_доступны_без_подписки():
+    """Прятать приватность за подписку — плохо по отношению к тем, кому просто
+    некомфортно быть на виду. Платным остаётся только полное инкогнито."""
+    from pathlib import Path
+
+    профиль = (
+        Path(__file__).resolve().parents[2] / "web" / "src" / "pages" / "Profile.tsx"
+    ).read_text(encoding="utf-8")
+
+    секция = профиль[профиль.index("── Приватность"):]
+    assert "hide_age" in секция and "hide_from_visitors" in секция
+    # Секция лежит вне ветки is_premium — она общая
+    assert "is_premium" not in секция[: секция.index("</Card>")]
+
+    роутер = (
+        Path(__file__).resolve().parents[1] / "routers" / "profiles.py"
+    ).read_text(encoding="utf-8")
+    # А инкогнито по-прежнему требует подписки
+    assert 'update_fields.get("is_incognito") is True' in роутер

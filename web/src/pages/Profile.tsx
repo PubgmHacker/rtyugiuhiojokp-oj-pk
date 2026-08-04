@@ -16,6 +16,7 @@ import {
   ChevronRight,
   AlertTriangle,
   Eye,
+  EyeOff,
   Ban,
 } from "lucide-react";
 import {
@@ -51,6 +52,24 @@ export default function Profile() {
   const [blocked, setBlocked] = useState<UserProfile[] | null>(null);
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "busy" | "fail">("idle");
+  // Какой тумблер приватности сейчас сохраняется — блокируем только его,
+  // а не всю секцию: остальные переключать можно
+  const [privacyBusy, setPrivacyBusy] = useState<string | null>(null);
+
+  const togglePrivacy = useCallback(
+    async (field: "hide_age" | "hide_distance" | "hide_from_visitors", value: boolean) => {
+      haptic("light");
+      setPrivacyBusy(field);
+      try {
+        setProfile(await updateMyProfile({ [field]: value }));
+      } catch {
+        haptic("error");
+      } finally {
+        setPrivacyBusy(null);
+      }
+    },
+    []
+  );
 
   const load = useCallback(async () => {
     try {
@@ -328,7 +347,12 @@ export default function Profile() {
               size={18}
               className={profile.is_incognito ? "text-success" : "text-text-muted"}
             />
-            <span className="flex-1 text-left text-[15px]">Инкогнито</span>
+            <div className="flex-1 text-left">
+              <p className="text-[15px]">Инкогнито</p>
+              <p className="text-caption text-text-muted">
+                Анкета скрыта из ленты полностью
+              </p>
+            </div>
             <Toggle on={!!profile.is_incognito} />
           </button>
         </Card>
@@ -351,6 +375,42 @@ export default function Profile() {
           <ChevronRight size={18} className="text-text-faint shrink-0" />
         </Link>
       )}
+
+      {/* ── Приватность ───────────────────────────────────────── */}
+      {/* Доступна всем: прятать настройки приватности за подписку — плохо по
+          отношению к тем, кому просто некомфортно быть на виду */}
+      <Card className="p-4 mb-4">
+        <div className="flex items-center gap-2.5 mb-3.5">
+          <EyeOff size={18} className="text-accent" />
+          <span className="font-semibold text-[15px]">Приватность</span>
+        </div>
+
+        <div className="flex flex-col gap-3.5">
+          <PrivacyToggle
+            label="Скрыть возраст"
+            hint="В карточке возраста не будет, но подбор по нему останется"
+            on={!!profile?.hide_age}
+            busy={privacyBusy === "hide_age"}
+            onToggle={() => togglePrivacy("hide_age", !profile?.hide_age)}
+          />
+          <PrivacyToggle
+            label="Скрыть расстояние"
+            hint="Город останется — без него непонятно, где вы"
+            on={!!profile?.hide_distance}
+            busy={privacyBusy === "hide_distance"}
+            onToggle={() => togglePrivacy("hide_distance", !profile?.hide_distance)}
+          />
+          <PrivacyToggle
+            label="Не попадать в «Гости»"
+            hint="Хозяин анкеты не увидит, что вы заходили"
+            on={!!profile?.hide_from_visitors}
+            busy={privacyBusy === "hide_from_visitors"}
+            onToggle={() =>
+              togglePrivacy("hide_from_visitors", !profile?.hide_from_visitors)
+            }
+          />
+        </div>
+      </Card>
 
       {/* ── Реферальная программа ─────────────────────────────── */}
       <Card className="p-4 mb-4">
@@ -544,6 +604,36 @@ function Stat({ label, value }: { label: string; value: number | string }) {
       <p className="text-[22px] font-extrabold leading-none mb-1">{value}</p>
       <p className="text-[11.5px] text-text-muted">{label}</p>
     </div>
+  );
+}
+
+/** Строка настройки приватности: подпись, пояснение и тумблер. */
+function PrivacyToggle({
+  label,
+  hint,
+  on,
+  busy,
+  onToggle,
+}: {
+  label: string;
+  hint: string;
+  on: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={busy}
+      aria-pressed={on}
+      className="w-full flex items-center gap-3 text-left disabled:opacity-50"
+    >
+      <div className="flex-1 min-w-0">
+        <p className="text-[15px]">{label}</p>
+        <p className="text-caption text-text-muted leading-snug">{hint}</p>
+      </div>
+      {busy ? <Spinner size={18} /> : <Toggle on={on} />}
+    </button>
   );
 }
 

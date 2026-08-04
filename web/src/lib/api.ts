@@ -51,6 +51,9 @@ export interface UserProfile {
   ai_bio?: string | null;
   looking_for: string;
   is_incognito: boolean;
+  hide_age?: boolean;
+  hide_distance?: boolean;
+  hide_from_visitors?: boolean;
   is_premium?: boolean;
   age_min?: number;
   age_max?: number;

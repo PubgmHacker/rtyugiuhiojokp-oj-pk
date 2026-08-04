@@ -39,6 +39,9 @@ class UserProfile(BaseModel):
     ai_bio: Optional[str] = None
     looking_for: str = "any"
     is_incognito: bool = False
+    hide_age: bool = False
+    hide_distance: bool = False
+    hide_from_visitors: bool = False
     is_premium: bool = False
     age_min: int = 18
     age_max: int = 99
@@ -78,6 +81,9 @@ class ProfileUpdate(BaseModel):
     interests: Optional[list[str]] = None
     photos: Optional[list[str]] = None
     is_incognito: Optional[bool] = None
+    hide_age: Optional[bool] = None
+    hide_distance: Optional[bool] = None
+    hide_from_visitors: Optional[bool] = None
     looking_for: Optional[str] = Field(None, pattern="^(male|female|other|any)$")
     age_min: Optional[int] = Field(None, ge=18, le=99)
     age_max: Optional[int] = Field(None, ge=18, le=99)

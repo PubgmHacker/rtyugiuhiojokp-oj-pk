@@ -27,12 +27,22 @@ async def record_visit(session: AsyncSession, visitor_id: str, host_id: str) -> 
     """Отметить, что visitor открыл анкету host.
 
     Свой заход не считаем: «вы заходили к себе» — бесполезная строка.
+    Уважаем настройку гостя «не попадать в раздел Гости»: проверяем её здесь,
+    а не при чтении, чтобы визит вообще не попал в базу — иначе включивший
+    настройку позже всё равно остался бы в чужих списках.
+
     Ошибку записи глушим: просмотр анкеты не должен падать из-за статистики.
     """
     if visitor_id == host_id:
         return
 
     try:
+        result = await session.execute(
+            select(Profile.hide_from_visitors).where(Profile.user_id == visitor_id)
+        )
+        if result.scalar_one_or_none():
+            return
+
         stmt = (
             pg_insert(ProfileVisit)
             .values(visitor_id=visitor_id, host_id=host_id, visits=1)

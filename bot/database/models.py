@@ -79,6 +79,10 @@ class Profile(Base):
     subculture: Mapped[str] = mapped_column(String, default="")
     height_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_incognito: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Тонкие настройки приватности — см. api/models/models.py
+    hide_age: Mapped[bool] = mapped_column(Boolean, default=False)
+    hide_distance: Mapped[bool] = mapped_column(Boolean, default=False)
+    hide_from_visitors: Mapped[bool] = mapped_column(Boolean, default=False)
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)

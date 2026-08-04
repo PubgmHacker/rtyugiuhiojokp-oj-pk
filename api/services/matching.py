@@ -284,16 +284,18 @@ async def get_deck_profiles(
             my_profile, profile, distance, my_interests_pre,
         )
 
+        # Возраст и расстояние прячем в карточке, но подбор по ним оставляем:
+        # выпади анкета из фильтров, человек просто перестал бы её видеть
         deck.append(DeckProfile(
             id=profile.user_id,
             display_name=profile.display_name or "",
-            age=profile_age,
+            age=None if profile.hide_age else profile_age,
             city=profile.city or "",
             bio=profile.bio or "",
             photos=as_list(profile.photos),
             interests=as_list(profile.interests),
             ai_bio=profile.ai_bio,
-            distance=distance,
+            distance=None if profile.hide_distance else distance,
             match_score=compat_score,
             match_reason=compat_reason,
             goal=profile.goal or "",

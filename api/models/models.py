@@ -122,7 +122,17 @@ class Profile(Base):
     goal: Mapped[str] = mapped_column(String, default="")
     subculture: Mapped[str] = mapped_column(String, default="")
     height_cm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Полное скрытие из выдачи. Флаг перегружен по смыслу: им же работают
+    # пауза аккаунта (`set_profile_hidden`) и автоскрытие по жалобам, поэтому
+    # тонкие настройки приватности ниже сделаны отдельными полями.
     is_incognito: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Не показывать возраст в карточке. Подбор по возрасту продолжает
+    #: работать — иначе анкета выпала бы из фильтров у всех.
+    hide_age: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Не показывать расстояние. Город остаётся: без него непонятно, где человек.
+    hide_distance: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Не попадать в чужой раздел «Гости» при просмотре анкет.
+    hide_from_visitors: Mapped[bool] = mapped_column(Boolean, default=False)
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
