@@ -1,8 +1,17 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, RotateCcw, SlidersHorizontal, Mail } from "lucide-react";
+import { X, Heart, Star, RotateCcw, SlidersHorizontal, Mail, Zap } from "lucide-react";
 import type { DeckProfile, MatchResponse } from "../lib/api";
-import { likeProfile, getDeck, resetDeck, getSuperlikeQuota, recordVisit } from "../lib/api";
+import {
+  likeProfile,
+  getDeck,
+  resetDeck,
+  getSuperlikeQuota,
+  recordVisit,
+  getBoost,
+  activateBoost,
+  type BoostState,
+} from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import SwipeCard, { type SwipeDirection } from "./SwipeCard";
@@ -35,6 +44,8 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   // Лайк с сообщением: пишем до отправки, потому что текст уходит вместе
   // с лайком и увидят его ещё до взаимности
   const [noteFor, setNoteFor] = useState<DeckProfile | null>(null);
+  const [boost, setBoost] = useState<BoostState | null>(null);
+  const [boostBusy, setBoostBusy] = useState(false);
 
   const loadingRef = useRef(false);
   // Блокируем повторный свайп, пока текущий не обработан — иначе
@@ -88,6 +99,12 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   }, [deck.length, loadDeck]);
 
   useEffect(() => {
+    getBoost()
+      .then(setBoost)
+      .catch(() => setBoost(null)); // кнопку тогда не показываем
+  }, []);
+
+  useEffect(() => {
     getSuperlikeQuota()
       .then((q) => setSuperlikesLeft(q.left))
       .catch(() => setSuperlikesLeft(null)); // счётчик необязателен
@@ -102,6 +119,23 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
     visitedRef.current.add(top.id);
     recordVisit(top.id);
   }, [deck]);
+
+  const handleBoost = useCallback(async () => {
+    if (boostBusy) return;
+    setBoostBusy(true);
+    haptic("light");
+    try {
+      setBoost(await activateBoost());
+      haptic("success");
+    } catch (e: any) {
+      haptic("error");
+      // 403 — уровень не позволяет, 429 — на сегодня всё. И то и другое
+      // человек должен прочитать, а не додумывать
+      setError(e?.response?.data?.detail ?? "Не удалось включить буст");
+    } finally {
+      setBoostBusy(false);
+    }
+  }, [boostBusy]);
 
   const handleSwipe = useCallback(
     async (direction: SwipeDirection, profile: DeckProfile, note = "") => {
@@ -254,6 +288,37 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               <RotateCcw size={20} />
             </IconButton>
           </div>
+
+          {/* Буст — молния, как в референсе. Кнопки нет вовсе, если сервер
+              не ответил: показывать то, что заведомо не сработает, нельзя */}
+          {boost && (
+            <div className="relative pointer-events-auto">
+              <IconButton
+                label={
+                  boost.active
+                    ? "Буст активен"
+                    : boost.left_today
+                      ? `Поднять анкету на ${boost.minutes} минут`
+                      : boost.per_day
+                        ? "Бусты на сегодня закончились"
+                        : "Буст доступен в Plus"
+                }
+                onClick={handleBoost}
+                disabled={boostBusy || boost.active}
+                size={48}
+                tone={boost.active ? "success" : "warn"}
+              >
+                <Zap size={20} fill={boost.active ? "currentColor" : "none"} />
+              </IconButton>
+              {boost.active && (
+                <span
+                  aria-hidden
+                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full
+                             bg-success ring-2 ring-bg"
+                />
+              )}
+            </div>
+          )}
 
           <div className="relative pointer-events-auto">
             <IconButton

@@ -312,6 +312,26 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/* ── Буст показов ───────────────────────────────────────────── */
+
+export interface BoostState {
+  active: boolean;
+  until?: string | null;
+  minutes: number;
+  left_today: number;
+  per_day: number;
+}
+
+export async function getBoost(): Promise<BoostState> {
+  const { data } = await api.get("/profiles/me/boost");
+  return data;
+}
+
+export async function activateBoost(): Promise<BoostState> {
+  const { data } = await api.post("/profiles/me/boost");
+  return data;
+}
+
 /* ── Гости ──────────────────────────────────────────────────── */
 
 export interface VisitorOut {

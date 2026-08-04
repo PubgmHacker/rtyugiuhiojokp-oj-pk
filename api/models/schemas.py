@@ -239,6 +239,19 @@ class ReelsOut(BaseModel):
     next_before: Optional[str] = None
 
 
+class BoostOut(BaseModel):
+    """Состояние буста показов."""
+
+    active: bool = False
+    until: Optional[datetime] = None
+    #: Сколько минут даёт одно включение — для подписи на кнопке.
+    minutes: int = 30
+    #: Осталось включений сегодня.
+    left_today: int = 0
+    #: Сколько всего положено на уровне подписки.
+    per_day: int = 0
+
+
 class VisitorOut(BaseModel):
     """Один гость: анкета плюс когда и сколько раз заходил."""
 

@@ -16,6 +16,11 @@ from utils import as_list
 
 settings = get_settings()
 
+#: Насколько платный буст поднимает анкету. Множитель — чтобы эффект не тонул
+#: в баллах за интересы, слагаемое — чтобы буст работал и у пустой анкеты.
+BOOST_MULTIPLIER = 3.0
+BOOST_BONUS = 40.0
+
 
 def _calculate_age(birth_date: Optional[datetime]) -> Optional[int]:
     if not birth_date:
@@ -211,6 +216,13 @@ async def get_deck_profiles(
     # Активные премиумы среди кандидатов — буст в выдаче
     premium_ids: set[str] = set()
     referral_boost_ids: set[str] = set()
+    # Кто прямо сейчас под платным бустом. Считаем по времени, а не по флагу:
+    # прошедшая дата сама означает «буста нет»
+    boosted_ids: set[str] = {
+        p.user_id
+        for p in profiles
+        if p.boost_until and p.boost_until > datetime.now(timezone.utc)
+    }
     if profiles:
         candidate_ids = [p.user_id for p in profiles]
         result = await session.execute(
@@ -322,6 +334,11 @@ async def get_deck_profiles(
             score += 25
         if p.id in referral_boost_ids:
             score *= referral_mult  # пригласил друзей — анкета выше
+        if p.id in boosted_ids:
+            # Платный буст сильнее прочих слагаемых, иначе покупка не заметна.
+            # Множитель, а не константа: иначе он терялся бы у анкет, которые
+            # и без него набрали много по интересам и близости.
+            score = score * BOOST_MULTIPLIER + BOOST_BONUS
         return score + random.uniform(0, 8)
 
     deck.sort(key=_rank, reverse=True)

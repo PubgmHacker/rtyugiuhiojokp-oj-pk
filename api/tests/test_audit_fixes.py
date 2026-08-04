@@ -1784,3 +1784,66 @@ def test_веса_заполненности_дают_ровно_сто():
     веса = [int(n) for n in re.findall(r"weight:\s*(\d+)", блок)]
     assert веса, "не удалось разобрать веса"
     assert sum(веса) == 100, f"сумма весов {sum(веса)}"
+
+
+# ════════════════════════════════════════════════════════════════
+#  Платный буст показов (был только реферальный, за друзей)
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_буста(openapi):
+    paths = openapi["paths"]
+    assert "/api/profiles/me/boost" in paths
+    assert "get" in paths["/api/profiles/me/boost"]
+    assert "post" in paths["/api/profiles/me/boost"]
+
+
+def test_буст_растёт_с_уровнем_и_закрыт_бесплатным():
+    from services.plans import BOOST_MINUTES, boosts_per_day, tier_allows
+
+    assert boosts_per_day("free") == 0
+    assert boosts_per_day("plus") >= 1
+    assert boosts_per_day("ultra") > boosts_per_day("plus")
+    # Испорченный уровень в БД не должен открывать буст
+    assert boosts_per_day("админ") == 0
+
+    assert tier_allows("plus", "deck_boost")
+    assert not tier_allows("free", "deck_boost")
+
+    # Короткий срок намеренно: буст тратится, когда человек сам в приложении
+    assert 5 <= BOOST_MINUTES <= 120
+
+
+def test_остаток_бустов_считается_по_времени():
+    """Счётчик пришлось бы обнулять по расписанию, а пропущенный запуск
+    открыл бы безлимит — та же логика, что у суперлайков."""
+    import inspect
+
+    from routers import profiles
+
+    исходник = inspect.getsource(profiles._boost_state)
+    assert "timedelta(days=1)" in исходник
+    assert "BoostActivation.created_at >= since" in исходник
+
+
+def test_повторный_буст_продлевает_а_не_обнуляет():
+    """Иначе включение поверх активного сжигало бы оплаченные минуты."""
+    import inspect
+
+    from routers import profiles
+
+    исходник = inspect.getsource(profiles.activate_boost)
+    assert "profile.boost_until > now" in исходник
+    assert "base + timedelta(minutes=BOOST_MINUTES)" in исходник
+
+
+def test_буст_поднимает_анкету_в_деке():
+    """Колонка без влияния на сортировку была бы мёртвой."""
+    import inspect
+
+    from services import matching
+
+    assert matching.BOOST_MULTIPLIER > 1
+    исходник = inspect.getsource(matching.get_deck_profiles)
+    assert "boosted_ids" in исходник
+    # Считаем по времени: прошедшая дата сама означает «буста нет»
+    assert "p.boost_until > datetime.now(timezone.utc)" in исходник

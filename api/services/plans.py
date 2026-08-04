@@ -139,6 +139,22 @@ def tier_allows(tier: str, feature: str) -> bool:
     return tier_rank(tier) >= tier_rank(required)
 
 
+#: Сколько раз в сутки можно включить буст на каждом уровне. Ноль — нельзя.
+BOOSTS_PER_DAY: dict[str, int] = {
+    TIER_FREE: 0,
+    TIER_PLUS: 1,
+    TIER_ULTRA: 3,
+}
+
+#: Сколько минут длится одно включение. Короткий срок намеренно: буст должен
+#: тратиться тогда, когда человек сам в приложении и готов отвечать.
+BOOST_MINUTES = 30
+
+
+def boosts_per_day(tier: str) -> int:
+    return BOOSTS_PER_DAY[TIER_ORDER[tier_rank(tier)]]
+
+
 def superlikes_for(tier: str) -> int:
     return TIERS[TIER_ORDER[tier_rank(tier)]].superlikes
 

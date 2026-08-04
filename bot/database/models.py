@@ -84,6 +84,10 @@ class Profile(Base):
     hide_age: Mapped[bool] = mapped_column(Boolean, default=False)
     hide_distance: Mapped[bool] = mapped_column(Boolean, default=False)
     hide_from_visitors: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Платный буст показов — см. api/models/models.py
+    boost_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
@@ -207,6 +211,18 @@ class Block(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     blocker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     blocked_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BoostActivation(Base):
+    """Журнал включений буста — см. api/models/models.py. Бот бусты не
+    включает, но обе схемы создают таблицы в одной БД."""
+
+    __tablename__ = "dating_boost_activations"
+    __table_args__ = (Index("ix_boost_user_created", "user_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

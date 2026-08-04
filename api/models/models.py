@@ -135,6 +135,11 @@ class Profile(Base):
     hide_distance: Mapped[bool] = mapped_column(Boolean, default=False)
     #: Не попадать в чужой раздел «Гости» при просмотре анкет.
     hide_from_visitors: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: До какого момента анкета поднята в выдаче (платный буст). Прошедшая
+    #: дата равнозначна отсутствию буста, поэтому чистить поле не нужно.
+    boost_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
@@ -275,6 +280,22 @@ class Block(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     blocker_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     blocked_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BoostActivation(Base):
+    """Журнал включений буста — по нему считается суточный остаток.
+
+    Считаем по времени, а не счётчиком в анкете: счётчик пришлось бы обнулять
+    по расписанию, и пропущенный запуск открыл бы безлимит. Тот же подход, что
+    у суперлайков.
+    """
+
+    __tablename__ = "dating_boost_activations"
+    __table_args__ = (Index("ix_boost_user_created", "user_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

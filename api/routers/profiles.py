@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import logging
@@ -16,6 +16,7 @@ from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import (
+    BoostActivation,
     User,
     Profile,
     Like,
@@ -25,6 +26,7 @@ from models.models import (
     Subscription,
 )
 from models.schemas import (
+    BoostOut,
     DeckProfile,
     DeviceRegistration,
     ProfileUpdate,
@@ -34,7 +36,7 @@ from models.schemas import (
 )
 from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text
-from services.plans import tier_allows
+from services.plans import BOOST_MINUTES, boosts_per_day, tier_allows
 from services.premium import current_tier, is_premium as _is_premium
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
@@ -85,6 +87,72 @@ async def get_deck(
     """Получить анкеты для свайпов."""
     profiles = await get_deck_profiles(session, user.id, limit)
     return profiles
+
+
+async def _boost_state(session: AsyncSession, user_id: str, profile: Optional[Profile]) -> BoostOut:
+    tier = await current_tier(session, user_id)
+    per_day = boosts_per_day(tier)
+
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    result = await session.execute(
+        select(func.count(BoostActivation.id)).where(and_(
+            BoostActivation.user_id == user_id,
+            BoostActivation.created_at >= since,
+        ))
+    )
+    used = result.scalar() or 0
+
+    until = profile.boost_until if profile else None
+    active = bool(until and until > datetime.now(timezone.utc))
+    return BoostOut(
+        active=active,
+        until=until if active else None,
+        minutes=BOOST_MINUTES,
+        left_today=max(0, per_day - used),
+        per_day=per_day,
+    )
+
+
+@router.get("/me/boost", response_model=BoostOut)
+async def get_boost(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Состояние буста: активен ли и сколько включений осталось сегодня."""
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    return await _boost_state(session, user.id, result.scalar_one_or_none())
+
+
+@router.post("/me/boost", response_model=BoostOut)
+async def activate_boost(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Поднять анкету в выдаче на ограниченное время.
+
+    Повторное включение поверх активного буста продлевает его от текущего
+    окончания, а не с нуля: иначе оплаченные минуты сгорали бы.
+    """
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=400, detail="Сначала заполните анкету")
+
+    state = await _boost_state(session, user.id, profile)
+    if not state.per_day:
+        raise HTTPException(status_code=403, detail="Буст доступен в Plus")
+    if not state.left_today:
+        raise HTTPException(status_code=429, detail="Бусты на сегодня закончились")
+
+    now = datetime.now(timezone.utc)
+    base = profile.boost_until if (profile.boost_until and profile.boost_until > now) else now
+    profile.boost_until = base + timedelta(minutes=BOOST_MINUTES)
+    session.add(BoostActivation(user_id=user.id))
+    await session.flush()
+
+    fresh = await _boost_state(session, user.id, profile)
+    await session.commit()
+    return fresh
 
 
 @router.post("/{profile_id}/visit", status_code=204)
