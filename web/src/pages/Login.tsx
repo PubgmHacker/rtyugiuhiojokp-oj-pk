@@ -34,9 +34,11 @@ export default function Login() {
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
   const inTelegram = isInTelegram();
-  // В нативной сборке Telegram initData недоступен, поэтому единственный
-  // рабочий вход — одноразовый код из бота
-  const native = isNative();
+  // Считываем один раз при монтировании: платформа за время жизни экрана
+  // не меняется, а вызов в теле рендера означал бы, что способ входа
+  // может переключиться прямо во время набора кода — стоит рантайму
+  // Capacitor инициализироваться чуть позже первого рендера
+  const [native] = useState(isNative);
 
   // Внутри Telegram initData уже есть — входим сами, без лишнего нажатия
   const autoTried = useRef(false);
