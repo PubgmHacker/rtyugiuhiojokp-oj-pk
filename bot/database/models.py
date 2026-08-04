@@ -226,6 +226,42 @@ class ProfileVisit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Reel(Base):
+    """Короткое видео в ленте мини-аппа. Схема совпадает с
+    api/models/models.py; бот ролики не публикует, но обе схемы создают
+    таблицы в одной БД и обязаны совпадать."""
+
+    __tablename__ = "dating_reels"
+    __table_args__ = (
+        Index("ix_reel_created", "created_at"),
+        Index("ix_reel_author", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    video_url: Mapped[str] = mapped_column(String)
+    cover_url: Mapped[str] = mapped_column(String, default="")
+    caption: Mapped[str] = mapped_column(String, default="")
+    likes_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReelLike(Base):
+    """Лайк ролика. Схема совпадает с api/models/models.py."""
+
+    __tablename__ = "dating_reel_likes"
+    __table_args__ = (
+        UniqueConstraint("reel_id", "user_id", name="uq_reel_like"),
+        Index("ix_reel_like_reel", "reel_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    reel_id: Mapped[str] = mapped_column(String, ForeignKey("dating_reels.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ProcessedPayment(Base):
     """Журнал зачтённых платежей — защита от двойного начисления премиума.
     Схема совпадает с api/models/models.py."""

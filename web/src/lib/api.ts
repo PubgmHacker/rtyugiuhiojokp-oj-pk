@@ -245,6 +245,68 @@ export async function exportMyData(): Promise<Blob> {
   return data;
 }
 
+/* ── Видео-лента (reels) ────────────────────────────────────── */
+
+export interface Reel {
+  id: string;
+  author_id: string;
+  author_name: string;
+  author_age?: number | null;
+  author_photo: string;
+  video_url: string;
+  cover_url: string;
+  caption: string;
+  likes_count: number;
+  liked_by_me: boolean;
+  is_mine: boolean;
+  /** Снят с показа модерацией — приходит только автору. */
+  is_hidden: boolean;
+  created_at?: string | null;
+}
+
+export interface ReelsPage {
+  reels: Reel[];
+  next_before?: string | null;
+}
+
+export async function getReels(before?: string | null): Promise<ReelsPage> {
+  const { data } = await api.get("/reels", {
+    params: before ? { before } : undefined,
+  });
+  return data;
+}
+
+export async function getMyReels(): Promise<ReelsPage> {
+  const { data } = await api.get("/reels/mine");
+  return data;
+}
+
+/**
+ * Публикация ролика. Обложку присылаем отдельным файлом: сервер не разбирает
+ * видео на кадры, и модерация идёт по этому кадру — без него публикации нет.
+ */
+export async function uploadReel(
+  video: File,
+  cover: Blob,
+  caption: string
+): Promise<Reel> {
+  const form = new FormData();
+  form.append("video", video);
+  form.append("cover", cover, "cover.jpg");
+  form.append("caption", caption);
+  const { data } = await api.post("/reels", form);
+  return data;
+}
+
+export async function toggleReelLike(reelId: string): Promise<Reel> {
+  const { data } = await api.post(`/reels/${reelId}/like`);
+  return data;
+}
+
+export async function deleteReel(reelId: string): Promise<void> {
+  await api.delete(`/reels/${reelId}`);
+}
+
 /* ── Гости ──────────────────────────────────────────────────── */
 
 export interface VisitorOut {

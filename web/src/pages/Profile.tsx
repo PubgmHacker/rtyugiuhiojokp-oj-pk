@@ -308,7 +308,15 @@ export default function Profile() {
         <Card className="p-4 mb-4 border-accent/25">
           <div className="flex items-center gap-2.5 mb-3.5">
             <Crown size={18} className="text-accent" />
-            <span className="font-bold text-[15px] flex-1">Premium активен</span>
+            <span className="font-bold text-[15px] flex-1">Подписка активна</span>
+            {/* Продлить или перейти на старший уровень — тоже отсюда */}
+            <Link
+              to="/plans"
+              onClick={() => haptic("light")}
+              className="text-[13px] font-semibold text-accent"
+            >
+              Изменить
+            </Link>
           </div>
 
           <button

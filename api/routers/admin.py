@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.connection import get_session
 from middleware.admin_auth import require_admin
 from models.models import (
-    User, Profile, Like, Match, Message, Report, Subscription, AiModerationLog
+    User, Profile, Like, Match, Message, Reel, Report, Subscription, AiModerationLog
 )
 from services.token_revocation import clear_user_revocation, revoke_all_for_user
 
@@ -442,3 +442,91 @@ async def list_moderation_logs(
         ))
 
     return items
+
+
+# ════════════════════════════════════════════════════════════════
+#  РОЛИКИ
+# ════════════════════════════════════════════════════════════════
+
+class AdminReel(BaseModel):
+    id: str
+    author_id: str
+    author_name: str = ""
+    video_url: str
+    cover_url: str = ""
+    caption: str = ""
+    likes_count: int = 0
+    is_hidden: bool = False
+    created_at: datetime | None = None
+
+
+class ReelModerationAction(BaseModel):
+    reel_id: str
+    #: hide — снять с показа, show — вернуть в ленту
+    action: str
+
+
+@router.get("/reels", response_model=list[AdminReel])
+async def list_reels_for_moderation(
+    only_visible: bool = Query(default=False),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Ролики для проверки, свежие сверху.
+
+    AI-модерация смотрит только первый кадр, поэтому ручной просмотр нужен:
+    то, что начинается прилично, дальше может быть любым.
+    """
+    query = select(Reel).order_by(desc(Reel.created_at))
+    if only_visible:
+        query = query.where(Reel.is_hidden == False)  # noqa: E712
+
+    result = await session.execute(query.offset((page - 1) * limit).limit(limit))
+    reels = list(result.scalars().all())
+
+    result = await session.execute(
+        select(Profile).where(Profile.user_id.in_({r.user_id for r in reels}))
+    )
+    profiles = {p.user_id: p for p in result.scalars().all()}
+
+    return [
+        AdminReel(
+            id=r.id,
+            author_id=r.user_id,
+            author_name=(profiles[r.user_id].display_name if r.user_id in profiles else ""),
+            video_url=r.video_url,
+            cover_url=r.cover_url,
+            caption=r.caption,
+            likes_count=r.likes_count,
+            is_hidden=r.is_hidden,
+            created_at=r.created_at,
+        )
+        for r in reels
+    ]
+
+
+@router.post("/reels/action")
+async def moderate_reel(
+    data: ReelModerationAction,
+    user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Снять ролик с показа или вернуть его.
+
+    Ролик не удаляем: жалоба могла быть ложной, и вернуть удалённое видео
+    автору уже нечем. Автор свой скрытый ролик видит и понимает, что он
+    снят, — иначе он решит, что загрузка не сработала.
+    """
+    if data.action not in ("hide", "show"):
+        raise HTTPException(status_code=400, detail="action: hide или show")
+
+    result = await session.execute(select(Reel).where(Reel.id == data.reel_id))
+    reel = result.scalar_one_or_none()
+    if not reel:
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+
+    reel.is_hidden = data.action == "hide"
+    await session.commit()
+    return {"success": True, "is_hidden": reel.is_hidden}

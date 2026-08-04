@@ -200,6 +200,33 @@ class DeviceRegistration(BaseModel):
 #  IN-APP PURCHASES
 # ════════════════════════════════════════════════════════════════
 
+class ReelOut(BaseModel):
+    """Ролик в ленте вместе с автором: отдельный запрос за анкетой на каждый
+    ролик означал бы десяток запросов на один экран."""
+
+    id: str
+    author_id: str
+    author_name: str = ""
+    author_age: Optional[int] = None
+    author_photo: str = ""
+    video_url: str
+    cover_url: str = ""
+    caption: str = ""
+    likes_count: int = 0
+    liked_by_me: bool = False
+    is_mine: bool = False
+    #: Снят с показа. Приходит только автору — в общей ленте таких нет.
+    is_hidden: bool = False
+    created_at: Optional[datetime] = None
+
+
+class ReelsOut(BaseModel):
+    """Страница ленты. `next_before` передаётся в следующий запрос."""
+
+    reels: list[ReelOut] = Field(default_factory=list)
+    next_before: Optional[str] = None
+
+
 class VisitorOut(BaseModel):
     """Один гость: анкета плюс когда и сколько раз заходил."""
 

@@ -8,7 +8,7 @@ import {
   Link,
 } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Flame, MessageCircle, User, Sparkles, Crown, WifiOff } from "lucide-react";
+import { Flame, MessageCircle, User, Sparkles, Film, WifiOff } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
 import { initNative, registerPushNotifications } from "./lib/native";
@@ -28,13 +28,16 @@ const Likes = lazy(() => import("./pages/Likes"));
 const Chat = lazy(() => import("./pages/Chat"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Plans = lazy(() => import("./pages/Plans"));
+const Reels = lazy(() => import("./pages/Reels"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
+// Пять вкладок, как в референсе. Подписка живёт в профиле: покупка — редкое
+// действие, постоянная вкладка под неё выглядела бы навязчиво
 const NAV_ITEMS = [
   { path: "/discover", icon: Flame, label: "Лента" },
   { path: "/likes", icon: Sparkles, label: "Лайки" },
   { path: "/matches", icon: MessageCircle, label: "Чаты" },
-  { path: "/plans", icon: Crown, label: "Подписка" },
+  { path: "/reels", icon: Film, label: "Видео" },
   { path: "/profile", icon: User, label: "Профиль" },
 ];
 
@@ -234,6 +237,8 @@ export default function App() {
           {/* В чате нижняя навигация мешает полю ввода */}
           <Route path="/chat/:matchId" element={<Protected nav={false}><Chat /></Protected>} />
           <Route path="/plans" element={<Protected><Plans /></Protected>} />
+          {/* Лента роликов сама во весь экран — своя нижняя навигация остаётся */}
+          <Route path="/reels" element={<Protected><Reels /></Protected>} />
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected nav={false}><AdminDashboard /></Protected>} />
 

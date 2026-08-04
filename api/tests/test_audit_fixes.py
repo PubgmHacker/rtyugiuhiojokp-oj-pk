@@ -1513,3 +1513,129 @@ def test_клиент_отмечает_визит_один_раз_на_анке�
 
     assert "recordVisit" in дека
     assert "visitedRef" in дека, "нет защиты от повторной отправки"
+
+
+# ════════════════════════════════════════════════════════════════
+#  Видео-лента (reels) — второй формат знакомства помимо свайпов
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_видеоленты(openapi):
+    paths = openapi["paths"]
+    assert "/api/reels" in paths
+    assert "get" in paths["/api/reels"] and "post" in paths["/api/reels"]
+    # Свои ролики видны автору вместе со снятыми с показа
+    assert "/api/reels/mine" in paths
+    assert "/api/reels/{reel_id}/like" in paths
+    assert "delete" in paths["/api/reels/{reel_id}"]
+
+
+def test_сигнатура_видео_проверяется():
+    """Заголовок Content-Type клиент подставляет любой: переименованный архив
+    не должен попасть в ленту как видео."""
+    from routers.reels import _looks_like_video
+
+    # MP4/MOV — ISO BMFF: 'ftyp' на 4-м байте
+    assert _looks_like_video(b"\x00\x00\x00\x20ftypisom" + b"\x00" * 8)
+    # WebM — EBML
+    assert _looks_like_video(b"\x1a\x45\xdf\xa3" + b"\x00" * 16)
+
+    assert not _looks_like_video(b"PK\x03\x04" + b"\x00" * 16)  # zip
+    assert not _looks_like_video(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+    assert not _looks_like_video(b"")
+
+
+def test_видео_модерируется_по_обложке():
+    """Сервер не разбирает видео на кадры — ffmpeg в образе ради этого дорог.
+    Значит обложка обязательна, и проверяется именно она."""
+    import inspect
+
+    from routers import reels
+
+    исходник = inspect.getsource(reels.create_reel)
+    assert "moderate_image(cover_bytes)" in исходник
+    assert "sanitize_image" in исходник, "обложка должна чиститься от EXIF"
+    # Подпись — публичный текст, её тоже проверяем
+    assert "moderate_text" in исходник
+
+
+def test_лимит_публикаций_считается_по_времени():
+    """Счётчик пришлось бы обнулять по расписанию, а пропущенный запуск
+    открыл бы безлимит."""
+    import inspect
+
+    from routers import reels
+
+    assert reels.DAILY_LIMIT >= 1
+    исходник = inspect.getsource(reels._published_today)
+    assert "timedelta(days=1)" in исходник
+    assert "Reel.created_at >= since" in исходник
+
+
+def test_лимит_загрузки_видео_строже_лимита_лайков():
+    """Иначе пролистывание ленты упрётся в лимит, рассчитанный на видео."""
+    from middleware.rate_limit import _find_limit
+
+    _, публикация, _ = _find_limit("/api/reels", "POST")
+    _, лайк, _ = _find_limit("/api/reels/abc/like", "POST")
+
+    assert публикация < лайк, "лайк ролика не должен делить лимит с загрузкой"
+    assert лайк >= 100, "лента станет неюзабельной"
+
+
+def test_лайк_ролика_уникален_и_счётчик_рядом():
+    """Счётчик лежит в самом ролике: COUNT по лайкам на каждый ролик — лишний
+    проход на каждый запрос ленты. Уникальный ключ не даёт ему разойтись."""
+    from models.models import Reel, ReelLike
+
+    assert "likes_count" in Reel.__table__.columns
+
+    constraints = {
+        tuple(col.name for col in c.columns)
+        for c in ReelLike.__table__.constraints
+        if c.__class__.__name__ == "UniqueConstraint"
+    }
+    assert ("reel_id", "user_id") in constraints
+
+
+def test_скрытый_ролик_виден_автору_но_не_ленте():
+    """Иначе автор решит, что загрузка не сработала, и загрузит то же снова."""
+    import inspect
+
+    from routers import reels
+
+    лента = inspect.getsource(reels.list_reels)
+    assert "Reel.is_hidden == False" in лента
+
+    свои = inspect.getsource(reels.list_my_reels)
+    assert "is_hidden" not in свои, "в своих роликах фильтра по скрытию быть не должно"
+
+
+def test_клиент_снимает_обложку_в_браузере():
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    cover = (web / "lib" / "videoCover.ts").read_text(encoding="utf-8")
+
+    assert "canvas" in cover and "toBlob" in cover
+    # Сломанный файл не должен оставить интерфейс в вечной загрузке
+    assert "setTimeout" in cover
+
+    uploader = (web / "components" / "ReelUploader.tsx").read_text(encoding="utf-8")
+    assert "grabVideoCover" in uploader
+
+
+def test_модерация_роликов_доступна_админу(openapi):
+    """Флаг is_hidden без эндпоинта был бы мёртвой колонкой: AI смотрит только
+    первый кадр, дальше видео может быть любым, и снять его должен человек."""
+    paths = openapi["paths"]
+    assert "/api/admin/reels" in paths
+    assert "/api/admin/reels/action" in paths
+
+    import inspect
+
+    from routers import admin
+
+    исходник = inspect.getsource(admin.moderate_reel)
+    # Не удаляем: жалоба могла быть ложной, а вернуть удалённое нечем
+    assert "delete" not in исходник.lower()
+    assert 'data.action == "hide"' in исходник
