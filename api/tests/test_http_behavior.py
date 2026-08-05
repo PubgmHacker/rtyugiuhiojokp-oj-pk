@@ -227,6 +227,42 @@ async def test_скрытый_возраст_не_приходит_в_ответ
     assert карточка["display_name"] == "Имя-u-fan"
 
 
+# ── Дека: анкеты без координат и фильтр расстояния ──────────────
+
+
+async def test_анкета_без_координат_не_выпадает_из_деки_по_расстоянию(app):
+    """Фильтр расстояния должен быть ЧАСТИЧНЫМ: у кого нет геопозиции — не
+    исключается, а просто идёт без километража. Иначе человек без координат
+    невидим для всех, кто задал расстояние, и об этом никто не предупреждал."""
+    моя_анкета = _profile("u-me", latitude=None, longitude=None, distance_max=50)
+    кандидат = _profile("u-other", latitude=None, longitude=None)
+
+    session = _Session([
+        _Result(scalar=моя_анкета),   # моя анкета
+        _Result(rows=[]),             # кого лайкнул
+        _Result(rows=[]),             # кого заблокировал
+        _Result(rows=[]),             # кто заблокировал меня
+        _Result(rows=[]),             # кто пропустил меня
+        _Result(rows=[кандидат]),     # первый проход выборки (меньше лимита)
+        _Result(rows=[]),             # добор с начала ключа
+        _Result(rows=[]),             # активные подписки среди кандидатов
+        _Result(rows=[]),             # реферальный буст
+    ])
+
+    async with await _client(app, session, _user("u-me")) as client:
+        r = await client.get("/api/profiles/deck")
+
+    assert r.status_code == 200, r.text
+    карточки = r.json()
+    ids = [к["id"] for к in карточки]
+    assert "u-other" in ids, "анкета без координат молча выпала из деки"
+    (карточка,) = [к for к in карточки if к["id"] == "u-other"]
+    assert карточка["distance"] is None, "расстояние посчиталось без координат"
+
+
+# ── Гости без Ultra видят число, но не имена ─────────────────────
+
+
 async def test_гости_без_ultra_показывают_число_но_не_имена(app, monkeypatch):
     """Число видно всем — иначе непонятно, за что платить. Имена — за Ultra."""
     from routers import profiles
@@ -327,6 +363,41 @@ async def test_health_отдаёт_состояние_модерации_фот�
     assert "photo_moderation" in данные["checks"]
     # Без ключа в тестовом окружении — disabled, и это честный ответ
     assert данные["checks"]["photo_moderation"] in ("ok", "disabled", "unknown")
+
+
+async def test_health_показывает_деградацию_redis(app, monkeypatch):
+    """Сбой внешней зависимости (Redis) должен быть виден в /health, а не
+    молча проглочен: сервис остаётся живым (200), но checks говорит правду."""
+    from services import realtime
+
+    async def _broken_get_redis():
+        raise RuntimeError("redis is down")
+
+    monkeypatch.setattr(realtime, "get_redis", _broken_get_redis)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        r = await client.get("/health")
+
+    данные = r.json()
+    assert данные["checks"]["redis"] == "degraded"
+
+
+async def test_без_sentry_dsn_приложение_поднимается_и_работает(app):
+    """Без SENTRY_DSN (дефолт — пустая строка) поведение не должно меняться
+    ни на йоту: приложение поднимается, /health отвечает как обычно."""
+    from config import get_settings
+
+    assert get_settings().SENTRY_DSN == ""
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        r = await client.get("/health")
+
+    assert r.status_code in (200, 503)
+    assert r.json()["service"] == "souldawn-dating-api"
 
 
 # ── Пересыл ролика в чат и в комнату ────────────────────────────
