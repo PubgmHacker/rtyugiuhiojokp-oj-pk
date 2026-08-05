@@ -13,7 +13,9 @@ from database import (
     like_and_match, get_user_by_id,
     create_report, block_user,
 )
-from keyboards import dating_action_kb, main_kb, profile_kb, report_reasons_kb
+from keyboards import (
+    dating_action_kb, main_kb, no_more_profiles_kb, profile_kb, report_reasons_kb,
+)
 from services.moderation import moderate_text, humanize
 from states import DatingStates
 from texts import profile_card, no_more_profiles, match_notification
@@ -59,7 +61,7 @@ async def _show_next_profile(message: Message, tg_id: int, user_id: str, state: 
         await message.answer_photo(
             photo=BANNERS["menu"],
             caption=no_more_profiles(),
-            reply_markup=main_kb(),
+            reply_markup=no_more_profiles_kb(),
         )
         return
 

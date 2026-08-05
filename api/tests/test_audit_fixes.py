@@ -2068,6 +2068,97 @@ def test_каждая_кнопка_бота_имеет_обработчик():
     assert not непокрытые, f"кнопки без обработчика: {sorted(непокрытые)}"
 
 
+def test_кончившиеся_анкеты_ведут_в_приложение_за_настройками():
+    """`no_more_profiles()` обещал «расширьте настройки поиска», которых в
+    самом боте нет (возраст, дистанция, нишевые фильтры — это шторка в
+    мини-аппе, см. web/src/pages/Discover.tsx). Дёргаем реальный хендлер
+    `_show_next_profile` с пустой декой и смотрим на то, что он на самом деле
+    отправляет: если текст продолжает звать «расширить настройки», а рядом
+    нет кнопки в приложение — обещание снова ничем не подтверждено.
+
+    Запускается интерпретатором бота (aiogram там, в api его нет), поэтому
+    гоняем как отдельный процесс, а не импортируем модуль напрямую.
+    """
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    бот = Path(__file__).resolve().parents[2] / "bot"
+    python = бот / ".venv" / "bin" / "python"
+    if not python.exists():
+        pytest.skip("venv бота не поднят в этом окружении")
+
+    скрипт = """
+import sys
+sys.path.insert(0, ".")
+import asyncio
+import json
+import handlers.dating as dating
+
+
+async def _пустая_дека(user_id, limit=5):
+    return []
+
+dating.get_deck_profiles = _пустая_дека
+
+
+class FakeMessage:
+    def __init__(self):
+        self.calls = []
+
+    async def answer_photo(self, photo, caption, reply_markup):
+        self.calls.append((caption, reply_markup))
+
+
+class FakeState:
+    async def update_data(self, **kw):
+        pass
+
+    async def set_state(self, s):
+        pass
+
+    async def clear(self):
+        pass
+
+
+async def main():
+    msg = FakeMessage()
+    await dating._show_next_profile(msg, 1, "uid", FakeState())
+    caption, kb = msg.calls[0]
+    urls = [
+        btn.web_app.url
+        for row in kb.inline_keyboard
+        for btn in row
+        if btn.web_app
+    ]
+    print(json.dumps({"caption": caption, "urls": urls}))
+
+
+asyncio.run(main())
+"""
+
+    результат = subprocess.run(
+        [str(python), "-c", скрипт],
+        cwd=бот,
+        capture_output=True,
+        text=True,
+    )
+    assert результат.returncode == 0, результат.stderr
+
+    ответ = json.loads(результат.stdout.strip().splitlines()[-1])
+    caption = ответ["caption"]
+    urls = ответ["urls"]
+
+    if "настрой" in caption.lower() or "фильтр" in caption.lower():
+        # Текст ссылается на настройки поиска — тогда рядом обязана быть
+        # кнопка, которая туда действительно ведёт (в боте самих настроек нет)
+        assert any("/discover" in url for url in urls), (
+            "текст обещает настройки поиска, но кнопка в приложение "
+            f"отсутствует: {ответ}"
+        )
+
+
 # ════════════════════════════════════════════════════════════════
 #  Групповые чаты по интересам
 # ════════════════════════════════════════════════════════════════

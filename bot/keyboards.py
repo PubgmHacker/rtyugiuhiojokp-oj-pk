@@ -157,6 +157,23 @@ def dating_action_kb(profile_user_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def no_more_profiles_kb() -> InlineKeyboardMarkup:
+    """Анкеты закончились: настроек поиска (возраст, дистанция, нишевые
+    фильтры) в самом боте нет — кнопка ведёт прямо в мини-апп, где они есть,
+    а не просто в главное меню."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✨ Открыть настройки поиска",
+                    web_app={"url": f"{SITE_URL}/discover"},
+                )
+            ],
+            [InlineKeyboardButton(text="← Меню", callback_data="menu")],
+        ]
+    )
+
+
 def report_reasons_kb(target_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
