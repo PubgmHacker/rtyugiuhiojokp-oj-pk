@@ -10,7 +10,7 @@ import { useCallback, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Film, X } from "lucide-react";
 import { uploadReel, type Reel } from "../lib/api";
-import { CoverFailed, grabVideoCover, videoDuration } from "../lib/videoCover";
+import { CoverFailed, grabVideoCovers, videoDuration } from "../lib/videoCover";
 import { haptic } from "../lib/haptics";
 import { Button, Spinner } from "./ui";
 
@@ -70,8 +70,8 @@ export default function ReelUploader({
     setBusy(true);
     setError("");
     try {
-      const cover = await grabVideoCover(file);
-      const reel = await uploadReel(file, cover, caption.trim());
+      const covers = await grabVideoCovers(file);
+      const reel = await uploadReel(file, covers, caption.trim());
       haptic("success");
       onDone(reel);
       reset();

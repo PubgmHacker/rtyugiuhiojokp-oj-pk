@@ -309,17 +309,19 @@ export async function getMyReels(): Promise<ReelsPage> {
 }
 
 /**
- * Публикация ролика. Обложку присылаем отдельным файлом: сервер не разбирает
- * видео на кадры, и модерация идёт по этому кадру — без него публикации нет.
+ * Публикация ролика. Кадры присылаем отдельными файлами: сервер не разбирает
+ * видео сам, и модерация идёт по этим кадрам — без них публикации нет. Кадров
+ * несколько и по возрастанию времени: по одному нельзя поручиться за весь
+ * ролик, а средний сервер сохраняет обложкой.
  */
 export async function uploadReel(
   video: File,
-  cover: Blob,
+  covers: Blob[],
   caption: string
 ): Promise<Reel> {
   const form = new FormData();
   form.append("video", video);
-  form.append("cover", cover, "cover.jpg");
+  covers.forEach((cover, i) => form.append("covers", cover, `cover${i + 1}.jpg`));
   form.append("caption", caption);
   const { data } = await api.post("/reels", form);
   return data;

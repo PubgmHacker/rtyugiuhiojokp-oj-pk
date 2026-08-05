@@ -550,6 +550,130 @@ async def test_снятый_модерацией_ролик_исчезает_и�
     assert сообщение_json["text"] == "смотрите"
 
 
+# ── Модерация кадров ролика ─────────────────────────────────────
+
+
+#: Минимальный валидный JPEG (1×1) — санитайзер в тестах подменён, но
+#: content-type и непустое тело нужны, чтобы FastAPI собрал UploadFile.
+_КАДР = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 32
+#: Сигнатура mp4 — её проверяет _looks_like_video до всякой модерации.
+_ВИДЕО = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
+
+
+@pytest.fixture
+def кадры_ролика(monkeypatch):
+    """Публикация ролика без R2, Zhipu и Postgres.
+
+    Возвращает список кадров, дошедших до модерации: аудит нашёл, что
+    проверялась только присланная клиентом обложка, поэтому тесту важно не
+    «ответ 201», а сколько именно кадров реально проверено.
+    """
+    from routers import reels
+
+    проверенные: list[bytes] = []
+    вердикт = {"blocked": False}
+
+    def _sanitize(raw: bytes):
+        return raw, "image/jpeg", "jpg"
+
+    async def _moderate_image(данные: bytes):
+        проверенные.append(данные)
+        return dict(вердикт)
+
+    async def _moderate_text(_текст: str):
+        return {"blocked": False}
+
+    monkeypatch.setattr(reels, "sanitize_image", _sanitize)
+    monkeypatch.setattr(reels, "moderate_image", _moderate_image)
+    monkeypatch.setattr(reels, "moderate_text", _moderate_text)
+    monkeypatch.setattr(reels, "log_moderation", _async_return(None))
+    monkeypatch.setattr(reels, "upload_photo_to_r2", _async_return("https://example.test/x"))
+    return SimpleNamespace(проверенные=проверенные, вердикт=вердикт)
+
+
+def _файлы_ролика(кадров: int):
+    """multipart-тело публикации с заданным числом кадров."""
+    files = [("video", ("v.mp4", _ВИДЕО, "video/mp4"))]
+    files += [
+        ("covers", (f"c{i + 1}.jpg", _КАДР, "image/jpeg")) for i in range(кадров)
+    ]
+    return files
+
+
+class _SessionСДефолтами(_Session):
+    """Сессия, проставляющая на flush() дефолты колонок.
+
+    Настоящий Postgres заполняет id и счётчики сам, и без этого роутер падает
+    на сборке ответа — по причине, не имеющей отношения к проверяемому.
+    """
+
+    async def flush(self):
+        for obj in self.added:
+            for column in obj.__table__.columns:
+                if getattr(obj, column.key, None) is not None:
+                    continue
+                default = column.default
+                if default is None:
+                    continue
+                значение = default.arg
+                setattr(obj, column.key, значение(None) if callable(значение) else значение)
+
+
+async def test_модерация_проверяет_все_присланные_кадры(app, кадры_ролика):
+    """Раньше проверялся один кадр: безобидное начало пропускало весь ролик."""
+    session = _SessionСДефолтами([_Result(scalar=0)])  # лимит за сутки не выбран
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/reels", files=_файлы_ролика(3), data={"caption": ""}
+        )
+
+    assert r.status_code == 201, r.text
+    assert len(кадры_ролика.проверенные) == 3, (
+        "модерация увидела не все кадры — вернулась проверка только обложки"
+    )
+
+
+async def test_одного_кадра_недостаточно_для_публикации(app, кадры_ролика):
+    """Клиент, присылающий один кадр, снова свёл бы проверку к обложке."""
+    session = _SessionСДефолтами([_Result(scalar=0)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/reels", files=_файлы_ролика(1), data={"caption": ""}
+        )
+
+    assert r.status_code == 400
+    assert not кадры_ролика.проверенные, "ролик пошёл в модерацию с одним кадром"
+
+
+async def test_нарушение_в_последнем_кадре_блокирует_ролик(app, кадры_ролика):
+    """Нарушение в конце видео — ровно тот случай, который обложка не ловила."""
+    from routers import reels
+
+    вызовы = {"n": 0}
+
+    async def _moderate_image(данные: bytes):
+        вызовы["n"] += 1
+        кадры_ролика.проверенные.append(данные)
+        # Чисто в начале и середине, нарушение — в последнем кадре
+        return {"blocked": вызовы["n"] == reels.MIN_COVERS}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(reels, "moderate_image", _moderate_image)
+    session = _Session([_Result(scalar=0)])
+    try:
+        async with await _client(app, session, _user()) as client:
+            r = await client.post(
+                "/api/reels", files=_файлы_ролика(reels.MIN_COVERS), data={"caption": ""}
+            )
+    finally:
+        monkeypatch.undo()
+
+    assert r.status_code == 422, "ролик с нарушением в конце опубликовался"
+    assert not session.added, "заблокированный ролик всё равно сохранён в базу"
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

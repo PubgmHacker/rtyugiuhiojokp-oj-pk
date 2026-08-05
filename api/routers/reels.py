@@ -1,9 +1,12 @@
 """Видео-лента (reels) — второй формат знакомства помимо свайпов.
 
 Модерация: разбирать видео на кадры на сервере значило бы тащить ffmpeg в
-образ, поэтому обложку присылает клиент отдельным файлом, и проверяется
-именно она. Без обложки ролик не публикуется — иначе в ленту попадёт что
-угодно непроверенным.
+образ, поэтому кадры присылает клиент — не один, а несколько, снятых на
+разных таймкодах (10/50/90% длительности). Так модерация видит начало,
+середину и конец ролика, а не только специально подобранный первый кадр.
+Каждый кадр проходит ту же модерацию, что и обложка фото профиля; средний
+кадр становится обложкой ролика в ленте. Без кадров ролик не публикуется —
+иначе в ленту попадёт что угодно непроверенным.
 
 Лимит публикаций суточный и считается по времени создания, а не счётчиком:
 счётчик пришлось бы обнулять по расписанию, а пропущенный запуск открыл бы
@@ -54,6 +57,9 @@ router = APIRouter(prefix="/reels", tags=["reels"])
 MAX_VIDEO_BYTES = 50 * 1024 * 1024
 #: Сколько роликов можно опубликовать за сутки.
 DAILY_LIMIT = 3
+#: Меньше — и модерация снова видит только один подобранный кадр, как обложка
+#: раньше: начало ролика может быть безобидным, а нарушение — дальше по видео.
+MIN_COVERS = 3
 #: Что принимаем. Проверяем и заголовок, и сигнатуру файла: заголовок клиент
 #: подставляет любой.
 ALLOWED_VIDEO = {
@@ -197,19 +203,29 @@ async def _published_today(session: AsyncSession, user_id: str) -> int:
 @router.post("", response_model=ReelOut, status_code=201)
 async def create_reel(
     video: UploadFile = File(...),
-    cover: UploadFile = File(..., description="Кадр из видео — его и модерируем"),
+    covers: list[UploadFile] = File(
+        ..., description="Кадры с разных таймкодов видео — их и модерируем"
+    ),
     caption: str = Form(default=""),
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
     """Опубликовать ролик.
 
-    Обложка обязательна: сервер не разбирает видео на кадры, и проверить, что
-    внутри, можно только по присланному клиентом кадру. Нет обложки — нет
-    публикации.
+    Кадры обязательны: сервер не разбирает видео на кадры сам, и проверить,
+    что внутри, можно только по присланным клиентом кадрам с разных
+    таймкодов. Меньше MIN_COVERS кадров — публикации нет: одного кадра
+    (например, только начала ролика) недостаточно, чтобы поручиться за всё
+    видео целиком.
     """
     if len(caption) > 300:
         raise HTTPException(status_code=400, detail="Подпись длиннее 300 символов")
+
+    if len(covers) < MIN_COVERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Нужно как минимум {MIN_COVERS} кадра из разных моментов видео",
+        )
 
     if await _published_today(session, user.id) >= DAILY_LIMIT:
         raise HTTPException(
@@ -232,18 +248,24 @@ async def create_reel(
     if not _looks_like_video(data):
         raise HTTPException(status_code=400, detail="Файл не похож на видео")
 
-    # Обложку перекодируем тем же санитайзером, что и фото профиля: он срезает
-    # EXIF с координатами и отсекает файлы, притворяющиеся картинкой
-    cover_bytes = await cover.read()
-    try:
-        cover_bytes, cover_type, cover_ext = sanitize_image(cover_bytes)
-    except ImageRejected as exc:
-        raise HTTPException(status_code=400, detail=f"Обложка: {exc}") from exc
+    # Каждый кадр перекодируем тем же санитайзером, что и фото профиля: он
+    # срезает EXIF с координатами и отсекает файлы, притворяющиеся картинкой.
+    # Один заблокированный кадр — весь ролик не публикуется, даже если
+    # остальные кадры чистые: нарушение может быть в любой части видео.
+    sanitized: list[tuple[bytes, str, str]] = []
+    for i, cover in enumerate(covers):
+        raw = await cover.read()
+        try:
+            cover_bytes, cover_type, cover_ext = sanitize_image(raw)
+        except ImageRejected as exc:
+            raise HTTPException(status_code=400, detail=f"Кадр {i + 1}: {exc}") from exc
+        sanitized.append((cover_bytes, cover_type, cover_ext))
 
-    verdict = await moderate_image(cover_bytes)
-    await log_moderation(user.id, "reel_cover", f"reel by {user.id}", verdict)
-    if verdict["blocked"]:
-        raise HTTPException(status_code=422, detail="Видео нарушает правила")
+    for i, (cover_bytes, _cover_type, _cover_ext) in enumerate(sanitized):
+        verdict = await moderate_image(cover_bytes)
+        await log_moderation(user.id, "reel_cover", f"reel by {user.id} frame {i + 1}", verdict)
+        if verdict["blocked"]:
+            raise HTTPException(status_code=422, detail="Видео нарушает правила")
 
     if caption.strip():
         text_verdict = await moderate_text(caption)
@@ -256,6 +278,8 @@ async def create_reel(
     if not video_url:
         raise HTTPException(status_code=500, detail="Не удалось загрузить видео")
 
+    # Средний по времени кадр — обложка ролика в ленте.
+    cover_bytes, cover_type, cover_ext = sanitized[len(sanitized) // 2]
     cover_url = await upload_photo_to_r2(f"{base}.cover.{cover_ext}", cover_bytes, cover_type)
 
     reel = Reel(
