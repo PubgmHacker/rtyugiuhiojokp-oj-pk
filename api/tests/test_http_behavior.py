@@ -874,6 +874,44 @@ async def test_фото_из_бота_переживают_обновление_
     assert "AgACAgIAAxkBAAI-новое" in анкета.photos
 
 
+async def test_автобан_по_жалобам_отзывает_токены(app, monkeypatch):
+    """Бан обязан гасить уже выданные сессии, а не только запрещать вход.
+
+    Ручной бан в админке это делал, а автобан по жалобам — нет: у забаненного
+    оставался живой WebSocket, и жертва харассмента продолжала получать от
+    него сообщения до истечения токена (до 72 часов).
+    """
+    from routers import report
+
+    отозваны: list[str] = []
+
+    async def _revoke(user_id: str):
+        отозваны.append(user_id)
+        return True
+
+    monkeypatch.setattr(report, "revoke_all_for_user", _revoke)
+    monkeypatch.setattr(report, "remember_ban", _async_return(None))
+
+    нарушитель = _user("u-нарушитель", telegram_id=222)
+    session = _Session([
+        _Result(scalar=нарушитель),   # на кого жалуются
+        _Result(scalar=None),         # своей жалобы ещё не было
+        _Result(scalar=5),            # пять разных жалобщиков — порог автобана
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/report",
+            json={"reported_id": "u-нарушитель", "reason": "harassment"},
+        )
+
+    assert r.status_code in (200, 201), r.text
+    assert нарушитель.is_banned is True, "автобан не сработал"
+    assert отозваны == ["u-нарушитель"], (
+        "бан выдан, но токены не отозваны — открытый сокет продолжит работать"
+    )
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

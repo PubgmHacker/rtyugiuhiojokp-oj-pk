@@ -25,6 +25,7 @@ from sqlalchemy import select
 from database.connection import async_session_factory
 from middleware.auth import get_current_user
 from routers.chat import _ws_auth
+from services.token_revocation import is_revoked
 from models.models import Block, User, VoiceCall
 from models.schemas import VoiceIceServers
 from services.ws_manager import manager
@@ -67,7 +68,7 @@ async def websocket_roulette(websocket: WebSocket):
     auth = await _ws_auth(websocket)
     if not auth:
         return
-    user_id, _ = auth
+    user_id, token_payload = auth
 
     await websocket.accept()
     call_id: str | None = None
@@ -150,6 +151,15 @@ async def websocket_roulette(websocket: WebSocket):
                 continue
 
             action = data.get("type")
+
+            # Бан рвёт и уже открытый сокет — так же, как в личном чате
+            # (routers/chat.py). Проверки при подключении мало: забанить могли
+            # пока человек стоял в очереди или уже говорил, и без этого он
+            # продолжал бы заводить новые звонки с незнакомыми людьми
+            if await is_revoked(token_payload):
+                await leave_call()
+                await websocket.close(code=4001, reason="Token revoked")
+                break
 
             if action == "find":
                 await leave_call()

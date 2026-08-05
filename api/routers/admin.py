@@ -393,6 +393,9 @@ async def report_action(
         if target:
             target.is_banned = True
             await remember_ban(session, target.telegram_id, "бан по жалобе")
+            # Тот же бан, что и в ban_user, — значит и токены отзываем так же:
+            # иначе открытый сокет забаненного живёт до истечения токена
+            await revoke_all_for_user(target.id)
         report.status = "resolved"
     elif data.action == "dismiss":
         report.status = "dismissed"
