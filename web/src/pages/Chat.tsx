@@ -25,6 +25,7 @@ import {
 import { ChatWebSocket, type ConnectionStatus } from "../lib/websocket";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
+import { useIsMounted } from "../hooks/useSafeAsync";
 import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
 import { REPORT_REASONS } from "../lib/profileOptions";
@@ -52,27 +53,42 @@ export default function Chat() {
   const lastTypingSent = useRef(0);
 
   const myId = useStore((s) => s.user?.id);
+  const isMounted = useIsMounted();
+  // Живой matchId на каждый рендер: замыкание эффекта хранит свой matchId
+  // навсегда, а этот реф нужен именно для сравнения "а актуален ли ещё тот
+  // запрос", когда параметр маршрута уже успел смениться.
+  const currentMatchIdRef = useRef(matchId);
+  currentMatchIdRef.current = matchId;
 
   /* ── Загрузка истории и сокет ────────────────────────────── */
   useEffect(() => {
     if (!matchId) return;
 
+    // matchId меняется без размонтирования компонента (переход между
+    // чатами по маршруту): если старый запрос ответит позже, чем эффект
+    // перезапустится на новом matchId, его результат нельзя применять —
+    // иначе он затрёт уже открытую переписку данными чужого матча.
+    const requestedMatchId = matchId;
+    const stillCurrent = () =>
+      isMounted() && requestedMatchId === currentMatchIdRef.current;
+
     (async () => {
       try {
         const [msgs, matchList] = await Promise.all([
-          getMessages(matchId),
+          getMessages(requestedMatchId),
           getMatches(),
         ]);
+        if (!stillCurrent()) return;
         // История может прийти позже сокета — мержим без дублей
         setMessages((prev) => {
           const seen = new Set(msgs.map((m) => m.id));
           return [...msgs, ...prev.filter((m) => !seen.has(m.id))];
         });
-        setMatch(matchList.find((m) => m.id === matchId) ?? null);
+        setMatch(matchList.find((m) => m.id === requestedMatchId) ?? null);
       } catch {
         /* экран покажет пустую переписку */
       } finally {
-        setLoading(false);
+        if (stillCurrent()) setLoading(false);
       }
     })();
 

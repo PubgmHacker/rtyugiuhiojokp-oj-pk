@@ -19,6 +19,7 @@ import {
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
+import { useIsMounted } from "../hooks/useSafeAsync";
 import { EmptyState, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
 
@@ -115,15 +116,23 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const isMounted = useIsMounted();
+  // Опрос раз в 7с может наложиться сам на себя, если сеть подтормозила:
+  // на резолве применяем ответ только самого свежего запроса, иначе более
+  // старый может прийти позже и затереть свежий список устаревшим.
+  const requestSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
     try {
       const page = await getRoomMessages(room.id);
+      if (!isMounted() || seq !== requestSeqRef.current) return;
       setMessages(page.messages);
     } catch {
+      if (!isMounted() || seq !== requestSeqRef.current) return;
       setMessages([]);
     }
-  }, [room.id]);
+  }, [room.id, isMounted]);
 
   useEffect(() => {
     load();

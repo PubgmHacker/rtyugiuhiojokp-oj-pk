@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
+import { useIsMounted } from "../hooks/useSafeAsync";
 import SwipeCard, { type SwipeDirection } from "./SwipeCard";
 import MatchModal from "./MatchModal";
 import { Button, IconButton, EmptyState, Skeleton } from "./ui";
@@ -33,6 +34,7 @@ const PREFETCH_AT = 4;
 
 export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => void }) {
   const { deck, setDeck, addDeck, removeDeckProfile, addMatch } = useStore();
+  const isMounted = useIsMounted();
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [lastSwiped, setLastSwiped] = useState<DeckProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -100,15 +102,23 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
 
   useEffect(() => {
     getBoost()
-      .then(setBoost)
-      .catch(() => setBoost(null)); // кнопку тогда не показываем
-  }, []);
+      .then((b) => {
+        if (isMounted()) setBoost(b);
+      })
+      .catch(() => {
+        if (isMounted()) setBoost(null); // кнопку тогда не показываем
+      });
+  }, [isMounted]);
 
   useEffect(() => {
     getSuperlikeQuota()
-      .then((q) => setSuperlikesLeft(q.left))
-      .catch(() => setSuperlikesLeft(null)); // счётчик необязателен
-  }, []);
+      .then((q) => {
+        if (isMounted()) setSuperlikesLeft(q.left);
+      })
+      .catch(() => {
+        if (isMounted()) setSuperlikesLeft(null); // счётчик необязателен
+      });
+  }, [isMounted]);
 
   // Визит отмечаем для той анкеты, что реально оказалась сверху — не для всей
   // выданной деки: она приходит на десяток вперёд, и записывать её целиком

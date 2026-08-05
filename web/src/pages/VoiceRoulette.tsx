@@ -34,6 +34,12 @@ export default function VoiceRoulette() {
   const localRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const iceRef = useRef<RTCIceServer[] | null>(null);
+  // Экран открыт и звонок можно продолжать заводить. Одного mounted-флага
+  // недостаточно: start() ждёт getIceServers()/getUserMedia(), и если за это
+  // время компонент размонтируют, единственный шанс отпустить уже пойманный
+  // микрофон — проверить этот флаг сразу после await, до того как поток и
+  // сокет попадут в рефы.
+  const activeRef = useRef(true);
 
   /** Снести соединение, но оставить сокет: он нужен для следующего поиска. */
   const teardownCall = useCallback(() => {
@@ -43,6 +49,7 @@ export default function VoiceRoulette() {
   }, []);
 
   const stopAll = useCallback(() => {
+    activeRef.current = false;
     teardownCall();
     localRef.current?.getTracks().forEach((t) => t.stop());
     localRef.current = null;
@@ -53,7 +60,10 @@ export default function VoiceRoulette() {
 
   // Уходя с экрана, обязательно отпускаем микрофон: иначе индикатор записи
   // остаётся гореть, и это выглядит как слежка
-  useEffect(() => stopAll, [stopAll]);
+  useEffect(() => {
+    activeRef.current = true;
+    return stopAll;
+  }, [stopAll]);
 
   const createPeer = useCallback(
     (sendSignal: (payload: unknown) => void) => {
@@ -95,16 +105,28 @@ export default function VoiceRoulette() {
     setError("");
     haptic("light");
 
+    let stream: MediaStream | null = null;
     try {
       if (!iceRef.current) iceRef.current = await getIceServers();
+      if (!activeRef.current) return;
 
       if (!localRef.current) {
-        localRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
     } catch {
       setError("Нужен доступ к микрофону — разрешите его в настройках браузера");
       return;
     }
+
+    // Экран могли покинуть, пока ждали разрешение микрофона или ICE-сервера:
+    // cleanup-эффект уже отработал и второй раз не сработает, так что
+    // отпустить только что пойманный микрофон и не открывать сокет нужно
+    // здесь, а не полагаться на размонтирование.
+    if (!activeRef.current) {
+      stream?.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    if (stream) localRef.current = stream;
 
     setStage("waiting");
 
