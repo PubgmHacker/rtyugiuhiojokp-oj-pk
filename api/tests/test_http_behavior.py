@@ -912,6 +912,71 @@ async def test_автобан_по_жалобам_отзывает_токены(
     )
 
 
+class _SessionСЖурналом(_Session):
+    """Сессия, запоминающая порядок запросов.
+
+    Для суточных лимитов важен именно порядок: блокировка обязана быть взята
+    ДО подсчёта использованного. Если сначала посчитать, а потом блокировать,
+    гонка остаётся — параллельные запросы уже прочитали «использовано 0».
+    """
+
+    def __init__(self, plan):
+        super().__init__(plan)
+        self.запросы: list[str] = []
+
+    async def execute(self, statement=None, *a, **kw):
+        self.запросы.append(str(statement))
+        return await super().execute(statement, *a, **kw)
+
+
+async def test_кейс_берёт_блокировку_до_подсчёта_попыток(app, monkeypatch):
+    """Пять параллельных запросов не должны дать пять наград за одну попытку.
+
+    Проверяем не «ответ 200», а что блокировка взята и взята вовремя: сначала
+    lock, потом подсчёт использованного за сутки.
+    """
+    from routers import cases
+
+    monkeypatch.setattr(cases, "current_tier", _async_return("plus"))
+
+    session = _SessionСЖурналом([
+        _Result(scalar=None),   # advisory-lock
+        _Result(scalar=0),      # открыто за сутки
+        _Result(scalar=None),   # анкета (не дойдём — важен порядок выше)
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        await client.post("/api/cases/open")
+
+    блокировки = [i for i, q in enumerate(session.запросы) if "advisory" in q]
+    подсчёты = [i for i, q in enumerate(session.запросы) if "count" in q.lower()]
+    assert блокировки, "открытие кейса идёт без блокировки — лимит обходится гонкой"
+    if подсчёты:
+        assert блокировки[0] < подсчёты[0], (
+            "блокировка взята после подсчёта — гонка осталась"
+        )
+
+
+async def test_буст_берёт_блокировку_до_подсчёта(app, monkeypatch):
+    """Тот же лимит и та же гонка, что у кейсов: второй путь из пары."""
+    session = _SessionСЖурналом([
+        _Result(scalar=_profile("u-me")),   # анкета
+        _Result(scalar=None),               # advisory-lock
+        _Result(scalar=0),                  # включений за сутки
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        await client.post("/api/profiles/me/boost")
+
+    блокировки = [i for i, q in enumerate(session.запросы) if "advisory" in q]
+    подсчёты = [i for i, q in enumerate(session.запросы) if "count" in q.lower()]
+    assert блокировки, "включение буста идёт без блокировки — лимит обходится гонкой"
+    if подсчёты:
+        assert блокировки[0] < подсчёты[0], (
+            "блокировка взята после подсчёта — гонка осталась"
+        )
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

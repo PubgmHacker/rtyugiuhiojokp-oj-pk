@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, func, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
@@ -76,6 +77,16 @@ async def open_case(
     per_day = openings_per_day(tier)
     if not per_day:
         raise HTTPException(status_code=403, detail="Кейсы доступны в Plus")
+
+    # Лимит «столько-то в сутки» считается запросом и тут же подтверждается
+    # записью. Без блокировки пять параллельных запросов успевают прочитать
+    # «использовано 0» раньше, чем любой из них закоммитится, и оплаченная
+    # одна попытка превращается в пять наград. Тот же приём, что для встречных
+    # лайков в routers/likes.py
+    await session.execute(
+        sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+        {"k": f"dating:case:{user.id}"},
+    )
 
     left = await _openings_left(session, user.id, tier)
     if not left:

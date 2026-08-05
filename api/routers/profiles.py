@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import and_, or_
+from sqlalchemy import text as sa_text
 
 from config import get_settings
 from database.connection import get_session
@@ -130,6 +131,14 @@ async def activate_boost(
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=400, detail="Сначала заполните анкету")
+
+    # Суточный лимит проверяется запросом и подтверждается записью. Без
+    # блокировки параллельные запросы читают «использовано 0» одновременно, и
+    # один оплаченный буст включается несколько раз (см. routers/likes.py)
+    await session.execute(
+        sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+        {"k": f"dating:boost:{user.id}"},
+    )
 
     state = await _boost_state(session, user.id, profile)
     if not state.per_day:
