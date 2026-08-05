@@ -2516,3 +2516,104 @@ def test_текстовая_модерация_имеет_запасной_фи�
 
     assert _keyword_filter("продаю наркотики")["blocked"] is True
     assert _keyword_filter("люблю кофе и кино")["blocked"] is False
+
+
+# ════════════════════════════════════════════════════════════════
+#  Блокеры из полного аудита 05.08.2026 (32 роли, 134 агента)
+# ════════════════════════════════════════════════════════════════
+
+def test_лендинг_ведёт_на_тот_же_бот_что_и_приложение():
+    """Лендинг вёл на t.me/souldawn_bot, а приложение — на souldawn_dating_bot.
+    Единственный канал привлечения обрывался на первом клике, и это не видно
+    ниоткуда, кроме как открыть ссылку руками."""
+    import re
+    from pathlib import Path
+
+    корень = Path(__file__).resolve().parents[2]
+
+    из_лендинга = set()
+    for файл in (корень / "landing").glob("*.html"):
+        из_лендинга |= set(
+            re.findall(r"t\.me/([a-zA-Z0-9_]+)", файл.read_text(encoding="utf-8"))
+        )
+
+    веб = (корень / "web" / "src" / "pages" / "Profile.tsx").read_text(encoding="utf-8")
+    из_веба = set(re.findall(r'VITE_BOT_USERNAME \|\| "([a-zA-Z0-9_]+)"', веб))
+
+    assert из_лендинга, "на лендинге не нашлось ни одной ссылки на бота"
+    assert из_лендинга == из_веба, (
+        f"лендинг ведёт на {sorted(из_лендинга)}, приложение — на {sorted(из_веба)}"
+    )
+
+
+def test_разрешение_микрофона_объявлено():
+    """Без NSMicrophoneUsageDescription iOS убивает приложение при первом
+    getUserMedia — голосовая рулетка гарантированно роняет сборку."""
+    from pathlib import Path
+
+    plist = (
+        Path(__file__).resolve().parents[2]
+        / "web" / "ios" / "App" / "App" / "Info.plist"
+    ).read_text(encoding="utf-8")
+
+    assert "NSMicrophoneUsageDescription" in plist
+
+
+def test_личный_чат_модерируется():
+    """Самый объёмный канал общения был единственным немодерируемым: bio,
+    текст лайка и комнаты проверялись, а в личке можно было писать что угодно."""
+    import inspect
+
+    from routers import chat
+
+    исходник = inspect.getsource(chat.websocket_chat)
+    assert "moderate_text(text)" in исходник
+    assert '"chat_message"' in исходник
+    # Сокет не рвём: разрыв выглядит как поломка приложения
+    assert '"type": "rejected"' in исходник
+
+
+def test_модерация_не_блокирует_event_loop():
+    """SDK Zhipu синхронный: прямой вызов вешает единственный event loop —
+    на время запроса встаёт весь сервер, включая чужие чаты и деку."""
+    import inspect
+
+    from services import ai_moderation
+
+    for функция in (ai_moderation.moderate_text, ai_moderation.moderate_image):
+        исходник = inspect.getsource(функция)
+        assert "asyncio.to_thread" in исходник, f"{функция.__name__} блокирует loop"
+
+
+def test_бан_переживает_удаление_аккаунта():
+    """Забаненный удалял аккаунт (каскад стирал бан), заходил тем же Telegram
+    и приходил чистым. Модерация без памяти не работает вовсе."""
+    import inspect
+
+    from models.models import BannedIdentity
+    from routers import admin, auth, report
+
+    assert "telegram_id" in BannedIdentity.__table__.columns
+
+    # Запоминаем при всех трёх видах бана
+    assert "remember_ban" in inspect.getsource(admin.ban_user)
+    assert "remember_ban" in inspect.getsource(admin.report_action)
+    assert "remember_ban" in inspect.getsource(report.create_report)
+
+    # Проверяем при регистрации
+    assert "is_banned_identity" in inspect.getsource(auth.auth_telegram)
+
+    # Разбан убирает из списка, иначе он работал бы только до первой чистки
+    assert "forgive" in inspect.getsource(admin.unban_user)
+
+
+def test_удаление_аккаунта_остаётся_полным():
+    """Список банов хранит только telegram_id и причину: App Store требует
+    настоящего удаления данных (5.1.1(v)), и профиль, фото, переписка
+    удаляются как раньше."""
+    from models.models import BannedIdentity
+
+    колонки = set(BannedIdentity.__table__.columns.keys())
+    assert колонки == {"id", "telegram_id", "reason", "created_at"}
+    # Ничего личного: ни имени, ни фото, ни города
+    assert not (колонки & {"display_name", "photos", "bio", "city", "birth_date"})

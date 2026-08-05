@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -17,12 +18,14 @@ from middleware.auth import (
 )
 from models.models import User, Profile, Subscription
 from models.schemas import AuthResponse, UserProfile
+from services.ban_memory import is_banned_identity
 from services.link_codes import redeem_code
 from services.token_revocation import revoke_all_for_user, revoke_token
 from utils import as_list
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _user_to_profile(user: User, profile: Profile | None) -> UserProfile:
@@ -81,12 +84,21 @@ async def auth_telegram(
     user = result.scalar_one_or_none()
 
     if not user:
+        # Забаненный мог удалить аккаунт и прийти заново тем же Telegram:
+        # удаление каскадом стирает бан, поэтому проверяем отдельный список.
+        # Создаём его сразу забаненным, а не отказываем — иначе он поймёт, что
+        # обход не сработал, и начнёт искать другой способ
+        previously_banned = await is_banned_identity(session, tg_id)
+
         user = User(
             telegram_id=tg_id,
             role="user",
+            is_banned=previously_banned,
         )
         session.add(user)
         await session.flush()
+        if previously_banned:
+            logger.warning(f"Повторная регистрация забаненного telegram_id={tg_id}")
         # Create empty profile
         profile = Profile(
             user_id=user.id,

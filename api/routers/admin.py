@@ -13,6 +13,7 @@ from middleware.admin_auth import require_admin
 from models.models import (
     User, Profile, Like, Match, Message, Reel, Report, Subscription, AiModerationLog
 )
+from services.ban_memory import forgive, remember_ban
 from services.token_revocation import clear_user_revocation, revoke_all_for_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -269,6 +270,10 @@ async def ban_user(
     target.is_banned = True
     await session.flush()
 
+    # Список забаненных живёт отдельно от пользователя: удаление аккаунта
+    # каскадом стирает бан, и забаненный возвращался тем же Telegram-аккаунтом
+    await remember_ban(session, target.telegram_id, data.reason or "бан админом")
+
     # Бан должен убивать и уже выданные токены: HTTP-запросы отсекаются
     # проверкой is_banned, но открытый WebSocket её не переспрашивает
     await revoke_all_for_user(data.user_id)
@@ -304,6 +309,10 @@ async def unban_user(
 
     target.is_banned = False
     await session.flush()
+
+    # Без этого разбан работал бы только до первого удаления аккаунта: сам
+    # пользователь разбанен, а его Telegram-аккаунт остался в списке
+    await forgive(session, target.telegram_id)
 
     # Иначе отметка отзыва из бана продолжала бы гасить свежие токены
     await clear_user_revocation(data.user_id)
@@ -383,6 +392,7 @@ async def report_action(
         target = target_result.scalar_one_or_none()
         if target:
             target.is_banned = True
+            await remember_ban(session, target.telegram_id, "бан по жалобе")
         report.status = "resolved"
     elif data.action == "dismiss":
         report.status = "dismissed"

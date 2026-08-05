@@ -12,6 +12,7 @@ from database.connection import async_session_factory
 from middleware.auth import verify_access_token
 from models.models import Match, Message, Profile, User
 from services.ws_manager import manager
+from services.ai_moderation import log_moderation, moderate_text
 from services.realtime import publish_bot_event
 from services.push import is_configured, notify_new_message
 from services.token_revocation import is_revoked
@@ -182,6 +183,22 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             image_url = data.get("image_url")
             if not text and not image_url:
                 continue
+
+            # Личный чат — самый объёмный канал, и до сих пор единственный
+            # немодерируемый: bio, текст лайка и сообщения в комнатах
+            # проверяются, а здесь можно было писать что угодно. Заблокировать
+            # отправителя собеседник может, но сообщение он уже прочитал.
+            if text:
+                verdict = await moderate_text(text)
+                await log_moderation(user_id, "chat_message", text, verdict)
+                if verdict["blocked"]:
+                    # Не рвём сокет: человек мог ошибиться формулировкой, а
+                    # разрыв соединения выглядит как поломка приложения
+                    await websocket.send_json({
+                        "type": "rejected",
+                        "reason": "Сообщение нарушает правила",
+                    })
+                    continue
 
             payload = await _save_message(match_id, user_id, text, image_url)
             if payload is None:

@@ -216,6 +216,19 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class BannedIdentity(Base):
+    """Забаненные Telegram-аккаунты — см. api/models/models.py.
+    Список переживает удаление аккаунта, иначе бан обходится удалением."""
+
+    __tablename__ = "dating_banned_identities"
+    __table_args__ = (UniqueConstraint("telegram_id", name="uq_banned_telegram"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    reason: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class SectionOpen(Base):
     """Открытия разделов — см. api/models/models.py."""
 

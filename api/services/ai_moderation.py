@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -49,7 +50,11 @@ async def moderate_text(text: str) -> dict:
         return _keyword_filter(text)
 
     try:
-        response = client.chat.completions.create(
+        # to_thread обязателен: SDK Zhipu синхронный, и прямой вызов
+        # блокирует единственный event loop — на время запроса встаёт весь
+        # сервер, включая чужие чаты и деку
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model="glm-4-flash",
             messages=[
                 {
@@ -100,7 +105,10 @@ async def moderate_image(image_bytes: bytes) -> dict:
 
     try:
         b64 = base64.b64encode(image_bytes).decode("utf-8")
-        response = client.chat.completions.create(
+        # Тот же to_thread: разбор фото у модели дольше текста, и блокировка
+        # loop здесь заметнее всего
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model="glm-4v-flash",
             messages=[
                 {

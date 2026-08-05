@@ -8,6 +8,7 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import User, Report
 from models.schemas import ReportRequest, ReportResponse
+from services.ban_memory import remember_ban
 
 router = APIRouter(prefix="/report", tags=["report"])
 
@@ -91,6 +92,7 @@ async def create_report(
 
     if distinct_reporters >= 5:
         target.is_banned = True
+        await remember_ban(session, target.telegram_id, "автобан по жалобам")
     elif distinct_reporters >= 3:
         result = await session.execute(
             select(Profile).where(Profile.user_id == data.reported_id)

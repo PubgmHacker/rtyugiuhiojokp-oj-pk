@@ -287,6 +287,28 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class BannedIdentity(Base):
+    """Забаненные Telegram-аккаунты — список, который переживает удаление.
+
+    Удаление аккаунта каскадом стирает и баны, и жалобы: забаненный удалял
+    себя, регистрировался тем же Telegram-аккаунтом и приходил чистым.
+    App Store требует настоящего удаления данных (5.1.1(v)), поэтому
+    сохраняем не профиль, а только `telegram_id` и причину — этого хватает,
+    чтобы не пустить обратно, и не хватает, чтобы считаться хранением
+    персональных данных удалённого человека.
+    """
+
+    __tablename__ = "dating_banned_identities"
+    __table_args__ = (
+        UniqueConstraint("telegram_id", name="uq_banned_telegram"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    reason: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class SectionOpen(Base):
     """Открытия разделов — чтобы решать по цифрам, а не по вкусу.
 
