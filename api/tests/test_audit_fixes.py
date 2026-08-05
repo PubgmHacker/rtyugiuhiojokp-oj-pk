@@ -2175,6 +2175,115 @@ asyncio.run(main())
         )
 
 
+def test_бот_не_раздаёт_бесплатно_кто_вас_лайкнул():
+    """Главный платный гейт обходился через бота.
+
+    Мини-апп отдаёт бесплатному пользователю закрытую карточку без имени и
+    фото (`api/routers/likes.py`), а бот слал анкету лайкнувшего целиком и
+    любому — то есть раздавал даром ровно то, что продаётся как Plus-перк
+    («👀 Видно, кто вас лайкнул», bot/services/plans.py).
+
+    Дёргаем настоящий `_after_like` дважды: для бесплатного и для Plus. Имени
+    лайкнувшего в бесплатной ветке быть не должно, а в платной — должно, иначе
+    «починка» свелась бы к поломке функции.
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    бот = Path(__file__).resolve().parents[2] / "bot"
+    python = бот / ".venv" / "bin" / "python"
+    if not python.exists():
+        pytest.skip("venv бота не поднят в этом окружении")
+
+    скрипт = """
+import sys
+sys.path.insert(0, ".")
+import asyncio
+import json
+import handlers.dating as dating
+
+ИМЯ = "Лайкнувший-Пётр"
+
+
+async def _profile(uid):
+    return {"user_id": uid, "display_name": ИМЯ, "photos": [], "bio": "", "age": 30}
+
+
+async def _user_by_id(uid):
+    return {"id": uid, "telegram_id": 555}
+
+
+async def _like(*a, **kw):
+    return {"matched": False}
+
+
+class FakeBot:
+    def __init__(self):
+        self.sent = []
+
+    async def send_message(self, chat_id, text, **kw):
+        self.sent.append(text)
+
+    async def send_photo(self, chat_id, photo, caption=None, **kw):
+        self.sent.append(caption or "")
+
+
+class FakeMessage:
+    async def answer(self, *a, **kw):
+        pass
+
+    async def answer_photo(self, *a, **kw):
+        pass
+
+
+async def прогон(платный):
+    async def _тариф(uid):
+        return платный
+
+    dating.get_profile = _profile
+    dating.get_user_by_id = _user_by_id
+    dating.видно_кто_лайкнул = _тариф
+
+    async def _render(bot, chat_id, profile):
+        await bot.send_message(chat_id, profile["display_name"])
+
+    dating._render_profile_to_chat = _render
+
+    bot = FakeBot()
+    await dating._after_like(
+        FakeMessage(), bot, {"id": "u-me"}, "u-target",
+        {"matched": False}, None, True, "",
+    )
+    return " ".join(bot.sent)
+
+
+async def main():
+    бесплатно = await прогон(False)
+    платно = await прогон(True)
+    print(json.dumps({"free": бесплатно, "paid": платно, "имя": ИМЯ}))
+
+
+asyncio.run(main())
+"""
+
+    результат = subprocess.run(
+        [str(python), "-c", скрипт], cwd=бот, capture_output=True, text=True
+    )
+    if результат.returncode != 0:
+        pytest.skip(f"сигнатура _after_like изменилась: {результат.stderr[-300:]}")
+
+    ответ = json.loads(результат.stdout.strip().splitlines()[-1])
+    имя = ответ["имя"]
+
+    assert имя not in ответ["free"], (
+        "бот показал бесплатному, кто его лайкнул — платный гейт обойдён"
+    )
+    assert имя in ответ["paid"], (
+        "подписчику тоже не показали — гейт не работает, а просто ломает функцию"
+    )
+
+
 # ════════════════════════════════════════════════════════════════
 #  Групповые чаты по интересам
 # ════════════════════════════════════════════════════════════════

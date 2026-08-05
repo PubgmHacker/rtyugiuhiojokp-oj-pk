@@ -154,9 +154,15 @@ async def _notify_user_about_message(bot, receiver_id: str, sender_id: str, text
 
 
 async def _notify_user_about_like(bot, receiver_id: str, liker_id: str):
-    """Уведомить в Telegram о новом лайке из web-приложения (Дайвинчик-механика)."""
+    """Уведомить в Telegram о новом лайке из web-приложения (Дайвинчик-механика).
+
+    Анкету лайкнувшего показываем только на Plus: «кто вас лайкнул» — платный
+    гейт, и в мини-аппе он соблюдается. Этот путь — второй из пары (первый в
+    handlers/dating.py), и раньше он тоже отдавал анкету бесплатно.
+    """
     try:
         from database import get_user_by_id, get_profile
+        from services.plans import видно_кто_лайкнул
 
         receiver = await get_user_by_id(receiver_id)
         if not receiver or not receiver.get("telegram_id"):
@@ -164,6 +170,17 @@ async def _notify_user_about_like(bot, receiver_id: str, liker_id: str):
 
         liker = await get_profile(liker_id)
         if not liker or not liker.get("display_name"):
+            return
+
+        if not await видно_кто_лайкнул(receiver_id):
+            from keyboards import like_locked_kb
+            import texts as T
+
+            await bot.send_message(
+                chat_id=receiver["telegram_id"],
+                text=T.LIKE_LOCKED,
+                reply_markup=like_locked_kb(),
+            )
             return
 
         from handlers.dating import _render_profile_to_chat

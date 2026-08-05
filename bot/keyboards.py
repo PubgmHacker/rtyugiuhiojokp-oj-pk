@@ -174,6 +174,21 @@ def no_more_profiles_kb() -> InlineKeyboardMarkup:
     )
 
 
+def like_locked_kb() -> InlineKeyboardMarkup:
+    """Пришёл лайк, но кто именно — за Plus.
+
+    Кнопка ведёт на витрину подписки, а не в мини-апп: там та же карточка
+    будет закрыта (api/routers/likes.py отдаёт бесплатному `is_locked`), и
+    человек просто прошёл бы круг зря.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⭐ Открыть в Plus", callback_data="premium")],
+            [InlineKeyboardButton(text="← Меню", callback_data="menu")],
+        ]
+    )
+
+
 def report_reasons_kb(target_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

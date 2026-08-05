@@ -84,3 +84,24 @@ def tier_rank(tier: str) -> int:
 
 def plans_for(tier: str) -> list[Plan]:
     return [p for p in PLANS if p.tier == tier]
+
+
+async def видно_кто_лайкнул(user_id: str) -> bool:
+    """Доступно ли этому человеку «кто вас лайкнул».
+
+    Это платный гейт, и он продаётся дословно так: «👀 Видно, кто вас лайкнул»
+    (см. FEATURES выше). В мини-аппе он соблюдается — `api/routers/likes.py`
+    отдаёт бесплатному пользователю карточку без имени и фото. Бот же
+    показывал анкету лайкнувшего целиком и любому, то есть раздавал бесплатно
+    то, что сам же продаёт.
+
+    Живёт здесь, а не в хендлере, потому что путей уведомления два: лайк из
+    бота (`handlers/dating.py`) и лайк из мини-аппа, прилетающий через Redis
+    (`services/redis_subscriber.py`). Ровно на таких парах в этом проекте и
+    разъезжается логика.
+    """
+    from database import get_active_subscription
+
+    sub = await get_active_subscription(user_id)
+    tier = (sub or {}).get("plan") or TIER_FREE
+    return tier_rank(tier) >= tier_rank(TIER_PLUS)

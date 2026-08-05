@@ -14,9 +14,11 @@ from database import (
     create_report, block_user,
 )
 from keyboards import (
-    dating_action_kb, main_kb, no_more_profiles_kb, profile_kb, report_reasons_kb,
+    dating_action_kb, like_locked_kb, main_kb, no_more_profiles_kb, profile_kb,
+    report_reasons_kb,
 )
 from services.moderation import moderate_text, humanize
+from services.plans import видно_кто_лайкнул
 from states import DatingStates
 from texts import profile_card, no_more_profiles, match_notification
 import texts as T
@@ -204,23 +206,36 @@ async def _after_like(
         if not in_registration:
             await _show_next_from_deck(message, db_user["id"], state)
     else:
-        # Дайвинчик-механика: показываем партнёру анкету лайкнувшего
+        # Дайвинчик-механика: сообщаем партнёру, что его лайкнули.
+        # Анкету лайкнувшего показываем только на Plus — это платный гейт
+        # «Видно, кто вас лайкнул», и в мини-аппе он соблюдается
+        # (api/routers/likes.py отдаёт бесплатному карточку без имени и фото)
         partner_user = await get_user_by_id(target_id)
         if partner_user and partner_user.get("telegram_id"):
             my_profile = await get_profile(db_user["id"])
             if my_profile and my_profile.get("display_name"):
+                видно = await видно_кто_лайкнул(target_id)
                 try:
-                    await bot.send_message(
-                        chat_id=partner_user["telegram_id"],
-                        text=(
-                            f"💌 Вам написали вместе с лайком:\n\n<i>{T.escape(note)}</i>"
-                            if note
-                            else "💌 Вы кому-то понравились! Взгляните на анкету:"
-                        ),
-                    )
-                    await _render_profile_to_chat(
-                        bot, partner_user["telegram_id"], my_profile,
-                    )
+                    if not видно:
+                        # Про сам лайк говорим: без этого человек не узнает,
+                        # что у него вообще есть входящие, и платить не за что
+                        await bot.send_message(
+                            chat_id=partner_user["telegram_id"],
+                            text=T.LIKE_LOCKED,
+                            reply_markup=like_locked_kb(),
+                        )
+                    else:
+                        await bot.send_message(
+                            chat_id=partner_user["telegram_id"],
+                            text=(
+                                f"💌 Вам написали вместе с лайком:\n\n<i>{T.escape(note)}</i>"
+                                if note
+                                else "💌 Вы кому-то понравились! Взгляните на анкету:"
+                            ),
+                        )
+                        await _render_profile_to_chat(
+                            bot, partner_user["telegram_id"], my_profile,
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to notify liked user: {e}")
 
