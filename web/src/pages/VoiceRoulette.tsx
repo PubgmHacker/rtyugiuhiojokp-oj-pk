@@ -9,8 +9,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Mic, MicOff, PhoneOff, SkipForward } from "lucide-react";
-import { getIceServers } from "../lib/api";
+import { Flag, Mic, MicOff, PhoneOff, SkipForward } from "lucide-react";
+import { getIceServers, reportUser } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { ScreenHeader } from "../components/ui";
@@ -24,6 +24,10 @@ export default function VoiceRoulette() {
   const [stage, setStage] = useState<Stage>("idle");
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");
+  // Кто на другом конце — иначе пожаловаться не на кого, а голос незнакомца
+  // без кнопки жалобы это то, чего в дейтинге быть не должно
+  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [reported, setReported] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -118,6 +122,8 @@ export default function VoiceRoulette() {
       const data = JSON.parse(event.data);
 
       if (data.type === "matched") {
+        setPartnerId(data.partner_id ?? null);
+        setReported(false);
         const pc = createPeer(sendSignal);
         // Offer шлёт только тот, кого сервер назначил инициатором: иначе оба
         // отправят offer и соединение не соберётся
@@ -164,6 +170,23 @@ export default function VoiceRoulette() {
       setStage((cur) => (cur === "idle" ? cur : "idle"));
     };
   }, [createPeer, teardownCall]);
+
+  const report = useCallback(async () => {
+    if (!partnerId || reported) return;
+    haptic("warning");
+    try {
+      await reportUser(partnerId, "harassment", "Жалоба из голосовой рулетки");
+      setReported(true);
+      setError("Жалоба отправлена — модератор разберётся");
+      // Разрываем звонок: продолжать разговор с тем, на кого пожаловался,
+      // человек почти наверняка не хочет
+      teardownCall();
+      setStage("idle");
+    } catch {
+      haptic("error");
+      setError("Не удалось отправить жалобу");
+    }
+  }, [partnerId, reported, teardownCall]);
 
   const next = useCallback(() => {
     haptic("light");
@@ -238,6 +261,21 @@ export default function VoiceRoulette() {
             >
               <SkipForward size={20} />
             </button>
+
+            {/* Жалоба на голос: без неё разговор с незнакомцем — единственное
+                место в приложении, откуда нельзя сообщить о нарушении */}
+            {partnerId && (
+              <button
+                onClick={report}
+                disabled={reported}
+                aria-label={reported ? "Жалоба отправлена" : "Пожаловаться"}
+                className="w-14 h-14 rounded-full glass-strong flex items-center
+                           justify-center text-warn disabled:opacity-40
+                           active:scale-95 transition-transform"
+              >
+                <Flag size={19} />
+              </button>
+            )}
 
             <button
               onClick={stopAll}

@@ -2677,3 +2677,80 @@ def test_индекс_деки_совпадает_с_условием_выбор
     условие = str(индекс.dialect_options["postgresql"]["where"])
     assert "is_paused" in условие
     assert "is_incognito" in условие
+
+
+# ════════════════════════════════════════════════════════════════
+#  Голосовая рулетка: блокеры аудита
+#  (6 ролей независимо упёрлись в эту фичу с разных сторон)
+# ════════════════════════════════════════════════════════════════
+
+def test_приглашение_доходит_между_инстансами():
+    """Приглашение публиковалось «в комнату» звонка, но на другом инстансе
+    комнаты ещё нет и подписчиков у неё тоже — событие уходило в пустоту, и
+    пара не собиралась. Теперь у каждого свой канал, и ждущий слушает его."""
+    import inspect
+
+    from routers import voice
+    from services import voice as voice_service
+
+    assert hasattr(voice_service, "personal_channel")
+    assert hasattr(voice_service, "invite")
+
+    сокет = inspect.getsource(voice.websocket_roulette)
+    # Ждущий подписан заранее — иначе он не узнает о найденной паре
+    assert "listen_invites" in сокет
+    assert "pubsub.subscribe" in сокет
+    # Мёртвого события "invite", которое никто не слушал, больше нет
+    assert '"invite"' not in сокет
+
+
+def test_подписка_на_приглашения_отменяется():
+    """Слушатель держит соединение к Redis: без отмены оно живёт после
+    закрытия сокета и течёт по одному на каждый заход в рулетку."""
+    import inspect
+
+    from routers import voice
+
+    сокет = inspect.getsource(voice.websocket_roulette)
+    assert "invites_task.cancel()" in сокет
+    assert "pubsub.unsubscribe" in сокет
+
+
+def test_собеседник_известен_и_на_него_можно_пожаловаться():
+    """Разговор с незнакомцем был единственным местом, откуда нельзя сообщить
+    о нарушении: partner_id не доходил до клиента, кнопки не было."""
+    import inspect
+    from pathlib import Path
+
+    from routers import voice
+    from services import voice as voice_service
+
+    # Сервер отдаёт партнёра обеим сторонам
+    assert '"partner_id"' in inspect.getsource(voice.websocket_roulette)
+    assert "partner_id" in inspect.getsource(voice_service.invite)
+
+    клиент = (
+        Path(__file__).resolve().parents[2]
+        / "web" / "src" / "pages" / "VoiceRoulette.tsx"
+    ).read_text(encoding="utf-8")
+    assert "reportUser" in клиент
+    assert "partnerId" in клиент
+
+
+def test_заблокированный_не_попадёт_в_пару():
+    """Человек заблокировал обидчика именно чтобы больше его не встречать —
+    голосом тем более. Но выкидывать заблокированного из очереди нельзя: он
+    ждёт разговора с кем-то другим."""
+    import inspect
+
+    from routers import voice
+    from services.voice import pop_waiting
+
+    подбор = inspect.getsource(pop_waiting)
+    assert "blocked" in подбор
+    # Пропущенных возвращаем в очередь, а не теряем
+    assert "lpush" in подбор
+
+    сокет = inspect.getsource(voice.websocket_roulette)
+    assert "Block.blocker_id == user_id" in сокет
+    assert "Block.blocked_id == user_id" in сокет

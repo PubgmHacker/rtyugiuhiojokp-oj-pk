@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -24,11 +25,14 @@ from sqlalchemy import select
 from database.connection import async_session_factory
 from middleware.auth import get_current_user
 from routers.chat import _ws_auth
-from models.models import User, VoiceCall
+from models.models import Block, User, VoiceCall
 from models.schemas import VoiceIceServers
 from services.ws_manager import manager
+from services.realtime import get_redis
 from services.voice import (
     ICE_SERVERS,
+    invite,
+    personal_channel,
     pop_waiting,
     push_waiting,
     remove_waiting,
@@ -37,12 +41,6 @@ from services.voice import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/voice", tags=["voice"])
-
-#: Живые сокеты по user_id. В памяти процесса — соединение и так привязано к
-#: конкретному инстансу, а искать его на другом незачем: сигналинг идёт через
-#: Redis Pub/Sub, как и остальной realtime.
-_sockets: dict[str, WebSocket] = {}
-
 
 @router.get("/ice-servers", response_model=VoiceIceServers)
 async def get_ice_servers(user: User = Depends(get_current_user)):
@@ -72,10 +70,54 @@ async def websocket_roulette(websocket: WebSocket):
     user_id, _ = auth
 
     await websocket.accept()
-    _sockets[user_id] = websocket
     call_id: str | None = None
     partner_id: str | None = None
     started_at: datetime | None = None
+
+    async def listen_invites() -> None:
+        """Слушать личный канал приглашений.
+
+        Тот, кто ждёт в очереди, узнаёт о найденной паре только так: на его
+        инстансе комнаты звонка ещё нет, и подписаться на неё заранее нельзя —
+        call_id придумывает тот, кто нашёл.
+        """
+        nonlocal call_id, partner_id, started_at
+
+        r = await get_redis()
+        pubsub = r.pubsub()
+        await pubsub.subscribe(personal_channel(user_id))
+        try:
+            async for message in pubsub.listen():
+                if message.get("type") != "message":
+                    continue
+                payload = message.get("data")
+                if isinstance(payload, bytes):
+                    payload = payload.decode()
+                try:
+                    событие = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+                if событие.get("type") != "matched":
+                    continue
+
+                call_id = событие["call_id"]
+                started_at = datetime.now(timezone.utc)
+                await manager.connect(call_id, websocket, user_id)
+                await websocket.send_json(событие)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Слушатель приглашений упал ({user_id}): {e}")
+        finally:
+            # Без отписки утекает соединение к Redis на каждый открытый сокет
+            try:
+                await pubsub.unsubscribe(personal_channel(user_id))
+                await pubsub.close()
+            except Exception:
+                pass
+
+    invites_task = asyncio.create_task(listen_invites())
 
     async def leave_call() -> None:
         """Разорвать текущий звонок и сообщить собеседнику."""
@@ -111,7 +153,21 @@ async def websocket_roulette(websocket: WebSocket):
 
             if action == "find":
                 await leave_call()
-                partner = await pop_waiting(user_id)
+
+                # Заблокированные не должны попадаться в паре — ни в деке, ни
+                # тем более голосом. Список читаем на каждый поиск: за время
+                # сессии человек мог кого-то заблокировать
+                async with async_session_factory() as session:
+                    result = await session.execute(
+                        select(Block.blocked_id).where(Block.blocker_id == user_id)
+                    )
+                    blocked = {row[0] for row in result.all()}
+                    result = await session.execute(
+                        select(Block.blocker_id).where(Block.blocked_id == user_id)
+                    )
+                    blocked |= {row[0] for row in result.all()}
+
+                partner = await pop_waiting(user_id, blocked)
 
                 if partner is None:
                     # Никого нет — встаём сами и ждём
@@ -133,28 +189,21 @@ async def websocket_roulette(websocket: WebSocket):
 
                 # Инициатором offer назначаем того, кто нашёл: иначе оба
                 # отправят offer и соединение не соберётся
-                await websocket.send_json(
-                    {"type": "matched", "call_id": call_id, "initiator": True}
-                )
+                await websocket.send_json({
+                    "type": "matched",
+                    "call_id": call_id,
+                    "initiator": True,
+                    # Кому мы попались — чтобы было на кого жаловаться
+                    "partner_id": partner,
+                })
 
-                partner_ws = _sockets.get(partner)
-                if partner_ws:
-                    await manager.connect(call_id, partner_ws, partner)
-                    await partner_ws.send_json(
-                        {"type": "matched", "call_id": call_id, "initiator": False}
-                    )
-                else:
-                    # Сокет собеседника живёт на другом инстансе — он получит
-                    # событие через Redis, подписавшись на комнату по call_id
-                    await manager.publish(
-                        call_id,
-                        {
-                            "type": "invite",
-                            "call_id": call_id,
-                            "for_user": partner,
-                        },
-                        exclude=websocket,
-                    )
+                # Приглашение уходит в личный канал партнёра, а не «в комнату»:
+                # на другом инстансе комнаты звонка ещё нет и подписчиков у неё
+                # тоже — событие ушло бы в пустоту, и пара не собиралась бы.
+                # Локальный сокет тоже получит его через этот канал: одна
+                # ветка вместо двух, и не бывает случая «работает только
+                # когда оба на одном инстансе»
+                await invite(partner, call_id, user_id)
 
             elif action == "signal" and call_id:
                 # Тело сигнала не разбираем: это SDP и ICE-кандидаты, они
@@ -179,4 +228,10 @@ async def websocket_roulette(websocket: WebSocket):
         # которого будут соединять живых людей
         await remove_waiting(user_id)
         await leave_call()
-        _sockets.pop(user_id, None)
+        # Слушатель приглашений держит подписку на Redis — без отмены она
+        # живёт после закрытия сокета и течёт по соединению на каждый заход
+        invites_task.cancel()
+        try:
+            await invites_task
+        except (asyncio.CancelledError, Exception):
+            pass

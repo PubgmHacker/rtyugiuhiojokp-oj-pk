@@ -57,25 +57,72 @@ async def push_waiting(user_id: str) -> None:
     await r.expire(WAITING_KEY, WAITING_TTL)
 
 
-async def pop_waiting(exclude_user_id: str) -> str | None:
-    """Взять из очереди первого, кто не сам спрашивающий.
+async def pop_waiting(exclude_user_id: str, blocked: set[str] | None = None) -> str | None:
+    """Взять из очереди первого подходящего.
 
     Своего же идентификатора в очереди быть не должно, но проверяем: два
     открытых окна одного человека иначе соединили бы его с самим собой.
+
+    Заблокированные пропускаются и возвращаются в очередь: человек заблокировал
+    обидчика именно чтобы больше его не встречать, и голосом — тем более. Но
+    выкидывать его из очереди нельзя, он ждёт разговора с кем-то другим.
     """
     r = await get_redis()
-    for _ in range(20):
-        candidate = await r.lpop(WAITING_KEY)
-        if candidate is None:
-            return None
-        if isinstance(candidate, bytes):
-            candidate = candidate.decode()
-        if candidate != exclude_user_id:
+    skipped: list[str] = []
+    try:
+        for _ in range(20):
+            candidate = await r.lpop(WAITING_KEY)
+            if candidate is None:
+                return None
+            if isinstance(candidate, bytes):
+                candidate = candidate.decode()
+            if candidate == exclude_user_id:
+                continue
+            if blocked and candidate in blocked:
+                skipped.append(candidate)
+                continue
             return candidate
-    return None
+        return None
+    finally:
+        # Возвращаем пропущенных в начало: они ждали дольше остальных
+        if skipped:
+            await r.lpush(WAITING_KEY, *reversed(skipped))
+            await r.expire(WAITING_KEY, WAITING_TTL)
 
 
 async def remove_waiting(user_id: str) -> None:
     """Убрать из очереди — при отмене или обрыве сокета."""
     r = await get_redis()
     await r.lrem(WAITING_KEY, 0, user_id)
+
+
+def personal_channel(user_id: str) -> str:
+    """Личный канал приглашений.
+
+    Нужен потому, что второй участник может сидеть на другом инстансе API: там
+    нет ни его сокета, ни комнаты звонка, и опубликовать событие «в комнату»
+    некуда — на неё никто не подписан. Поэтому ждущий подписывается на канал по
+    своему id заранее, ещё вставая в очередь.
+    """
+    return f"dating:voice:invite:{user_id}"
+
+
+async def invite(user_id: str, call_id: str, partner_id: str) -> None:
+    """Позвать человека в звонок по его личному каналу.
+
+    `partner_id` передаём сразу: без него собеседник анонимен, и пожаловаться
+    на него нельзя — а голос незнакомца без кнопки жалобы это то, чего в
+    дейтинге быть не должно.
+    """
+    import json
+
+    r = await get_redis()
+    await r.publish(
+        personal_channel(user_id),
+        json.dumps({
+            "type": "matched",
+            "call_id": call_id,
+            "initiator": False,
+            "partner_id": partner_id,
+        }),
+    )
