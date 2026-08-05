@@ -50,7 +50,9 @@ class Profile(Base):
         Index(
             "ix_profile_sample",
             "sample_key",
-            postgresql_where=text("NOT is_incognito AND display_name <> ''"),
+            postgresql_where=text(
+                "NOT is_incognito AND NOT is_paused AND display_name <> ''"
+            ),
         ),
         Index(
             "ix_profile_subculture",
@@ -80,6 +82,8 @@ class Profile(Base):
     mbti: Mapped[str] = mapped_column(String, default="")
     height_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_incognito: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Пауза аккаунта — отдельно от платного инкогнито, см. api/models/models.py
+    is_paused: Mapped[bool] = mapped_column(Boolean, default=False)
     # Тонкие настройки приватности — см. api/models/models.py
     hide_age: Mapped[bool] = mapped_column(Boolean, default=False)
     hide_distance: Mapped[bool] = mapped_column(Boolean, default=False)

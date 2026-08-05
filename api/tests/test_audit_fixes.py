@@ -2617,3 +2617,63 @@ def test_удаление_аккаунта_остаётся_полным():
     assert колонки == {"id", "telegram_id", "reason", "created_at"}
     # Ничего личного: ни имени, ни фото, ни города
     assert not (колонки & {"display_name", "photos", "bio", "city", "birth_date"})
+
+
+def test_пауза_и_инкогнито_разные_поля():
+    """Команда /pause в боте бесплатно включала is_incognito — то, что в
+    мини-аппе стоит 149 руб и требует Plus. Смыслы разные: инкогнито платное,
+    пауза — базовое право уйти из поиска."""
+    import inspect
+    from pathlib import Path
+
+    from models.models import Profile
+
+    assert "is_paused" in Profile.__table__.columns
+
+    бот = (
+        Path(__file__).resolve().parents[2] / "bot" / "database" / "connection.py"
+    ).read_text(encoding="utf-8")
+
+    начало = бот.index("async def set_profile_hidden")
+    конец = бот.index("async def is_profile_hidden")
+    # Только исполняемые строки: в комментарии инкогнито упоминается по делу —
+    # там объясняется, почему поля разные
+    пауза = "\n".join(
+        строка
+        for строка in бот[начало:конец].splitlines()
+        if not строка.strip().startswith(("#", '"""', "*"))
+    )
+    assert "profile.is_paused = hidden" in пауза
+    assert "profile.is_incognito" not in пауза, "/pause снова включает платную функцию"
+
+    # Из выдачи убирают оба флага — иначе пауза перестала бы работать
+    from services import matching
+
+    выборка = inspect.getsource(matching._sample_candidates)
+    assert "is_paused" in выборка and "is_incognito" in выборка
+
+
+def test_пауза_учтена_во_всех_публичных_разделах():
+    """Тот же класс ошибки, что с инкогнито: новый флаг легко забыть в
+    половине мест."""
+    import inspect
+
+    from routers import leaderboard, photo_ratings, reels
+
+    for модуль in (leaderboard, photo_ratings, reels):
+        assert "is_paused" in inspect.getsource(модуль), (
+            f"{модуль.__name__}: пауза не учтена"
+        )
+
+
+def test_индекс_деки_совпадает_с_условием_выборки():
+    """Частичный индекс с прежним условием выборка просто не использовала бы —
+    дека вернулась бы к полному сканированию таблицы."""
+    from models.models import Profile
+
+    индекс = next(
+        i for i in Profile.__table__.indexes if i.name == "ix_profile_sample"
+    )
+    условие = str(индекс.dialect_options["postgresql"]["where"])
+    assert "is_paused" in условие
+    assert "is_incognito" in условие

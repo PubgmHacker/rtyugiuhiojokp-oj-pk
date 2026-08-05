@@ -144,7 +144,10 @@ async def _sample_candidates(
     """
     base_filters = [
         User.is_banned == False,
+        # Инкогнито и пауза убирают из деки одинаково, но это разные вещи:
+        # инкогнито — платная функция Plus, пауза — базовое право уйти
         not_(Profile.is_incognito),
+        not_(Profile.is_paused),
         Profile.display_name != "",
         *(extra_filters or []),
     ]

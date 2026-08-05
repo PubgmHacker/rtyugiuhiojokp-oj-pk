@@ -117,12 +117,13 @@ async def list_reels(
     conditions = [
         Reel.is_hidden == False,  # noqa: E712
         User.is_banned == False,  # noqa: E712
-        # Инкогнито убирает из ленты и ролики: иначе платная настройка
+        # Инкогнито и пауза убирают из ленты и ролики: иначе платная настройка
         # прячет анкету из деки, а видео с тем же лицом и именем остаётся
         # на виду — обещание «вас не видят» не выполнено.
-        # NULL при outer join означает «анкеты нет», а не «инкогнито»:
+        # NULL при outer join означает «анкеты нет», а не «скрыт»:
         # без is_(None) такой ролик молча выпал бы из ленты.
         or_(Profile.is_incognito.is_(None), Profile.is_incognito == False),  # noqa: E712
+        or_(Profile.is_paused.is_(None), Profile.is_paused == False),  # noqa: E712
     ]
     if before:
         try:

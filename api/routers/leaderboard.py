@@ -60,7 +60,11 @@ async def _ranked_rows(
         # от самого себя
         or_(
             Like.liked_id == viewer_id,
-            and_(not_(Profile.is_incognito), not_(Profile.hide_from_visitors)),
+            and_(
+                not_(Profile.is_incognito),
+                not_(Profile.is_paused),
+                not_(Profile.hide_from_visitors),
+            ),
         ),
     ]
     if hidden:

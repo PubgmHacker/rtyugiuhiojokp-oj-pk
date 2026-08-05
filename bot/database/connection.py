@@ -200,10 +200,12 @@ async def get_referral_count(user_id: str) -> int:
 # ════════════════════════════════════════════════════════════════
 
 async def set_profile_hidden(user_id: str, hidden: bool) -> None:
-    """Скрыть анкету из поиска или вернуть её.
+    """Пауза аккаунта: скрыть анкету из поиска или вернуть её.
 
-    Используем то же поле, что и режим инкогнито: выборка деки уже
-    фильтрует по нему, отдельный флаг заводить не нужно.
+    Пишем в `is_paused`, а не в `is_incognito`. Из деки убирают оба флага, но
+    смыслы разные: инкогнито — платная функция Plus, пауза — базовое право
+    уйти. Пока они делили одно поле, команда /pause бесплатно включала то, что
+    в мини-аппе стоит денег.
     """
     cls = _session_cls()
     async with cls() as session:
@@ -213,14 +215,16 @@ async def set_profile_hidden(user_id: str, hidden: bool) -> None:
             )
             profile = result.scalar_one_or_none()
             if profile:
-                profile.is_incognito = hidden
+                profile.is_paused = hidden
 
 
 async def is_profile_hidden(user_id: str) -> bool:
+    """На паузе ли анкета. Инкогнито здесь не смотрим: это другая функция,
+    и /resume не должен снимать платную настройку."""
     cls = _session_cls()
     async with cls() as session:
         result = await session.execute(
-            select(Profile.is_incognito).where(Profile.user_id == user_id)
+            select(Profile.is_paused).where(Profile.user_id == user_id)
         )
         return bool(result.scalar())
 
@@ -605,7 +609,9 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
 
         filters = [
             User.is_banned == False,
+            # Инкогнито и пауза убирают из деки одинаково — см. api/models
             Profile.is_incognito == False,
+            Profile.is_paused == False,
             Profile.display_name != "",  # пустые анкеты не показываем
             Profile.user_id.notin_(exclude_ids) if exclude_ids else True,
         ]

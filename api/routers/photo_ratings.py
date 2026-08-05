@@ -62,6 +62,7 @@ async def get_rating_queue(
     conditions = [
         User.is_banned == False,  # noqa: E712 — SQL-выражение
         not_(Profile.is_incognito),
+        not_(Profile.is_paused),
         Profile.display_name != "",
     ]
     if exclude:

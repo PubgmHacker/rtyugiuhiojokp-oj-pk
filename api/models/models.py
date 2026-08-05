@@ -88,7 +88,9 @@ class Profile(Base):
         Index(
             "ix_profile_sample",
             "sample_key",
-            postgresql_where=text("NOT is_incognito AND display_name <> ''"),
+            postgresql_where=text(
+                "NOT is_incognito AND NOT is_paused AND display_name <> ''"
+            ),
         ),
         # Нишевые фильтры: в индексе держим только заполненные значения —
         # большинство анкет субкультуру и цель не укажет, искать будут по тем,
@@ -124,10 +126,17 @@ class Profile(Base):
     #: Тип личности MBTI («INFJ» и т.п.). Пусто — не указан.
     mbti: Mapped[str] = mapped_column(String, default="")
     height_cm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    # Полное скрытие из выдачи. Флаг перегружен по смыслу: им же работают
-    # пауза аккаунта (`set_profile_hidden`) и автоскрытие по жалобам, поэтому
-    # тонкие настройки приватности ниже сделаны отдельными полями.
+    # Полное скрытие из выдачи. Флаг перегружен по смыслу: им же работает
+    # автоскрытие по жалобам, поэтому тонкие настройки приватности ниже
+    # сделаны отдельными полями.
     is_incognito: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Пауза аккаунта: человек сам убрал анкету из поиска.
+    #:
+    #: Отдельно от `is_incognito`, хотя из деки убирают оба. Инкогнито — платная
+    #: функция Plus («вас видят только те, кого лайкнули вы»), а пауза — базовое
+    #: право уйти, и брать за него деньги нельзя. Пока они делили одно поле,
+    #: команда /pause в боте бесплатно давала то, что в мини-аппе стоит денег.
+    is_paused: Mapped[bool] = mapped_column(Boolean, default=False)
     #: Не показывать возраст в карточке. Подбор по возрасту продолжает
     #: работать — иначе анкета выпала бы из фильтров у всех.
     hide_age: Mapped[bool] = mapped_column(Boolean, default=False)
