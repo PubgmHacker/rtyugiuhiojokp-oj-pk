@@ -110,7 +110,13 @@ async def get_matches(
             id=partner_id,
             display_name=profile.display_name if profile else "",
             bio=profile.bio if profile else "",
-            age=_calc_age(profile.birth_date) if profile else None,
+            # «Скрыть возраст» действует и в списке чатов: настройка обещает
+            # скрыть возраст от всех, а не только от тех, кто ещё не мэтч
+            age=(
+                None
+                if (profile and profile.hide_age) or not profile
+                else _calc_age(profile.birth_date)
+            ),
             city=profile.city if profile else "",
             photos=as_list(profile.photos) if profile else [],
             interests=as_list(profile.interests) if profile else [],

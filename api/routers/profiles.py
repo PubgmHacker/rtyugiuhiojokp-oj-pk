@@ -67,7 +67,9 @@ def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
         display_name=profile.display_name or "",
         bio=profile.bio or "",
         gender=profile.gender or "other",
-        age=_calc_age(profile.birth_date),
+        # Настройка «скрыть возраст» действует и здесь: этот хелпер отдаёт
+        # чужую анкету в разделе «Гости»
+        age=None if profile.hide_age else _calc_age(profile.birth_date),
         city=profile.city or "",
         photos=as_list(profile.photos),
         interests=as_list(profile.interests),

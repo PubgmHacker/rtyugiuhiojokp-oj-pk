@@ -2435,3 +2435,54 @@ def test_вкладка_ещё_вместо_отдельной_вкладки_р
     more = (web / "pages" / "More.tsx").read_text(encoding="utf-8")
     for путь in ("/reels", "/rooms", "/voice", "/cases", "/photo-ratings"):
         assert путь in more, f"{путь} потерялся — из «Ещё» в него не попасть"
+
+
+# ════════════════════════════════════════════════════════════════
+#  Приватность действует ВО ВСЕХ местах, а не только в деке
+#  (аудит 05.08.2026: hide_age работал в одной точке из четырёх,
+#   инкогнито не работало в видео-ленте)
+# ════════════════════════════════════════════════════════════════
+
+def test_скрытый_возраст_скрыт_везде_где_видно_чужую_анкету():
+    """Прежний тест проверял только деку — и пропустил три места, где возраст
+    отдавался в обход настройки. Настройка обещает «скрыто», значит скрыто
+    должно быть и в лайках, и в чатах, и в «Гостях»."""
+    import inspect
+
+    from routers import likes, matches, profiles
+    from services import matching
+
+    места = {
+        "дека": inspect.getsource(matching.get_deck_profiles),
+        "кто лайкнул": inspect.getsource(likes._profile_to_user),
+        "список чатов": inspect.getsource(matches.get_matches),
+        "гости": inspect.getsource(profiles._deck_like_profile),
+    }
+    for имя, исходник in места.items():
+        assert "hide_age" in исходник, f"{имя}: возраст отдаётся в обход настройки"
+
+
+def test_инкогнито_убирает_и_ролики_из_ленты():
+    """Инкогнито — платная функция Plus. Если она прячет анкету из деки, но
+    оставляет видео с тем же лицом в общей ленте, обещание не выполнено."""
+    import inspect
+
+    from routers import reels
+
+    исходник = inspect.getsource(reels.list_reels)
+    assert "Profile.is_incognito" in исходник
+    # Outer join: NULL означает «анкеты нет», а не «инкогнито» — без этой
+    # проверки ролик без заполненной анкеты молча выпал бы из ленты
+    assert "is_(None)" in исходник
+
+
+def test_все_публичные_разделы_уважают_инкогнито():
+    """Разделов, где видно чужие анкеты, стало много — проверяем разом, чтобы
+    следующий новый не забыли."""
+    import inspect
+
+    from routers import leaderboard, photo_ratings, reels
+
+    for модуль in (leaderboard, photo_ratings, reels):
+        исходник = inspect.getsource(модуль)
+        assert "is_incognito" in исходник, f"{модуль.__name__}: инкогнито не учтено"

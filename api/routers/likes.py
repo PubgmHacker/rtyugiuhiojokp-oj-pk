@@ -63,7 +63,10 @@ def _profile_to_user(
         display_name=profile.display_name or "",
         bio=profile.bio or "",
         gender=profile.gender or "other",
-        age=_calc_age(profile.birth_date),
+        # Настройка «скрыть возраст» действует всюду, где видно чужую анкету,
+        # а не только в деке: иначе интерфейс говорит «скрыто», а любой, кто
+        # вас лайкнул, возраст всё равно видит
+        age=None if profile.hide_age else _calc_age(profile.birth_date),
         city=profile.city or "",
         photos=as_list(profile.photos),
         interests=as_list(profile.interests),

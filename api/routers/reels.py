@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import and_, delete, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -114,7 +114,16 @@ async def list_reels(
     result = await session.execute(select(Block.blocker_id).where(Block.blocked_id == user.id))
     hidden_authors |= {row[0] for row in result.all()}
 
-    conditions = [Reel.is_hidden == False, User.is_banned == False]  # noqa: E712
+    conditions = [
+        Reel.is_hidden == False,  # noqa: E712
+        User.is_banned == False,  # noqa: E712
+        # Инкогнито убирает из ленты и ролики: иначе платная настройка
+        # прячет анкету из деки, а видео с тем же лицом и именем остаётся
+        # на виду — обещание «вас не видят» не выполнено.
+        # NULL при outer join означает «анкеты нет», а не «инкогнито»:
+        # без is_(None) такой ролик молча выпал бы из ленты.
+        or_(Profile.is_incognito.is_(None), Profile.is_incognito == False),  # noqa: E712
+    ]
     if before:
         try:
             conditions.append(Reel.created_at < datetime.fromisoformat(before))
@@ -124,6 +133,9 @@ async def list_reels(
     result = await session.execute(
         select(Reel)
         .join(User, Reel.user_id == User.id)
+        # Анкета нужна только ради проверки инкогнито — outer join, чтобы
+        # ролик без заполненной анкеты не выпал из ленты молча
+        .outerjoin(Profile, Profile.user_id == Reel.user_id)
         .where(and_(*conditions))
         .order_by(desc(Reel.created_at))
         # Берём с запасом: часть отсеется по блокировкам уже здесь
