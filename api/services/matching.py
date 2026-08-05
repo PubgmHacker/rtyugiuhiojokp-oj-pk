@@ -12,6 +12,7 @@ from config import get_settings
 from models.models import User, Profile, Like, Block, Subscription, Referral
 from models.schemas import DeckProfile
 from services.ai_matchmaker import score_match
+from services.public_profile import возраст_из_даты, публичный_возраст
 from utils import as_list
 
 settings = get_settings()
@@ -20,16 +21,6 @@ settings = get_settings()
 #: в баллах за интересы, слагаемое — чтобы буст работал и у пустой анкеты.
 BOOST_MULTIPLIER = 3.0
 BOOST_BONUS = 40.0
-
-
-def _calculate_age(birth_date: Optional[datetime]) -> Optional[int]:
-    if not birth_date:
-        return None
-    now = datetime.now()
-    age = now.year - birth_date.year
-    if (now.month, now.day) < (birth_date.month, birth_date.day):
-        age -= 1
-    return age
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
@@ -251,7 +242,7 @@ async def get_deck_profiles(
 
     # Filter by preferences and build deck
     deck: list[DeckProfile] = []
-    my_age = _calculate_age(my_profile.birth_date) if my_profile else None
+    my_age = возраст_из_даты(my_profile.birth_date) if my_profile else None
     my_interests_pre = set(as_list(my_profile.interests)) if my_profile else set()
 
     for profile in profiles:
@@ -261,7 +252,7 @@ async def get_deck_profiles(
                 continue
 
         # Age preference filter
-        profile_age = _calculate_age(profile.birth_date)
+        profile_age = возраст_из_даты(profile.birth_date)
         if my_profile and my_age and profile_age:
             if profile_age < my_profile.age_min or profile_age > my_profile.age_max:
                 continue
@@ -313,7 +304,7 @@ async def get_deck_profiles(
         deck.append(DeckProfile(
             id=profile.user_id,
             display_name=profile.display_name or "",
-            age=None if profile.hide_age else profile_age,
+            age=публичный_возраст(profile),
             city=profile.city or "",
             bio=profile.bio or "",
             photos=as_list(profile.photos),

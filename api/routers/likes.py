@@ -21,6 +21,7 @@ from models.schemas import (
 from services.realtime import publish_match, publish_new_like, publish_new_match_for_bot
 from services.ai_matchmaker import score_match
 from services.ai_moderation import log_moderation, moderate_text
+from services.public_profile import публичный_возраст
 from services.premium import current_tier, is_premium as _is_premium
 from services.plans import superlikes_for, tier_allows
 from services.push import notify_new_match
@@ -43,16 +44,6 @@ async def _find_match(session: AsyncSession, a: str, b: str) -> Optional[Match]:
     return result.scalar_one_or_none()
 
 
-def _calc_age(birth_date) -> Optional[int]:
-    if not birth_date:
-        return None
-    now = datetime.now()
-    age = now.year - birth_date.year
-    if (now.month, now.day) < (birth_date.month, birth_date.day):
-        age -= 1
-    return age
-
-
 def _profile_to_user(
     profile: Optional[Profile], user_id: str, like_message: str = ""
 ) -> UserProfile:
@@ -66,7 +57,7 @@ def _profile_to_user(
         # Настройка «скрыть возраст» действует всюду, где видно чужую анкету,
         # а не только в деке: иначе интерфейс говорит «скрыто», а любой, кто
         # вас лайкнул, возраст всё равно видит
-        age=None if profile.hide_age else _calc_age(profile.birth_date),
+        age=публичный_возраст(profile),
         city=profile.city or "",
         photos=as_list(profile.photos),
         interests=as_list(profile.interests),

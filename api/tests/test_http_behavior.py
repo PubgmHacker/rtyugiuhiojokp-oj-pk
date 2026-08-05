@@ -745,6 +745,65 @@ async def test_нарушение_в_последнем_кадре_блокир�
     assert not session.added, "заблокированный ролик всё равно сохранён в базу"
 
 
+async def test_скрытый_возраст_не_приходит_в_видео_ленте(app):
+    """Пятая копия расчёта возраста отдавала его мимо `hide_age`.
+
+    Настройку чинили в четырёх местах, а в ленте роликов забыли — и тесты
+    этого не заметили, потому что проверяли слово в исходнике, а не ответ.
+    Здесь настоящий запрос: смотрим, что в JSON возраста нет.
+    """
+    ролик = SimpleNamespace(
+        id="r1", user_id="u-author",
+        video_url="https://example.test/v.mp4",
+        cover_url="https://example.test/c.jpg",
+        caption="подпись", is_hidden=False,
+        likes_count=0, comments_count=0, views_count=0,
+        created_at=datetime.now(timezone.utc),
+    )
+    session = _Session([
+        _Result(rows=[]),                                   # кого я заблокировал
+        _Result(rows=[]),                                   # кто заблокировал меня
+        _Result(rows=[ролик]),                              # сама лента
+        _Result(scalar=_profile("u-author", hide_age=True)),  # анкета автора
+        _Result(scalar=None),                               # мой лайк на ролике
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/reels")
+
+    assert r.status_code == 200, r.text
+    (карточка,) = r.json()["reels"]
+    assert карточка["author_age"] is None, "возраст утёк в ленте роликов"
+    # Скрыли возраст, а не автора целиком
+    assert карточка["author_name"] == "Имя-u-author"
+
+
+async def test_возраст_виден_в_ленте_если_его_не_прятали(app):
+    """Обратная сторона: иначе «починка» свелась бы к тому, что возраст
+    пропал у всех, и подмены никто бы не заметил."""
+    ролик = SimpleNamespace(
+        id="r1", user_id="u-author",
+        video_url="https://example.test/v.mp4",
+        cover_url="https://example.test/c.jpg",
+        caption="подпись", is_hidden=False,
+        likes_count=0, comments_count=0, views_count=0,
+        created_at=datetime.now(timezone.utc),
+    )
+    session = _Session([
+        _Result(rows=[]),
+        _Result(rows=[]),
+        _Result(rows=[ролик]),
+        _Result(scalar=_profile("u-author", hide_age=False)),
+        _Result(scalar=None),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/reels")
+
+    (карточка,) = r.json()["reels"]
+    assert карточка["author_age"] is not None, "возраст пропал у всех подряд"
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

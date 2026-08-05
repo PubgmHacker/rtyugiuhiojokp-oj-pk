@@ -38,6 +38,7 @@ from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text
 from services.plans import BOOST_MINUTES, boosts_per_day, tier_allows
 from services.premium import current_tier, is_premium as _is_premium
+from services.public_profile import возраст_из_даты, публичный_возраст
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
 from utils import as_list
@@ -46,16 +47,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 settings = get_settings()
-
-
-def _calc_age(birth_date: Optional[datetime]) -> Optional[int]:
-    if not birth_date:
-        return None
-    now = datetime.now()
-    age = now.year - birth_date.year
-    if (now.month, now.day) < (birth_date.month, birth_date.day):
-        age -= 1
-    return age
 
 
 def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
@@ -69,7 +60,7 @@ def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
         gender=profile.gender or "other",
         # Настройка «скрыть возраст» действует и здесь: этот хелпер отдаёт
         # чужую анкету в разделе «Гости»
-        age=None if profile.hide_age else _calc_age(profile.birth_date),
+        age=публичный_возраст(profile),
         city=profile.city or "",
         photos=as_list(profile.photos),
         interests=as_list(profile.interests),
@@ -238,12 +229,8 @@ async def get_my_profile(
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))
     profile = result.scalar_one_or_none()
 
-    age = None
-    if profile and profile.birth_date:
-        now = datetime.now()
-        age = now.year - profile.birth_date.year
-        if (now.month, now.day) < (profile.birth_date.month, profile.birth_date.day):
-            age -= 1
+    # Своя анкета: hide_age прячет возраст от других, а не от владельца
+    age = возраст_из_даты(profile.birth_date) if profile else None
 
     return UserProfile(
         id=user.id,
@@ -339,12 +326,8 @@ async def update_my_profile(
 
     await session.flush()
 
-    age = None
-    if profile.birth_date:
-        now = datetime.now()
-        age = now.year - profile.birth_date.year
-        if (now.month, now.day) < (profile.birth_date.month, profile.birth_date.day):
-            age -= 1
+    # Своя анкета — возраст показываем владельцу всегда
+    age = возраст_из_даты(profile.birth_date)
 
     return UserProfile(
         id=user.id,

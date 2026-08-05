@@ -46,6 +46,7 @@ from routers.rooms import check_flood
 from services.ai_moderation import log_moderation, moderate_image, moderate_text
 from services.chat_delivery import REEL_FALLBACK_TEXT, fan_out, save_message
 from services.image_sanitizer import ImageRejected, sanitize_image
+from services.public_profile import публичный_возраст
 from services.r2_storage import delete_photo_from_r2, upload_photo_to_r2
 from utils import as_list
 
@@ -94,12 +95,9 @@ async def _to_out(
     )
     liked = result.scalar_one_or_none() is not None
 
-    age: Optional[int] = None
-    if profile and profile.birth_date:
-        now = datetime.now()
-        age = now.year - profile.birth_date.year
-        if (now.month, now.day) < (profile.birth_date.month, profile.birth_date.day):
-            age -= 1
+    # Возраст — через общий помощник: он уважает hide_age. Своя копия формулы
+    # здесь как раз и отдавала возраст мимо настройки
+    age = публичный_возраст(profile)
 
     return ReelOut(
         id=reel.id,

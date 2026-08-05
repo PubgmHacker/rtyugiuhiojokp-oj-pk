@@ -12,19 +12,10 @@ from models.models import User, Profile, Like, Match, Message, Reel
 from models.schemas import MatchResponse, UserProfile
 from services.ai_matchmaker import generate_icebreakers
 from services.chat_delivery import reel_preview
+from services.public_profile import публичный_возраст
 from utils import as_list
 
 router = APIRouter(prefix="/matches", tags=["matches"])
-
-
-def _calc_age(birth_date):
-    if not birth_date:
-        return None
-    now = datetime.now()
-    age = now.year - birth_date.year
-    if (now.month, now.day) < (birth_date.month, birth_date.day):
-        age -= 1
-    return age
 
 
 async def _get_own_match(session: AsyncSession, match_id: str, user_id: str) -> Match:
@@ -113,11 +104,7 @@ async def get_matches(
             bio=profile.bio if profile else "",
             # «Скрыть возраст» действует и в списке чатов: настройка обещает
             # скрыть возраст от всех, а не только от тех, кто ещё не мэтч
-            age=(
-                None
-                if (profile and profile.hide_age) or not profile
-                else _calc_age(profile.birth_date)
-            ),
+            age=публичный_возраст(profile),
             city=profile.city if profile else "",
             photos=as_list(profile.photos) if profile else [],
             interests=as_list(profile.interests) if profile else [],
