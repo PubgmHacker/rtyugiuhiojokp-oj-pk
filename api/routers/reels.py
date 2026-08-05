@@ -17,16 +17,25 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile,
+)
 from sqlalchemy import and_, delete, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import Block, Profile, Reel, ReelLike, User
-from models.schemas import ReelOut, ReelsOut
-from services.ai_moderation import log_moderation, moderate_image
+from models.models import Block, Profile, Reel, ReelComment, ReelLike, Report, User
+from models.schemas import (
+    ReelCommentOut,
+    ReelComments,
+    ReelCommentSend,
+    ReelOut,
+    ReelReport,
+    ReelsOut,
+)
+from services.ai_moderation import log_moderation, moderate_image, moderate_text
 from services.image_sanitizer import ImageRejected, sanitize_image
 from services.r2_storage import delete_photo_from_r2, upload_photo_to_r2
 from utils import as_list
@@ -90,6 +99,8 @@ async def _to_out(
         cover_url=reel.cover_url,
         caption=reel.caption,
         likes_count=reel.likes_count,
+        comments_count=reel.comments_count,
+        views_count=reel.views_count,
         liked_by_me=liked,
         is_mine=reel.user_id == viewer_id,
         is_hidden=reel.is_hidden,
@@ -229,8 +240,6 @@ async def create_reel(
         raise HTTPException(status_code=422, detail="Видео нарушает правила")
 
     if caption.strip():
-        from services.ai_moderation import moderate_text
-
         text_verdict = await moderate_text(caption)
         await log_moderation(user.id, "reel_caption", caption, text_verdict)
         if text_verdict["blocked"]:
@@ -325,3 +334,267 @@ async def delete_reel(
 
     await session.execute(delete(Reel).where(Reel.id == reel_id))
     await session.commit()
+
+
+# ── Комментарии ─────────────────────────────────────────────────
+#
+# Здесь ролики и превращаются в знакомства: под видео написать проще, чем в
+# личку первым. Без этого лента остаётся просмотром.
+
+#: Антифлуд по комментариям: лимит в middleware общий по пути, а этот — про
+#: поведение под одним роликом.
+COMMENTS_PER_MINUTE = 5
+
+
+@router.get("/{reel_id}/comments", response_model=ReelComments)
+async def list_comments(
+    reel_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    """Комментарии к ролику, свежие снизу.
+
+    Комментарии заблокированных не показываем: человек заблокировал обидчика
+    именно чтобы его не видеть, и лента роликов не исключение.
+    """
+    result = await session.execute(select(Reel).where(Reel.id == reel_id))
+    reel = result.scalar_one_or_none()
+    if not reel or (reel.is_hidden and reel.user_id != user.id):
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+
+    result = await session.execute(select(Block.blocked_id).where(Block.blocker_id == user.id))
+    hidden = {row[0] for row in result.all()}
+    result = await session.execute(select(Block.blocker_id).where(Block.blocked_id == user.id))
+    hidden |= {row[0] for row in result.all()}
+
+    result = await session.execute(
+        select(ReelComment)
+        .where(and_(
+            ReelComment.reel_id == reel_id,
+            ReelComment.is_hidden == False,  # noqa: E712
+        ))
+        .order_by(desc(ReelComment.created_at))
+        .limit(limit * 2)
+    )
+    rows = [c for c in result.scalars().all() if c.user_id not in hidden][:limit]
+
+    profiles: dict[str, Profile] = {}
+    if rows:
+        result = await session.execute(
+            select(Profile).where(Profile.user_id.in_({c.user_id for c in rows}))
+        )
+        profiles = {p.user_id: p for p in result.scalars().all()}
+
+    # Разворачиваем: запрашивали свежие сверху, а читать удобнее снизу вверх
+    rows.reverse()
+
+    return ReelComments(
+        comments=[
+            ReelCommentOut(
+                id=c.id,
+                author_id=c.user_id,
+                author_name=(profiles[c.user_id].display_name if c.user_id in profiles else ""),
+                author_photo=(
+                    as_list(profiles[c.user_id].photos)[0]
+                    if c.user_id in profiles and as_list(profiles[c.user_id].photos)
+                    else ""
+                ),
+                text=c.text,
+                is_mine=c.user_id == user.id,
+                created_at=c.created_at,
+            )
+            for c in rows
+        ]
+    )
+
+
+@router.post("/{reel_id}/comments", response_model=ReelCommentOut, status_code=201)
+async def add_comment(
+    reel_id: str,
+    data: ReelCommentSend,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Написать комментарий под роликом."""
+    text = data.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Пустой комментарий")
+
+    result = await session.execute(select(Reel).where(Reel.id == reel_id))
+    reel = result.scalar_one_or_none()
+    if not reel or reel.is_hidden:
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+
+    # Автор ролика мог заблокировать этого человека — под своим видео он его
+    # видеть не должен
+    result = await session.execute(
+        select(Block.id).where(or_(
+            and_(Block.blocker_id == reel.user_id, Block.blocked_id == user.id),
+            and_(Block.blocker_id == user.id, Block.blocked_id == reel.user_id),
+        ))
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Комментировать нельзя")
+
+    since = datetime.now(timezone.utc) - timedelta(minutes=1)
+    result = await session.execute(
+        select(func.count(ReelComment.id)).where(and_(
+            ReelComment.user_id == user.id,
+            ReelComment.created_at >= since,
+        ))
+    )
+    if (result.scalar() or 0) >= COMMENTS_PER_MINUTE:
+        raise HTTPException(status_code=429, detail="Слишком много комментариев подряд")
+
+    # Комментарий виден всем, кто смотрит ролик — модерируем как публичный текст
+    verdict = await moderate_text(text)
+    await log_moderation(user.id, "reel_comment", text, verdict)
+    if verdict["blocked"]:
+        raise HTTPException(status_code=422, detail="Комментарий нарушает правила")
+
+    comment = ReelComment(reel_id=reel_id, user_id=user.id, text=text)
+    session.add(comment)
+    reel.comments_count += 1
+    await session.flush()
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    out = ReelCommentOut(
+        id=comment.id,
+        author_id=user.id,
+        author_name=profile.display_name if profile else "",
+        author_photo=(as_list(profile.photos)[0] if profile and as_list(profile.photos) else ""),
+        text=comment.text,
+        is_mine=True,
+        created_at=comment.created_at,
+    )
+    await session.commit()
+    return out
+
+
+@router.delete("/{reel_id}/comments/{comment_id}", status_code=204)
+async def delete_comment(
+    reel_id: str,
+    comment_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Удалить комментарий.
+
+    Может автор комментария и владелец ролика: под своим видео человек должен
+    иметь право убрать чужую грубость, не дожидаясь модератора.
+    """
+    result = await session.execute(
+        select(ReelComment).where(and_(
+            ReelComment.id == comment_id, ReelComment.reel_id == reel_id
+        ))
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Комментарий не найден")
+
+    result = await session.execute(select(Reel).where(Reel.id == reel_id))
+    reel = result.scalar_one_or_none()
+
+    if comment.user_id != user.id and (not reel or reel.user_id != user.id):
+        raise HTTPException(status_code=403, detail="Нельзя удалить этот комментарий")
+
+    await session.execute(delete(ReelComment).where(ReelComment.id == comment_id))
+    if reel:
+        reel.comments_count = max(0, reel.comments_count - 1)
+    await session.commit()
+
+
+@router.post("/{reel_id}/view", status_code=204)
+async def record_view(
+    reel_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Отметить просмотр.
+
+    Счётчик, а не журнал: «сколько посмотрели» — единственное, что нужно
+    автору, а таблица на каждый просмотр стала бы самой большой в базе.
+    Свои просмотры не считаем: автор накрутил бы сам себе, просто листая ленту.
+    """
+    result = await session.execute(select(Reel).where(Reel.id == reel_id))
+    reel = result.scalar_one_or_none()
+    if not reel or reel.user_id == user.id:
+        return Response(status_code=204)
+
+    reel.views_count += 1
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/{reel_id}/report", status_code=204)
+async def report_reel(
+    reel_id: str,
+    data: ReelReport,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Пожаловаться на ролик.
+
+    Своя ручка, а не общая жалоба на пользователя: та требует, чтобы люди
+    контактировали (защита от травли жалобами), а ролик видят все — и именно
+    случайный зритель заметит нарушение первым.
+
+    Порог ниже, чем у анкеты: видео с нарушением успевает посмотреть больше
+    людей, чем статичную анкету, поэтому три жалобы снимают его с показа сразу.
+    """
+    result = await session.execute(select(Reel).where(Reel.id == reel_id))
+    reel = result.scalar_one_or_none()
+    if not reel:
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+    if reel.user_id == user.id:
+        raise HTTPException(status_code=400, detail="Это ваш ролик")
+
+    # Общий лимит по пути тут не работает: id стоит в середине
+    # (/api/reels/{id}/report), а правила подбираются по префиксу. Поэтому
+    # считаем сами — жалоба снимает ролик с показа, спам ею бесплатен не должен
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    result = await session.execute(
+        select(func.count(Report.id)).where(and_(
+            Report.reporter_id == user.id,
+            Report.created_at >= since,
+        ))
+    )
+    if (result.scalar() or 0) >= 10:
+        raise HTTPException(status_code=429, detail="Слишком много жалоб подряд")
+
+    # Одна жалоба от человека на ролик: повторные не должны накручивать порог
+    result = await session.execute(
+        select(Report).where(and_(
+            Report.reporter_id == user.id,
+            Report.reported_id == reel.user_id,
+            Report.description.like(f"reel:{reel_id}%"),
+        ))
+    )
+    if result.scalar_one_or_none():
+        return Response(status_code=204)
+
+    session.add(Report(
+        reporter_id=user.id,
+        reported_id=reel.user_id,
+        reason=data.reason,
+        # Ролик указываем в описании: модератору нужно знать, что именно
+        # смотреть, а отдельное поле ради этого заводить незачем
+        description=f"reel:{reel_id} {data.description}".strip()[:1000],
+    ))
+    await session.flush()
+
+    result = await session.execute(
+        select(func.count(func.distinct(Report.reporter_id))).where(and_(
+            Report.reported_id == reel.user_id,
+            Report.description.like(f"reel:{reel_id}%"),
+        ))
+    )
+    if (result.scalar() or 0) >= 3:
+        reel.is_hidden = True
+        logger.warning(f"Ролик {reel_id} снят с показа по жалобам")
+
+    await session.commit()
+    return Response(status_code=204)

@@ -2754,3 +2754,118 @@ def test_заблокированный_не_попадёт_в_пару():
     сокет = inspect.getsource(voice.websocket_roulette)
     assert "Block.blocker_id == user_id" in сокет
     assert "Block.blocked_id == user_id" in сокет
+
+
+# ════════════════════════════════════════════════════════════════
+#  Комментарии, просмотры и жалоба на ролик
+#  (без комментариев лента остаётся просмотром: впечатление от
+#   видео никуда не ведёт)
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_комментариев_и_жалобы_на_ролик(openapi):
+    paths = openapi["paths"]
+    assert "/api/reels/{reel_id}/comments" in paths
+    assert "get" in paths["/api/reels/{reel_id}/comments"]
+    assert "post" in paths["/api/reels/{reel_id}/comments"]
+    assert "/api/reels/{reel_id}/comments/{comment_id}" in paths
+    # Ролики были единственным публичным контентом без кнопки жалобы
+    assert "/api/reels/{reel_id}/report" in paths
+    assert "/api/reels/{reel_id}/view" in paths
+
+
+def test_комментарий_модерируется_как_публичный_текст():
+    """Комментарий читают все, кто смотрит ролик: в личке собеседника можно
+    заблокировать, а под видео грубость видна каждому."""
+    import inspect
+
+    from routers import reels
+
+    исходник = inspect.getsource(reels.add_comment)
+    assert "moderate_text(text)" in исходник
+    assert '"reel_comment"' in исходник
+    # Проверка до создания записи
+    assert исходник.index("moderate_text") < исходник.index("session.add")
+
+
+def test_заблокированные_не_видят_друг_друга_в_комментариях():
+    """И в чтении, и в записи: человек заблокировал обидчика именно чтобы его
+    не встречать, а под своим видео — тем более."""
+    import inspect
+
+    from routers import reels
+
+    чтение = inspect.getsource(reels.list_comments)
+    assert "Block.blocker_id == user.id" in чтение
+    assert "Block.blocked_id == user.id" in чтение
+
+    запись = inspect.getsource(reels.add_comment)
+    assert "Block.blocker_id == reel.user_id" in запись
+
+
+def test_комментарий_удаляет_автор_и_владелец_ролика():
+    """Под своим видео человек должен убрать чужую грубость сам, не дожидаясь
+    модератора."""
+    import inspect
+
+    from routers import reels
+
+    исходник = inspect.getsource(reels.delete_comment)
+    assert "comment.user_id != user.id" in исходник
+    assert "reel.user_id != user.id" in исходник
+
+
+def test_счётчики_рядом_с_роликом():
+    """Лента показывает счётчики на каждой карточке: COUNT по двум таблицам на
+    каждый ролик — лишний проход на каждый запрос ленты."""
+    from models.models import Reel
+
+    assert "comments_count" in Reel.__table__.columns
+    assert "views_count" in Reel.__table__.columns
+
+
+def test_свои_просмотры_не_считаются():
+    """Иначе автор накрутил бы сам себе, просто листая ленту."""
+    import inspect
+
+    from routers import reels
+
+    assert "reel.user_id == user.id" in inspect.getsource(reels.record_view)
+
+
+def test_жалоба_на_ролик_не_требует_контакта_но_ограничена():
+    """Общая жалоба на пользователя требует, чтобы люди контактировали (защита
+    от травли жалобами). Ролик видят все, и случайный зритель заметит нарушение
+    первым — поэтому своя ручка. Но лимит по префиксу пути её не ловит: id
+    стоит в середине, поэтому считаем в самом роутере."""
+    import inspect
+
+    from middleware.rate_limit import _find_limit
+    from routers import reels
+
+    исходник = inspect.getsource(reels.report_reel)
+    # Порог: три жалобы снимают ролик с показа
+    assert ">= 3" in исходник
+    assert "is_hidden = True" in исходник
+    # Повторная жалоба того же человека не накручивает порог
+    assert "Report.reporter_id == user.id" in исходник
+    # Свой лимит внутри роутера
+    assert "429" in исходник
+
+    # Убедимся, что префиксное правило действительно не подходит
+    _, лимит, _ = _find_limit("/api/reels/abc/report", "POST")
+    assert лимит > 100, "если правило стало строгим, лимит в роутере лишний"
+
+
+def test_клиент_показывает_комментарии_и_жалобу():
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    лента = (web / "pages" / "Reels.tsx").read_text(encoding="utf-8")
+
+    assert "comments_count" in лента
+    assert "onComments" in лента and "onReport" in лента
+    assert "recordReelView" in лента
+    # Просмотры видит только автор — чужому зрителю цифра ничего не даёт
+    assert "reel.is_mine && reel.views_count" in лента
+
+    assert (web / "components" / "ReelComments.tsx").exists()

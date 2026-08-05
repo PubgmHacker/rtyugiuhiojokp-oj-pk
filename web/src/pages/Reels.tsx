@@ -10,10 +10,15 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Heart, Plus, Trash2, Volume2, VolumeX, EyeOff } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Heart, MessageCircle, Flag, Plus, Trash2, Volume2, VolumeX, EyeOff, Eye,
+} from "lucide-react";
 import {
   deleteReel,
   getReels,
+  recordReelView,
+  reportReel,
   toggleReelLike,
   type Reel,
 } from "../lib/api";
@@ -21,6 +26,8 @@ import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, EmptyState, ScreenHeader, Spinner } from "../components/ui";
 import ReelUploader from "../components/ReelUploader";
+import ReelComments from "../components/ReelComments";
+import { REPORT_REASONS } from "../lib/profileOptions";
 
 export default function Reels() {
   useSectionOpen("reels");
@@ -29,6 +36,8 @@ export default function Reels() {
   const [exhausted, setExhausted] = useState(false);
   const [muted, setMuted] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [commentsFor, setCommentsFor] = useState<Reel | null>(null);
+  const [reportFor, setReportFor] = useState<Reel | null>(null);
   const [error, setError] = useState("");
   const loadingRef = useRef(false);
 
@@ -86,6 +95,35 @@ export default function Reels() {
             : r
         )
       );
+    }
+  }, []);
+
+  const bumpComments = useCallback((reelId: string, delta: number) => {
+    setReels((cur) =>
+      (cur ?? []).map((r) =>
+        r.id === reelId
+          ? { ...r, comments_count: Math.max(0, r.comments_count + delta) }
+          : r
+      )
+    );
+    // Открытая шторка держит свою копию ролика — обновляем и её, иначе
+    // счётчик в заголовке отстаёт на один
+    setCommentsFor((cur) =>
+      cur && cur.id === reelId
+        ? { ...cur, comments_count: Math.max(0, cur.comments_count + delta) }
+        : cur
+    );
+  }, []);
+
+  const handleReport = useCallback(async (reel: Reel, reason: string) => {
+    setReportFor(null);
+    try {
+      await reportReel(reel.id, reason);
+      haptic("success");
+      setError("Жалоба отправлена — модератор разберётся");
+    } catch (e: any) {
+      haptic("error");
+      setError(e?.response?.data?.detail ?? "Не удалось отправить жалобу");
     }
   }, []);
 
@@ -155,6 +193,8 @@ export default function Reels() {
             muted={muted}
             onLike={() => handleLike(reel)}
             onDelete={() => handleDelete(reel)}
+            onComments={() => setCommentsFor(reel)}
+            onReport={() => setReportFor(reel)}
           />
         ))}
       </div>
@@ -201,7 +241,84 @@ export default function Reels() {
         onClose={() => setUploadOpen(false)}
         onDone={(reel) => setReels((cur) => [reel, ...(cur ?? [])])}
       />
+
+      <ReelComments
+        reel={commentsFor}
+        onClose={() => setCommentsFor(null)}
+        onCountChange={bumpComments}
+      />
+
+      <ReelReportSheet
+        reel={reportFor}
+        onClose={() => setReportFor(null)}
+        onPick={(reason) => reportFor && handleReport(reportFor, reason)}
+      />
     </div>
+  );
+}
+
+/* ── Выбор причины жалобы на ролик ──────────────────────────── */
+
+function ReelReportSheet({
+  reel,
+  onClose,
+  onPick,
+}: {
+  reel: Reel | null;
+  onClose: () => void;
+  onPick: (reason: string) => void;
+}) {
+  return (
+    <AnimatePresence>
+      {reel && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-black/60"
+          />
+          <motion.div
+            role="dialog"
+            aria-label="Причина жалобы"
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", stiffness: 380, damping: 36 }}
+            className="fixed bottom-0 left-0 right-0 z-50 bg-bg-elevated
+                       rounded-t-[var(--radius-sheet)] border-t border-hairline
+                       px-5 pt-3 pb-7 safe-bottom max-h-[80dvh]
+                       overflow-y-auto no-scrollbar"
+          >
+            <div className="w-10 h-1 rounded-full bg-surface-3 mx-auto mb-5" />
+
+            <h2 className="text-heading font-bold mb-1.5">Пожаловаться на видео</h2>
+            <p className="text-caption text-text-muted mb-4">
+              Модератор посмотрит ролик. Три жалобы снимают его с показа сразу.
+            </p>
+
+            <div className="flex flex-col gap-1.5 mb-4">
+              {REPORT_REASONS.map((r) => (
+                <button
+                  key={r.value}
+                  onClick={() => onPick(r.value)}
+                  className="w-full px-4 py-3 rounded-[var(--radius-tile)] text-left
+                             bg-surface-2 border border-hairline text-[15px]
+                             active:bg-surface transition-colors"
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+
+            <Button variant="secondary" size="lg" fullWidth onClick={onClose}>
+              Отмена
+            </Button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -212,13 +329,20 @@ function ReelItem({
   muted,
   onLike,
   onDelete,
+  onComments,
+  onReport,
 }: {
   reel: Reel;
   muted: boolean;
   onLike: () => void;
   onDelete: () => void;
+  onComments: () => void;
+  onReport: () => void;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  // Просмотр отмечаем один раз за монтирование: карточка перерисовывается на
+  // каждый жест, и без этого один ролик давал бы десяток просмотров
+  const viewSent = useRef(false);
 
   // Играет только видимый ролик: десяток одновременно телефон не выдержит,
   // а трафик уйдёт на то, чего никто не смотрит
@@ -232,6 +356,12 @@ function ReelItem({
           video.play().catch(() => {
             /* автозапуск может быть запрещён — не считаем это ошибкой */
           });
+          // Считаем просмотром то, что реально попало на экран, а не выдачу
+          // ленты: она приходит на десяток роликов вперёд
+          if (!viewSent.current && !reel.is_mine) {
+            viewSent.current = true;
+            recordReelView(reel.id);
+          }
         } else {
           video.pause();
           video.currentTime = 0;
@@ -241,7 +371,7 @@ function ReelItem({
     );
     observer.observe(video);
     return () => observer.disconnect();
-  }, []);
+  }, [reel.id, reel.is_mine]);
 
   return (
     <section className="relative h-full w-full snap-start snap-always bg-black">
@@ -281,6 +411,37 @@ function ReelItem({
             </span>
           )}
         </button>
+
+        {/* Комментарии — то, ради чего лента вообще ведёт к знакомству:
+            написать под видео проще, чем первым в личку */}
+        <button
+          aria-label="Комментарии"
+          onClick={onComments}
+          className="flex flex-col items-center gap-1 active:scale-90 transition-transform"
+        >
+          <span className="w-12 h-12 rounded-full glass-strong flex items-center justify-center">
+            <MessageCircle size={21} />
+          </span>
+          {reel.comments_count > 0 && (
+            <span className="text-[12px] font-semibold text-white/90">
+              {reel.comments_count}
+            </span>
+          )}
+        </button>
+
+        {/* На свой ролик жаловаться незачем, а на чужой — обязательно должно
+            быть можно: это единственный публичный контент, откуда раньше
+            нельзя было сообщить о нарушении */}
+        {!reel.is_mine && (
+          <button
+            aria-label="Пожаловаться на ролик"
+            onClick={onReport}
+            className="w-11 h-11 rounded-full glass-strong flex items-center
+                       justify-center text-warn active:scale-90 transition-transform"
+          >
+            <Flag size={17} />
+          </button>
+        )}
 
         {reel.is_mine && (
           <button
@@ -325,6 +486,15 @@ function ReelItem({
             {reel.author_name || "Без имени"}
             {reel.author_age ? `, ${reel.author_age}` : ""}
           </span>
+
+          {/* Просмотры показываем только автору: чужому зрителю эта цифра
+              ничего не даёт, а автору говорит, работает ли ролик */}
+          {reel.is_mine && reel.views_count > 0 && (
+            <span className="flex items-center gap-1 text-[12px] text-white/60">
+              <Eye size={12} />
+              {reel.views_count}
+            </span>
+          )}
         </div>
 
         {reel.caption && (

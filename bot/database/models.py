@@ -378,6 +378,22 @@ class Reel(Base):
     cover_url: Mapped[str] = mapped_column(String, default="")
     caption: Mapped[str] = mapped_column(String, default="")
     likes_count: Mapped[int] = mapped_column(Integer, default=0)
+    comments_count: Mapped[int] = mapped_column(Integer, default=0)
+    views_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReelComment(Base):
+    """Комментарий к ролику — см. api/models/models.py."""
+
+    __tablename__ = "dating_reel_comments"
+    __table_args__ = (Index("ix_reel_comment_reel", "reel_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    reel_id: Mapped[str] = mapped_column(String, ForeignKey("dating_reels.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    text: Mapped[str] = mapped_column(String)
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

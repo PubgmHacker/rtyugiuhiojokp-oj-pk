@@ -262,10 +262,22 @@ export interface Reel {
   cover_url: string;
   caption: string;
   likes_count: number;
+  comments_count: number;
+  views_count: number;
   liked_by_me: boolean;
   is_mine: boolean;
   /** Снят с показа модерацией — приходит только автору. */
   is_hidden: boolean;
+  created_at?: string | null;
+}
+
+export interface ReelComment {
+  id: string;
+  author_id: string;
+  author_name: string;
+  author_photo: string;
+  text: string;
+  is_mine: boolean;
   created_at?: string | null;
 }
 
@@ -310,6 +322,43 @@ export async function toggleReelLike(reelId: string): Promise<Reel> {
 
 export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
+}
+
+export async function getReelComments(reelId: string): Promise<ReelComment[]> {
+  const { data } = await api.get(`/reels/${reelId}/comments`);
+  return data.comments;
+}
+
+export async function addReelComment(
+  reelId: string,
+  text: string
+): Promise<ReelComment> {
+  const { data } = await api.post(`/reels/${reelId}/comments`, { text });
+  return data;
+}
+
+export async function deleteReelComment(
+  reelId: string,
+  commentId: string
+): Promise<void> {
+  await api.delete(`/reels/${reelId}/comments/${commentId}`);
+}
+
+export async function reportReel(
+  reelId: string,
+  reason: string,
+  description = ""
+): Promise<void> {
+  await api.post(`/reels/${reelId}/report`, { reason, description });
+}
+
+/** Просмотр: ошибку глушим, статистика не должна мешать смотреть. */
+export async function recordReelView(reelId: string): Promise<void> {
+  try {
+    await api.post(`/reels/${reelId}/view`);
+  } catch {
+    /* не мешаем просмотру */
+  }
 }
 
 /* ── Учёт открытий разделов ─────────────────────────────────── */

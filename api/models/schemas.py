@@ -212,6 +212,34 @@ class DeviceRegistration(BaseModel):
 #  IN-APP PURCHASES
 # ════════════════════════════════════════════════════════════════
 
+class ReelReport(BaseModel):
+    """Жалоба на ролик. Причины те же, что и у жалобы на анкету."""
+
+    reason: str = Field(pattern="^(" + "|".join(REPORT_REASONS) + ")$")
+    description: str = Field(default="", max_length=500)
+
+
+class ReelCommentOut(BaseModel):
+    """Комментарий под роликом вместе с автором."""
+
+    id: str
+    author_id: str
+    author_name: str = ""
+    author_photo: str = ""
+    text: str
+    is_mine: bool = False
+    created_at: Optional[datetime] = None
+
+
+class ReelComments(BaseModel):
+    comments: list[ReelCommentOut] = Field(default_factory=list)
+
+
+class ReelCommentSend(BaseModel):
+    #: Короче, чем в личке: простыни под видео никто не читает.
+    text: str = Field(min_length=1, max_length=300)
+
+
 class ReelOut(BaseModel):
     """Ролик в ленте вместе с автором: отдельный запрос за анкетой на каждый
     ролик означал бы десяток запросов на один экран."""
@@ -225,6 +253,8 @@ class ReelOut(BaseModel):
     cover_url: str = ""
     caption: str = ""
     likes_count: int = 0
+    comments_count: int = 0
+    views_count: int = 0
     liked_by_me: bool = False
     is_mine: bool = False
     #: Снят с показа. Приходит только автору — в общей ленте таких нет.
