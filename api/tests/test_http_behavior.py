@@ -804,6 +804,76 @@ async def test_возраст_виден_в_ленте_если_его_не_пр
     assert карточка["author_age"] is not None, "возраст пропал у всех подряд"
 
 
+async def test_чужую_ссылку_нельзя_подставить_в_фото_анкеты(app, monkeypatch):
+    """Модерация фото живёт в загрузке, а анкета обновляется другим роутом.
+
+    Без проверки можно было один раз честно загрузить фото, а потом положить
+    в анкету ссылку на любую картинку: она попала бы в деку и чаты, не увидев
+    ни AI-модерации, ни срезания EXIF.
+    """
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+
+    анкета = _profile("u-me", photos=["https://media.souldawn.test/photos/u-me/1.jpg"])
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me",
+            json={"photos": ["https://evil.test/что-угодно.jpg"]},
+        )
+
+    assert r.status_code == 400, "чужая ссылка принята в анкету"
+    assert анкета.photos == ["https://media.souldawn.test/photos/u-me/1.jpg"], (
+        "анкета изменена, несмотря на отказ"
+    )
+
+
+async def test_своё_загруженное_фото_в_анкету_принимается(app, monkeypatch):
+    """Обратная сторона: проверка не должна ломать нормальную загрузку."""
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+
+    анкета = _profile("u-me", photos=[])
+    session = _Session([_Result(scalar=анкета)])
+
+    новое = "https://media.souldawn.test/photos/u-me/2.jpg"
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch("/api/profiles/me", json={"photos": [новое]})
+
+    assert r.status_code == 200, r.text
+    assert новое in анкета.photos
+
+
+async def test_фото_из_бота_переживают_обновление_анкеты(app, monkeypatch):
+    """Без R2 бот кладёт file_id Telegram — это не ссылка, и принимать её надо:
+    иначе у пришедших из бота анкета молча осталась бы без фотографий.
+
+    Новый file_id, которого в анкете ещё нет: если проверять только «было
+    раньше», бот перестал бы добавлять фото вообще.
+    """
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+
+    анкета = _profile("u-me", photos=["AgACAgIAAxkBAAI-старое"])
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me",
+            json={"photos": ["AgACAgIAAxkBAAI-старое", "AgACAgIAAxkBAAI-новое"]},
+        )
+
+    assert r.status_code == 200, r.text
+    assert "AgACAgIAAxkBAAI-новое" in анкета.photos
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

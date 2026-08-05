@@ -270,6 +270,45 @@ async def get_my_profile(
     )
 
 
+def _проверить_фото(новые: list[str], прежние: list[str]) -> list[str]:
+    """Фото в анкете — только наши, уже прошедшие модерацию.
+
+    Модерация и срезание EXIF живут в `POST /upload/photo` и в боте. Но сама
+    анкета обновляется через `PATCH /profiles/me`, и `photos` там — обычный
+    список строк: без этой проверки можно было один раз честно загрузить
+    фото, а потом подсунуть ссылку на любую картинку в интернете. Она попала
+    бы в деку, лайки и превью чатов, не увидев ни AI-модерации, ни
+    санитайзера, — и вдобавок утекала бы referer'ом на чужой сервер.
+
+    Что принимаем:
+    - URL из нашего R2 (их выдаёт только успешно отмодерированная загрузка);
+    - значения, которые уже стоят в анкете, — иначе клиент не смог бы
+      переставить или удалить существующие фото;
+    - Telegram file_id — их кладёт бот, когда R2 не настроен (см.
+      bot/handlers/registration.py), и они не URL вовсе.
+
+    Строку, которой нет среди прежних и которая похожа на ссылку не к нам,
+    отклоняем.
+    """
+    prefix = (settings.R2_PUBLIC_URL or "").rstrip("/") + "/"
+    известные = set(прежние)
+
+    for фото in новые:
+        if фото in известные:
+            continue
+        if prefix != "/" and фото.startswith(prefix):
+            continue
+        if "://" not in фото:
+            # Не ссылка — это file_id Telegram
+            continue
+        raise HTTPException(
+            status_code=400,
+            detail="Фото можно добавить только через загрузку: сторонние ссылки не принимаются",
+        )
+
+    return новые
+
+
 @router.patch("/me", response_model=UserProfile)
 async def update_my_profile(
     data: ProfileUpdate,
@@ -290,6 +329,11 @@ async def update_my_profile(
     # Инкогнито-режим — премиум-фича (выключить может любой)
     if update_fields.get("is_incognito") is True and not await _is_premium(session, user.id):
         raise HTTPException(status_code=403, detail="Инкогнито-режим доступен в Premium")
+
+    if update_fields.get("photos") is not None:
+        update_fields["photos"] = _проверить_фото(
+            update_fields["photos"], as_list(profile.photos)
+        )
 
     if "birth_date" in update_fields and update_fields["birth_date"]:
         try:
