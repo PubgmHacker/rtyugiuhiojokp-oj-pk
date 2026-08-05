@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { SlidersHorizontal, X, Flame } from "lucide-react";
+import { SlidersHorizontal, X, Flame, MapPin } from "lucide-react";
 import SwipeDeck from "../components/SwipeDeck";
 import DailyCardBanner from "../components/DailyCard";
 import { useStore } from "../lib/store";
@@ -274,7 +275,9 @@ function FilterSheet({
               />
             </div>
 
-            {/* Расстояние */}
+            {/* Расстояние. Без геопозиции сервер не может посчитать км, и
+                ползунок ничего не фильтрует — предупреждаем прямо тут,
+                а не оставляем человека гадать, почему выдача не меняется */}
             <div className="mb-8">
               <div className="flex items-baseline justify-between mb-2.5">
                 <p className="text-caption text-text-muted">Расстояние</p>
@@ -289,7 +292,16 @@ function FilterSheet({
                 step={5}
                 value={distance}
                 onChange={setDistance}
+                disabled={!user?.has_location}
               />
+              {!user?.has_location && (
+                <p className="text-[12px] text-text-muted mt-1">
+                  Расстояние заработает, когда вы включите геолокацию в{" "}
+                  <Link to="/profile" onClick={onClose} className="text-accent font-semibold">
+                    профиле
+                  </Link>
+                </p>
+              )}
             </div>
 
             {/* Цель знакомства */}
@@ -421,6 +433,7 @@ function Range({
   step = 1,
   value,
   onChange,
+  disabled = false,
 }: {
   label: string;
   min: number;
@@ -428,6 +441,7 @@ function Range({
   step?: number;
   value: number;
   onChange: (v: number) => void;
+  disabled?: boolean;
 }) {
   const pct = ((value - min) / (max - min)) * 100;
   return (
@@ -439,7 +453,9 @@ function Range({
       step={step}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
+      disabled={disabled}
       className="w-full h-1.5 rounded-full appearance-none cursor-pointer mb-3
+                 disabled:opacity-40 disabled:cursor-not-allowed
                  [&::-webkit-slider-thumb]:appearance-none
                  [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6
                  [&::-webkit-slider-thumb]:rounded-full
@@ -449,7 +465,9 @@ function Range({
                  [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0
                  [&::-moz-range-thumb]:bg-white"
       style={{
-        background: `linear-gradient(to right, var(--color-accent) ${pct}%, var(--color-surface-3) ${pct}%)`,
+        background: disabled
+          ? "var(--color-surface-3)"
+          : `linear-gradient(to right, var(--color-accent) ${pct}%, var(--color-surface-3) ${pct}%)`,
       }}
     />
   );

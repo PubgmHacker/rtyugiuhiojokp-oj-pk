@@ -280,7 +280,16 @@ async def get_deck_profiles(
         if my_profile and not _passes_niche_filters(my_profile, profile):
             continue
 
-        # Distance
+        # Расстояние. Осознанное решение, а не побочный эффект отсутствия
+        # координат: без геопозиции километры посчитать не из чего, поэтому
+        # фильтр по расстоянию — это ЧАСТИЧНЫЙ фильтр, а не полный, как
+        # у роста. Кандидат без координат не исключается фильтром
+        # `distance_max` (тот же принцип, что и в `_passes_niche_filters`:
+        # незаполненное поле не наказывает анкету). Симметрично: если
+        # координат нет у МЕНЯ, `distance_max` вообще не проверяется ни для
+        # кого — это не баг, а следствие того же принципа, но веб уже
+        # предупреждает об этом в фильтрах (Discover.tsx), чтобы ползунок не
+        # выглядел рабочим, когда он не работает.
         distance = None
         if (my_profile and my_profile.latitude and my_profile.longitude
                 and profile.latitude and profile.longitude):
