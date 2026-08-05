@@ -2486,3 +2486,33 @@ def test_все_публичные_разделы_уважают_инкогни�
     for модуль in (leaderboard, photo_ratings, reels):
         исходник = inspect.getsource(модуль)
         assert "is_incognito" in исходник, f"{модуль.__name__}: инкогнито не учтено"
+
+
+def test_отсутствие_модерации_фото_заметно():
+    """Фото без AI-ключа не проверяется НИКАК — в отличие от текста, у которого
+    есть словарный фильтр. Молчаливый пропуск всех фото в дейтинге
+    обнаруживается по жалобе, а не по логам, поэтому состояние обязано быть
+    видно в health-check и логироваться как ошибка."""
+    import inspect
+
+    from services import ai_moderation
+
+    assert hasattr(ai_moderation, "image_moderation_available")
+
+    исходник = inspect.getsource(ai_moderation.moderate_image)
+    assert "logger.error" in исходник, "пропуск всех фото должен логироваться как ошибка"
+
+    from pathlib import Path
+
+    main_src = (
+        Path(__file__).resolve().parents[1] / "main.py"
+    ).read_text(encoding="utf-8")
+    assert "photo_moderation" in main_src, "состояния модерации фото нет в health-check"
+
+
+def test_текстовая_модерация_имеет_запасной_фильтр():
+    """У текста цена отказа AI ниже: словарь ловит хотя бы явное."""
+    from services.ai_moderation import _keyword_filter
+
+    assert _keyword_filter("продаю наркотики")["blocked"] is True
+    assert _keyword_filter("люблю кофе и кино")["blocked"] is False

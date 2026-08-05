@@ -25,6 +25,16 @@ def _get_zhipu_client():
     return _zhipu_client
 
 
+def image_moderation_available() -> bool:
+    """Работает ли проверка фото.
+
+    Отдельная функция, потому что у текста и у фото разная цена отказа: текст
+    без AI фильтруется по словарю, а фото — не фильтруется НИКАК. Для дейтинга
+    это открытая дверь, и знать об этом нужно до инцидента, а не после.
+    """
+    return _get_zhipu_client() is not None
+
+
 async def moderate_text(text: str) -> dict:
     """Проверить текст через GLM-5.2 на нарушение правил.
 
@@ -80,6 +90,12 @@ async def moderate_image(image_bytes: bytes) -> dict:
     """
     client = _get_zhipu_client()
     if not client:
+        # Фото без AI не проверяется НИКАК — в отличие от текста, у которого
+        # есть словарный фильтр. Логируем громко: молчаливый пропуск всех фото
+        # в дейтинге обнаруживается по жалобе, а не по логам
+        logger.error(
+            "Модерация фото недоступна (нет ZHIPU_API_KEY) — фото приняты без проверки"
+        )
         return {"safe": True, "blocked": False, "reason": "AI not configured"}
 
     try:

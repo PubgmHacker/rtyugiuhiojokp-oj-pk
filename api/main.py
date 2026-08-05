@@ -169,6 +169,18 @@ async def health(response: Response):
     if not healthy:
         response.status_code = 503
 
+    # Модерация фото без AI-ключа пропускает ВСЁ (у текста хотя бы есть
+    # словарный фильтр). Сервис при этом работает, поэтому не 503 — но
+    # состояние должно быть видно в мониторинге, а не только в логах
+    try:
+        from services.ai_moderation import image_moderation_available
+
+        checks["photo_moderation"] = (
+            "ok" if image_moderation_available() else "disabled"
+        )
+    except Exception:
+        checks["photo_moderation"] = "unknown"
+
     return {
         "status": "ok" if healthy else "unhealthy",
         "service": "souldawn-dating-api",
