@@ -348,12 +348,16 @@ def test_схема_бота_совпадает_с_api():
     )
 
 
-def test_колонки_анкеты_совпадают_в_боте_и_api():
+def test_колонки_совпадают_в_боте_и_api():
     """Совпадения имён таблиц мало: разъехавшиеся колонки ломают прод так же.
 
-    Бот и API оба пишут `dating_profiles`. Если в одном месте появилось поле,
-    которого нет в другом, то запись из бота упадёт на неизвестной колонке —
-    ровно это и произошло, когда в API добавили нишевые фильтры.
+    Бот и API пишут в одну БД и оба вызывают `create_all()`. Если в одном месте
+    появилось поле, которого нет в другом, запись упадёт на неизвестной колонке —
+    ровно это произошло, когда в API добавили нишевые фильтры анкеты, а потом
+    повторилось с `reel_id` у сообщений.
+
+    Проверяем ВСЕ общие таблицы, а не только анкету: узкая проверка пропустила
+    второе расхождение именно потому, что смотрела в одну таблицу.
     """
     import ast
     from pathlib import Path
@@ -361,7 +365,7 @@ def test_колонки_анкеты_совпадают_в_боте_и_api():
     bot_models = Path(__file__).resolve().parents[2] / "bot" / "database" / "models.py"
     tree = ast.parse(bot_models.read_text(encoding="utf-8"))
 
-    колонки_бота: set[str] = set()
+    таблицы_бота: dict[str, set[str]] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
@@ -377,18 +381,40 @@ def test_колонки_анкеты_совпадают_в_боте_и_api():
             # Колонки объявлены как аннотированные присваивания с mapped_column
             if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
                 поля.add(stmt.target.id)
-        if имя_таблицы == "dating_profiles":
-            колонки_бота = поля
+        if имя_таблицы:
+            таблицы_бота[имя_таблицы] = поля
 
-    assert колонки_бота, "не удалось разобрать модель анкеты в боте"
+    assert "dating_profiles" in таблицы_бота, "не удалось разобрать модели бота"
 
-    from models.models import Profile
+    from models.models import Base as ApiBase
 
-    колонки_api = set(Profile.__table__.columns.keys())
-    assert колонки_api == колонки_бота, (
-        f"только в API: {sorted(колонки_api - колонки_бота)}; "
-        f"только в боте: {sorted(колонки_бота - колонки_api)}"
-    )
+    расхождения: list[str] = []
+    for имя, таблица in ApiBase.metadata.tables.items():
+        if имя not in таблицы_бота:
+            continue  # отсутствие таблицы ловит соседний тест
+        колонки_api = set(таблица.columns.keys())
+        только_api = колонки_api - таблицы_бота[имя]
+        только_бот = таблицы_бота[имя] - колонки_api
+        if только_api or только_бот:
+            расхождения.append(
+                f"{имя}: только в API {sorted(только_api)}, "
+                f"только в боте {sorted(только_бот)}"
+            )
+
+    assert not расхождения, "; ".join(расхождения)
+
+
+def test_пересланный_ролик_есть_в_обеих_таблицах_сообщений():
+    """Колонка пересыла закреплена тестом: фичу доделывали в две сессии."""
+    from models.models import Message, RoomMessage
+
+    assert "reel_id" in Message.__table__.columns
+    assert "reel_id" in RoomMessage.__table__.columns
+    # Индекс нужен не для чтения, а для удаления ролика: `SET NULL` без него
+    # сканирует всю таблицу сообщений
+    for модель in (Message, RoomMessage):
+        индексы = {i.name for i in модель.__table__.indexes}
+        assert f"ix_{модель.__tablename__}_reel" in индексы, модель.__tablename__
 
 
 # ── Отзыв сессий (JWT) ──────────────────────────────────────────
@@ -2067,15 +2093,27 @@ def test_сообщение_комнаты_модерируется_до_пуб�
 
 
 def test_антифлуд_в_комнате_отдельно_от_общего_лимита():
-    """Общий лимит по пути не мешает залить одну комнату подряд."""
+    """Общий лимит по пути не мешает залить одну комнату подряд.
+
+    Проверка вынесена в `check_flood` и вызывается из двух мест — обычной
+    отправки и пересыла ролика: пока она жила внутри обработчика отправки,
+    роликами комнату можно было залить в обход лимита. Поэтому смотрим на саму
+    функцию, а не на текст обработчика.
+    """
     import inspect
 
     from routers import rooms
 
     assert 1 <= rooms.FLOOD_PER_MINUTE <= 60
-    исходник = inspect.getsource(rooms.send_room_message)
+    исходник = inspect.getsource(rooms.check_flood)
     assert "timedelta(minutes=1)" in исходник
     assert "429" in исходник
+    # Оба пути записи в комнату обязаны звать проверку
+    assert "check_flood" in inspect.getsource(rooms.send_room_message)
+
+    from routers import reels
+
+    assert "check_flood" in inspect.getsource(reels.forward_reel)
 
 
 def test_заблокированные_не_видны_в_комнате():

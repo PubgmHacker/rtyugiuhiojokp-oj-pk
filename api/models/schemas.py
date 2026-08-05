@@ -212,6 +212,29 @@ class DeviceRegistration(BaseModel):
 #  IN-APP PURCHASES
 # ════════════════════════════════════════════════════════════════
 
+class ReelForward(BaseModel):
+    """Куда пересылаем ролик: в чат мэтча или в комнату. Одно из двух."""
+
+    match_id: Optional[str] = None
+    room_id: Optional[str] = None
+    #: Подпись к пересылу. Лимит как у сообщения в комнате: один и тот же текст
+    #: не должен проходить по одному пути и обрезаться по другому.
+    text: str = Field(default="", max_length=500)
+
+
+class ReelPreview(BaseModel):
+    """Пересланный ролик внутри сообщения — и в личке, и в комнате.
+
+    Одна схема на оба чата: разъехавшиеся превью пришлось бы разбирать на
+    клиенте двумя ветками.
+    """
+
+    id: str
+    video_url: str
+    cover_url: str = ""
+    caption: str = ""
+
+
 class ReelReport(BaseModel):
     """Жалоба на ролик. Причины те же, что и у жалобы на анкету."""
 
@@ -346,6 +369,9 @@ class RoomMessageOut(BaseModel):
     sender_name: str = ""
     sender_photo: str = ""
     text: str
+    #: Пересланный ролик. Пусто у обычных сообщений и у роликов, снятых
+    #: модерацией уже после пересыла.
+    reel: Optional[ReelPreview] = None
     is_mine: bool = False
     created_at: Optional[datetime] = None
 

@@ -8,9 +8,10 @@ from datetime import datetime
 
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import User, Profile, Like, Match, Message
+from models.models import User, Profile, Like, Match, Message, Reel
 from models.schemas import MatchResponse, UserProfile
 from services.ai_matchmaker import generate_icebreakers
+from services.chat_delivery import reel_preview
 from utils import as_list
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -163,9 +164,19 @@ async def get_messages(
     )
     messages = list(reversed(result.scalars().all()))
 
+    # Превью пересланных роликов: без него получатель видит пустое сообщение.
+    # Одним запросом на всю страницу, а не по ролику на сообщение
+    reels: dict[str, Reel] = {}
+    reel_ids = {m.reel_id for m in messages if m.reel_id}
+    if reel_ids:
+        result = await session.execute(select(Reel).where(Reel.id.in_(reel_ids)))
+        reels = {r.id: r for r in result.scalars().all()}
+
     return [
         {"id": m.id, "sender_id": m.sender_id, "text": m.text,
-         "image_url": m.image_url, "read_at": m.read_at.isoformat() if m.read_at else None,
+         "image_url": m.image_url,
+         "reel": reel_preview(reels.get(m.reel_id)) if m.reel_id else None,
+         "read_at": m.read_at.isoformat() if m.read_at else None,
          "created_at": m.created_at.isoformat() if m.created_at else None}
         for m in messages
     ]

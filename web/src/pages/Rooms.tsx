@@ -20,6 +20,7 @@ import {
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { EmptyState, ScreenHeader, Skeleton, Spinner } from "../components/ui";
+import ReelBubble from "../components/ReelBubble";
 
 export default function Rooms() {
   useSectionOpen("rooms");
@@ -225,6 +226,7 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
                       {m.sender_name || "Без имени"}
                     </p>
                   )}
+                  {m.reel && <ReelBubble reel={m.reel} mine={m.is_mine} />}
                   <p className="text-[14.5px] leading-snug break-words selectable">
                     {m.text}
                   </p>

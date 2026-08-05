@@ -329,6 +329,227 @@ async def test_health_отдаёт_состояние_модерации_фот�
     assert данные["checks"]["photo_moderation"] in ("ok", "disabled", "unknown")
 
 
+# ── Пересыл ролика в чат и в комнату ────────────────────────────
+
+
+def _reel(rid: str = "r1", author: str = "u-author", hidden: bool = False):
+    return SimpleNamespace(
+        id=rid,
+        user_id=author,
+        video_url="https://example.test/v.mp4",
+        cover_url="https://example.test/c.jpg",
+        caption="подпись",
+        is_hidden=hidden,
+    )
+
+
+@pytest.fixture
+def тихая_доставка(monkeypatch):
+    """Пересыл в личку идёт через сервис доставки — Redis и APNs в тестах нет.
+
+    Возвращает список отправленных payload-ов, чтобы проверять не только код
+    ответа, но и что событие вообще собрано и содержит превью.
+    """
+    from routers import reels
+
+    отправленное: list[dict] = []
+
+    async def _save(match_id, sender_id, text, image_url=None, reel_id=None):
+        return {
+            "type": "message", "id": "m1", "match_id": match_id,
+            "sender_id": sender_id, "text": text, "image_url": image_url,
+            "reel": {"id": reel_id, "video_url": "https://example.test/v.mp4",
+                     "cover_url": "https://example.test/c.jpg", "caption": "подпись"}
+            if reel_id else None,
+            "created_at": None,
+        }
+
+    async def _fan_out(payload, *_a, **_kw):
+        отправленное.append(payload)
+
+    monkeypatch.setattr(reels, "save_message", _save)
+    monkeypatch.setattr(reels, "fan_out", _fan_out)
+    return отправленное
+
+
+async def test_пересыл_в_личку_рассылает_событие_с_превью(app, тихая_доставка):
+    """Раньше сообщение молча ложилось в базу: собеседник с открытым чатом
+    ничего не видел, пока не перезагрузит переписку."""
+    матч = SimpleNamespace(
+        id="m-1", user1_id="u-me", user2_id="u-partner", is_active=True,
+    )
+    session = _Session([
+        _Result(scalar=_reel()),      # сам ролик
+        _Result(scalar=None),         # блокировки нет
+        _Result(scalar=матч),         # мэтч свой и живой
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/reels/r1/forward", json={"match_id": "m-1"})
+
+    assert r.status_code == 204
+    (payload,) = тихая_доставка
+    assert payload["reel"]["id"] == "r1", "событие ушло без превью ролика"
+
+
+async def test_скрытый_ролик_не_пересылается(app):
+    """Снятое модерацией видео не должно продолжать ходить по чатам."""
+    session = _Session([_Result(scalar=_reel(hidden=True))])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/reels/r1/forward", json={"match_id": "m-1"})
+
+    assert r.status_code == 404
+
+
+async def test_заблокировавшему_автору_ролик_не_перешлёшь(app):
+    """Как и с комментарием: чужое видео не растаскивают по чатам в обход блока."""
+    session = _Session([
+        _Result(scalar=_reel()),
+        _Result(scalar="есть-блокировка"),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/reels/r1/forward", json={"match_id": "m-1"})
+
+    assert r.status_code == 403
+
+
+async def test_в_чужой_чат_переслать_нельзя(app, тихая_доставка):
+    """Мэтч чужой или уже разорван — запрос не должен ничего писать."""
+    session = _Session([
+        _Result(scalar=_reel()),
+        _Result(scalar=None),   # блока нет
+        _Result(scalar=None),   # мэтч не найден: чужой либо неактивный
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/reels/r1/forward", json={"match_id": "m-чужой"})
+
+    assert r.status_code == 404
+    assert not тихая_доставка, "событие ушло, хотя чат не найден"
+
+
+async def test_пересыл_без_адресата_отклоняется(app):
+    session = _Session([
+        _Result(scalar=_reel()),
+        _Result(scalar=None),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/reels/r1/forward", json={})
+
+    assert r.status_code == 400
+
+
+async def test_в_комнате_ролик_без_подписи_получает_понятный_текст(app):
+    """Пустое сообщение с одним превью читается как сбой приложения."""
+    комната = SimpleNamespace(id="room-1", is_active=True)
+    session = _Session([
+        _Result(scalar=_reel()),
+        _Result(scalar=None),        # блока нет
+        _Result(scalar=комната),     # комната живая
+        _Result(scalar=0),           # антифлуд: сообщений за минуту нет
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/reels/r1/forward", json={"room_id": "room-1"})
+
+    assert r.status_code == 204
+    (сообщение,) = session.added
+    assert сообщение.reel_id == "r1"
+    assert сообщение.text, "сообщение в комнате осталось без текста"
+
+
+async def test_роликами_комнату_не_зальёшь(app):
+    """Пересыл шёл мимо антифлуда, и лимит на сообщения обходился роликами."""
+    from routers import rooms
+
+    комната = SimpleNamespace(id="room-1", is_active=True)
+    session = _Session([
+        _Result(scalar=_reel()),
+        _Result(scalar=None),
+        _Result(scalar=комната),
+        _Result(scalar=rooms.FLOOD_PER_MINUTE),   # лимит уже исчерпан
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/reels/r1/forward", json={"room_id": "room-1"})
+
+    assert r.status_code == 429
+    assert not session.added
+
+
+async def test_подпись_пересыла_модерируется(app, monkeypatch):
+    """Текст под роликом — такой же публичный текст, как сообщение в комнате."""
+    from routers import reels
+
+    monkeypatch.setattr(
+        reels, "moderate_text",
+        _async_return({"blocked": True, "safe": False, "reason": "мат"}),
+    )
+    monkeypatch.setattr(reels, "log_moderation", _async_return(None))
+
+    session = _Session([
+        _Result(scalar=_reel()),
+        _Result(scalar=None),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/reels/r1/forward",
+            json={"match_id": "m-1", "text": "нехороший текст"},
+        )
+
+    assert r.status_code == 422
+
+
+async def test_история_комнаты_отдаёт_превью_ролика(app):
+    """В комнате пересланный ролик выглядел как «поделился видео» без видео."""
+    сообщение = SimpleNamespace(
+        id="rm1", room_id="room-1", sender_id="u-other", text="смотрите",
+        reel_id="r1", is_hidden=False, created_at=datetime.now(timezone.utc),
+    )
+    session = _Session([
+        _Result(scalar=SimpleNamespace(id="room-1", is_active=True)),  # комната
+        _Result(rows=[]),                    # кого я заблокировал
+        _Result(rows=[]),                    # кто заблокировал меня
+        _Result(rows=[сообщение]),           # сообщения
+        _Result(rows=[_profile("u-other")]), # анкеты авторов
+        _Result(rows=[_reel()]),             # ролики
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/rooms/room-1/messages")
+
+    assert r.status_code == 200
+    (сообщение_json,) = r.json()["messages"]
+    assert сообщение_json["reel"]["video_url"] == "https://example.test/v.mp4"
+
+
+async def test_снятый_модерацией_ролик_исчезает_из_истории_комнаты(app):
+    """Ролик сняли после пересыла — превью не отдаём, сообщение остаётся."""
+    сообщение = SimpleNamespace(
+        id="rm1", room_id="room-1", sender_id="u-other", text="смотрите",
+        reel_id="r1", is_hidden=False, created_at=datetime.now(timezone.utc),
+    )
+    session = _Session([
+        _Result(scalar=SimpleNamespace(id="room-1", is_active=True)),
+        _Result(rows=[]),
+        _Result(rows=[]),
+        _Result(rows=[сообщение]),
+        _Result(rows=[_profile("u-other")]),
+        _Result(rows=[_reel(hidden=True)]),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/rooms/room-1/messages")
+
+    (сообщение_json,) = r.json()["messages"]
+    assert сообщение_json["reel"] is None
+    assert сообщение_json["text"] == "смотрите"
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

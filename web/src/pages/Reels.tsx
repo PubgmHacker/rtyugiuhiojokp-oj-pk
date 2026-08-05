@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Heart, MessageCircle, Flag, Plus, Trash2, Volume2, VolumeX, EyeOff, Eye,
+  Share2,
 } from "lucide-react";
 import {
   deleteReel,
@@ -27,6 +28,7 @@ import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, EmptyState, ScreenHeader, Spinner } from "../components/ui";
 import ReelUploader from "../components/ReelUploader";
 import ReelComments from "../components/ReelComments";
+import ReelForwardSheet from "../components/ReelForwardSheet";
 import { REPORT_REASONS } from "../lib/profileOptions";
 
 export default function Reels() {
@@ -38,7 +40,10 @@ export default function Reels() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [commentsFor, setCommentsFor] = useState<Reel | null>(null);
   const [reportFor, setReportFor] = useState<Reel | null>(null);
+  const [forwardFor, setForwardFor] = useState<Reel | null>(null);
   const [error, setError] = useState("");
+  // Успех — своя плашка: «Отправлено» в красной рамке читается как сбой
+  const [notice, setNotice] = useState("");
   const loadingRef = useRef(false);
 
   const load = useCallback(
@@ -195,6 +200,7 @@ export default function Reels() {
             onDelete={() => handleDelete(reel)}
             onComments={() => setCommentsFor(reel)}
             onReport={() => setReportFor(reel)}
+            onForward={() => setForwardFor(reel)}
           />
         ))}
       </div>
@@ -225,6 +231,17 @@ export default function Reels() {
         </button>
       </div>
 
+      {notice && (
+        <button
+          onClick={() => setNotice("")}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 px-4 py-2
+                     rounded-full bg-success/15 border border-success/30
+                     text-success text-[13px] font-medium"
+        >
+          {notice} · закрыть
+        </button>
+      )}
+
       {error && (
         <button
           onClick={() => setError("")}
@@ -252,6 +269,12 @@ export default function Reels() {
         reel={reportFor}
         onClose={() => setReportFor(null)}
         onPick={(reason) => reportFor && handleReport(reportFor, reason)}
+      />
+
+      <ReelForwardSheet
+        reel={forwardFor}
+        onClose={() => setForwardFor(null)}
+        onSent={(куда) => setNotice(`Отправлено: ${куда}`)}
       />
     </div>
   );
@@ -331,6 +354,7 @@ function ReelItem({
   onDelete,
   onComments,
   onReport,
+  onForward,
 }: {
   reel: Reel;
   muted: boolean;
@@ -338,6 +362,7 @@ function ReelItem({
   onDelete: () => void;
   onComments: () => void;
   onReport: () => void;
+  onForward: () => void;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   // Просмотр отмечаем один раз за монтирование: карточка перерисовывается на
@@ -428,6 +453,21 @@ function ReelItem({
             </span>
           )}
         </button>
+
+        {/* Переслать — следующее по частоте действие после реакции: ролик
+            хочется показать конкретному человеку, а не лайкнуть в пустоту.
+            Снятый модерацией ролик не пересылается — сервер откажет, и кнопку
+            автору лучше не показывать вовсе */}
+        {!reel.is_hidden && (
+          <button
+            aria-label="Переслать видео"
+            onClick={onForward}
+            className="w-11 h-11 rounded-full glass-strong flex items-center
+                       justify-center active:scale-90 transition-transform"
+          >
+            <Share2 size={18} />
+          </button>
+        )}
 
         {/* На свой ролик жаловаться незачем, а на чужой — обязательно должно
             быть можно: это единственный публичный контент, откуда раньше

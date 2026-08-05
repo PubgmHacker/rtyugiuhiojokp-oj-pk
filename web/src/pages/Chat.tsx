@@ -26,6 +26,7 @@ import { ChatWebSocket, type ConnectionStatus } from "../lib/websocket";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
+import ReelBubble from "../components/ReelBubble";
 import { REPORT_REASONS } from "../lib/profileOptions";
 
 export default function Chat() {
@@ -440,6 +441,7 @@ export default function Chat() {
                             borderBottomLeftRadius: !group.mine && isLast ? 6 : 20,
                           }}
                         >
+                          {m.reel && <ReelBubble reel={m.reel} mine={group.mine} />}
                           {m.image_url && (
                             <img
                               src={m.image_url}

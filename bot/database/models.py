@@ -171,13 +171,21 @@ class Subscription(Base):
 
 class Message(Base):
     __tablename__ = "dating_messages"
-    __table_args__ = (Index("ix_message_match_created", "match_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_message_match_created", "match_id", "created_at"),
+        Index("ix_dating_messages_reel", "reel_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
     sender_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     text: Mapped[str] = mapped_column(String, default="")
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: Пересланный ролик — см. api/models/models.py. Бот пересыл не создаёт, но
+    #: колонка обязана быть: create_all() бота может отработать первым.
+    reel_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("dating_reels.id", ondelete="SET NULL"), nullable=True
+    )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -298,12 +306,19 @@ class RoomMessage(Base):
     """Сообщение в групповом чате — см. api/models/models.py."""
 
     __tablename__ = "dating_room_messages"
-    __table_args__ = (Index("ix_room_message_created", "room_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_room_message_created", "room_id", "created_at"),
+        Index("ix_dating_room_messages_reel", "reel_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     room_id: Mapped[str] = mapped_column(String, ForeignKey("dating_rooms.id", ondelete="CASCADE"))
     sender_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     text: Mapped[str] = mapped_column(String)
+    #: Пересланный ролик — см. Message.reel_id.
+    reel_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("dating_reels.id", ondelete="SET NULL"), nullable=True
+    )
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

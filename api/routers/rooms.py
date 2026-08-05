@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import Block, Profile, Room, RoomMessage, User
+from models.models import Block, Profile, Reel, Room, RoomMessage, User
 from models.schemas import (
     RoomMessageOut,
     RoomMessages,
@@ -28,6 +28,7 @@ from models.schemas import (
     RoomsOut,
 )
 from services.ai_moderation import log_moderation, moderate_text
+from services.chat_delivery import reel_preview
 from utils import as_list
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,23 @@ async def _room_or_404(session: AsyncSession, room_id: str) -> Room:
     return room
 
 
+async def check_flood(session: AsyncSession, user_id: str) -> None:
+    """Антифлуд по комнатам: общий лимит по пути не мешает залить одну комнату.
+
+    Живёт здесь, но вызывается и из пересыла ролика: пока проверка была только
+    в обработчике обычной отправки, роликами можно было флудить без ограничений.
+    """
+    since = datetime.now(timezone.utc) - timedelta(minutes=1)
+    result = await session.execute(
+        select(func.count(RoomMessage.id)).where(and_(
+            RoomMessage.sender_id == user_id,
+            RoomMessage.created_at >= since,
+        ))
+    )
+    if (result.scalar() or 0) >= FLOOD_PER_MINUTE:
+        raise HTTPException(status_code=429, detail="Слишком много сообщений подряд")
+
+
 @router.get("/{room_id}/messages", response_model=RoomMessages)
 async def get_room_messages(
     room_id: str,
@@ -133,6 +151,14 @@ async def get_room_messages(
         )
         profiles = {p.user_id: p for p in result.scalars().all()}
 
+    # Превью пересланных роликов — одним запросом на страницу. Без него
+    # сообщение выглядит как «поделился видео» без самого видео
+    reels: dict[str, Reel] = {}
+    reel_ids = {m.reel_id for m in rows if m.reel_id}
+    if reel_ids:
+        result = await session.execute(select(Reel).where(Reel.id.in_(reel_ids)))
+        reels = {r.id: r for r in result.scalars().all()}
+
     # Разворачиваем: запрашивали свежие сверху, а читать удобнее снизу вверх
     rows.reverse()
 
@@ -148,6 +174,7 @@ async def get_room_messages(
                     else ""
                 ),
                 text=m.text,
+                reel=reel_preview(reels.get(m.reel_id)) if m.reel_id else None,
                 is_mine=m.sender_id == user.id,
                 created_at=m.created_at,
             )
@@ -171,16 +198,7 @@ async def send_room_message(
     if not text:
         raise HTTPException(status_code=400, detail="Пустое сообщение")
 
-    # Антифлуд по комнате: общий лимит по пути не мешает залить одну комнату
-    since = datetime.now(timezone.utc) - timedelta(minutes=1)
-    result = await session.execute(
-        select(func.count(RoomMessage.id)).where(and_(
-            RoomMessage.sender_id == user.id,
-            RoomMessage.created_at >= since,
-        ))
-    )
-    if (result.scalar() or 0) >= FLOOD_PER_MINUTE:
-        raise HTTPException(status_code=429, detail="Слишком много сообщений подряд")
+    await check_flood(session, user.id)
 
     # В личке собеседника можно заблокировать, а в общем чате грубость видят
     # все — поэтому текст проверяем до публикации

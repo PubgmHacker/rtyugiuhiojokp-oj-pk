@@ -26,16 +26,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import Block, Profile, Reel, ReelComment, ReelLike, Report, User
+from models.models import (
+    Block, Match, Profile, Reel, ReelComment, ReelLike, Report,
+    Room, RoomMessage, User,
+)
 from models.schemas import (
     ReelCommentOut,
     ReelComments,
     ReelCommentSend,
+    ReelForward,
     ReelOut,
     ReelReport,
     ReelsOut,
 )
+from routers.rooms import check_flood
 from services.ai_moderation import log_moderation, moderate_image, moderate_text
+from services.chat_delivery import REEL_FALLBACK_TEXT, fan_out, save_message
 from services.image_sanitizer import ImageRejected, sanitize_image
 from services.r2_storage import delete_photo_from_r2, upload_photo_to_r2
 from utils import as_list
@@ -598,3 +604,99 @@ async def report_reel(
 
     await session.commit()
     return Response(status_code=204)
+
+
+@router.post("/{reel_id}/forward", status_code=204)
+async def forward_reel(
+    reel_id: str,
+    data: ReelForward,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Переслать ролик в личный чат мэтча или в комнату по интересам.
+
+    Наружу не шарим: в Telegram Mini App ссылку всё равно откроют внутри
+    Telegram, а вне него она бесполезна. Зато показать конкретному человеку или
+    закинуть в общий чат — то, ради чего репост и нужен.
+
+    Скрытый модерацией ролик не пересылается: иначе снятое с показа видео
+    продолжало бы ходить по чатам.
+    """
+    result = await session.execute(select(Reel).where(Reel.id == reel_id))
+    reel = result.scalar_one_or_none()
+    if not reel or reel.is_hidden:
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+
+    # Автор ролика мог заблокировать этого человека — как и под комментарием,
+    # чужое видео он растаскивать по чатам не должен
+    result = await session.execute(
+        select(Block.id).where(or_(
+            and_(Block.blocker_id == reel.user_id, Block.blocked_id == user.id),
+            and_(Block.blocker_id == user.id, Block.blocked_id == reel.user_id),
+        ))
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Переслать нельзя")
+
+    caption = (data.text or "").strip()
+    if caption:
+        verdict = await moderate_text(caption)
+        await log_moderation(user.id, "reel_forward", caption, verdict)
+        if verdict["blocked"]:
+            raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+
+    if data.match_id:
+        # Мэтч должен быть свой и живой: иначе можно писать в чужую переписку.
+        # Блокировка гасит is_active, так что заблокированная пара сюда не дойдёт
+        result = await session.execute(
+            select(Match).where(and_(
+                Match.id == data.match_id,
+                Match.is_active == True,  # noqa: E712
+                or_(Match.user1_id == user.id, Match.user2_id == user.id),
+            ))
+        )
+        match = result.scalar_one_or_none()
+        if not match:
+            raise HTTPException(status_code=404, detail="Чат не найден")
+
+        partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
+
+        # Через общий сервис, а не своим session.add: иначе собеседник с
+        # открытым чатом не получит события, а офлайн — ни пуша, ни Telegram
+        payload = await save_message(
+            data.match_id, user.id, caption, reel_id=reel_id,
+        )
+        if payload is None:
+            raise HTTPException(status_code=404, detail="Чат не найден")
+        await fan_out(
+            payload, data.match_id, user.id, partner_id,
+            caption or REEL_FALLBACK_TEXT,
+        )
+        return Response(status_code=204)
+
+    if data.room_id:
+        result = await session.execute(
+            select(Room).where(and_(
+                Room.id == data.room_id,
+                Room.is_active == True,  # noqa: E712
+            ))
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Комната не найдена")
+
+        # Тот же антифлуд, что у обычной отправки: без него комнату можно было
+        # залить роликами в обход лимита на сообщения
+        await check_flood(session, user.id)
+
+        session.add(RoomMessage(
+            room_id=data.room_id,
+            sender_id=user.id,
+            # В комнате текст обязателен по схеме, поэтому подставляем понятную
+            # подпись: пустое сообщение с одним превью читается как сбой
+            text=caption or "поделился видео",
+            reel_id=reel_id,
+        ))
+        await session.commit()
+        return Response(status_code=204)
+
+    raise HTTPException(status_code=400, detail="Укажите чат или комнату")

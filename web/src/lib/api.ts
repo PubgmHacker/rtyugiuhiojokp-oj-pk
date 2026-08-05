@@ -109,11 +109,21 @@ export interface MatchResponse {
   unread_count?: number;
 }
 
+/** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
+export interface ReelPreview {
+  id: string;
+  video_url: string;
+  cover_url: string;
+  caption: string;
+}
+
 export interface ChatMessage {
   id: string;
   sender_id: string;
   text: string;
   image_url?: string | null;
+  /** Пусто у обычных сообщений и у роликов, снятых модерацией после пересыла. */
+  reel?: ReelPreview | null;
   read_at?: string | null;
   created_at?: string | null;
 }
@@ -166,8 +176,8 @@ export async function likeProfile(
   return data;
 }
 
-export async function getMatches(): Promise<MatchResponse[]> {
-  const { data } = await api.get("/matches");
+export async function getMatches(signal?: AbortSignal): Promise<MatchResponse[]> {
+  const { data } = await api.get("/matches", { signal });
   return data;
 }
 
@@ -324,6 +334,24 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/**
+ * Переслать ролик в личный чат мэтча или в комнату. Наружу не шарим: ссылку
+ * всё равно откроют внутри Telegram, а вне него она бесполезна.
+ */
+export async function forwardReel(
+  reelId: string,
+  target: { matchId?: string; roomId?: string },
+  text = ""
+): Promise<void> {
+  await api.post(`/reels/${reelId}/forward`, {
+    // Сервер ждёт одно из двух полей; лишний null он бы принял, но пустое
+    // тело читается однозначнее в логах
+    ...(target.matchId ? { match_id: target.matchId } : {}),
+    ...(target.roomId ? { room_id: target.roomId } : {}),
+    text,
+  });
+}
+
 export async function getReelComments(reelId: string): Promise<ReelComment[]> {
   const { data } = await api.get(`/reels/${reelId}/comments`);
   return data.comments;
@@ -459,12 +487,13 @@ export interface RoomMessage {
   sender_name: string;
   sender_photo: string;
   text: string;
+  reel?: ReelPreview | null;
   is_mine: boolean;
   created_at?: string | null;
 }
 
-export async function getRooms(): Promise<Room[]> {
-  const { data } = await api.get("/rooms");
+export async function getRooms(signal?: AbortSignal): Promise<Room[]> {
+  const { data } = await api.get("/rooms", { signal });
   return data.rooms;
 }
 

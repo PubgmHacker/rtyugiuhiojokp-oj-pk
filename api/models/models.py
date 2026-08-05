@@ -223,14 +223,25 @@ class Match(Base):
 class Message(Base):
     __tablename__ = "dating_messages"
     # История переписки грузится по match_id с сортировкой по времени —
-    # самый частый запрос в продукте после деки
-    __table_args__ = (Index("ix_message_match_created", "match_id", "created_at"),)
+    # самый частый запрос в продукте после деки. Индекс по reel_id нужен не
+    # для чтения, а для удаления ролика: без него `SET NULL` сканирует всю
+    # таблицу сообщений
+    __table_args__ = (
+        Index("ix_message_match_created", "match_id", "created_at"),
+        Index("ix_dating_messages_reel", "reel_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
     sender_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     text: Mapped[str] = mapped_column(String, default="")
     image_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Пересланный ролик. `SET NULL` при удалении: сообщение остаётся в
+    #: переписке, просто превью пропадает — вырезать чужую реплику из истории
+    #: только потому, что автор удалил видео, неправильно.
+    reel_id: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("dating_reels.id", ondelete="SET NULL"), nullable=True
+    )
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -423,12 +434,19 @@ class RoomMessage(Base):
     """
 
     __tablename__ = "dating_room_messages"
-    __table_args__ = (Index("ix_room_message_created", "room_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_room_message_created", "room_id", "created_at"),
+        Index("ix_dating_room_messages_reel", "reel_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     room_id: Mapped[str] = mapped_column(String, ForeignKey("dating_rooms.id", ondelete="CASCADE"))
     sender_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     text: Mapped[str] = mapped_column(String)
+    #: Пересланный ролик — см. Message.reel_id.
+    reel_id: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("dating_reels.id", ondelete="SET NULL"), nullable=True
+    )
     #: Снято модератором. Не удаляем: по жалобе нужно понимать, за что снято.
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

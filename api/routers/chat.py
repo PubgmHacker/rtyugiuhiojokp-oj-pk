@@ -10,11 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import async_session_factory
 from middleware.auth import verify_access_token
-from models.models import Match, Message, Profile, User
+from models.models import Match, Message, User
 from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
-from services.realtime import publish_bot_event
-from services.push import is_configured, notify_new_message
+from services.chat_delivery import fan_out, save_message
 from services.token_revocation import is_revoked
 
 logger = logging.getLogger(__name__)
@@ -50,33 +49,6 @@ async def _ws_auth(websocket: WebSocket) -> tuple[str, dict] | None:
     return user_id, payload
 
 
-async def _save_message(match_id: str, sender_id: str, text: str, image_url: str | None) -> dict | None:
-    async with async_session_factory() as session:
-        async with session.begin():
-            # Мэтч мог быть разорван, пока сокет открыт
-            result = await session.execute(
-                select(Match).where(and_(Match.id == match_id, Match.is_active == True))
-            )
-            if not result.scalar_one_or_none():
-                return None
-
-            message = Message(
-                match_id=match_id, sender_id=sender_id,
-                text=text, image_url=image_url,
-            )
-            session.add(message)
-            await session.flush()
-            return {
-                "type": "message",
-                "id": message.id,
-                "match_id": match_id,
-                "sender_id": sender_id,
-                "text": text,
-                "image_url": image_url,
-                "created_at": message.created_at.isoformat() if message.created_at else None,
-            }
-
-
 async def _mark_read(match_id: str, reader_id: str) -> None:
     """Отметить прочитанными все входящие сообщения в мэтче."""
     async with async_session_factory() as session:
@@ -90,26 +62,6 @@ async def _mark_read(match_id: str, reader_id: str) -> None:
                 ))
                 .values(read_at=datetime.now(timezone.utc))
             )
-
-
-async def _push_message_notification(
-    match_id: str, sender_id: str, receiver_id: str, text: str,
-) -> None:
-    """Пуш о сообщении в iOS-приложение — своя сессия, сокет её не держит."""
-    if not is_configured():
-        return
-    try:
-        async with async_session_factory() as session:
-            async with session.begin():
-                result = await session.execute(
-                    select(Profile.display_name).where(Profile.user_id == sender_id)
-                )
-                sender_name = result.scalar_one_or_none() or ""
-                await notify_new_message(
-                    session, receiver_id, sender_name, text, match_id,
-                )
-    except Exception as e:
-        logger.error(f"Message push failed ({match_id}): {e}")
 
 
 @router.websocket("/ws/chat/{match_id}")
@@ -200,26 +152,11 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
                     })
                     continue
 
-            payload = await _save_message(match_id, user_id, text, image_url)
+            payload = await save_message(match_id, user_id, text, image_url)
             if payload is None:
                 await websocket.close(code=4004, reason="Match is no longer active")
                 break
-            # publish, а не broadcast: собеседник может сидеть на другом
-            # инстансе API, до него событие дойдёт только через Redis
-            await manager.publish(match_id, payload)
-
-            # Партнёр не в чате (ни на одном инстансе) — уведомляем в Telegram
-            if not await manager.is_user_online(match_id, partner_id):
-                await publish_bot_event({
-                    "type": "new_message",
-                    "match_id": match_id,
-                    "sender_id": user_id,
-                    "receiver_id": partner_id,
-                    "text": text[:200],
-                })
-                await _push_message_notification(
-                    match_id, user_id, partner_id, text,
-                )
+            await fan_out(payload, match_id, user_id, partner_id, text)
 
     except WebSocketDisconnect:
         pass
