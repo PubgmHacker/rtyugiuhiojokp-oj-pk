@@ -85,6 +85,8 @@ async def moderate_text(text: str) -> dict:
             return {"safe": True, "blocked": False, "reason": "Parse error"}
     except Exception as e:
         logger.error(f"AI moderation error: {e}")
+        from services.alerting import capture_exception
+        capture_exception(e)
         return {"safe": True, "blocked": False, "reason": "AI unavailable"}
 
 
@@ -143,6 +145,8 @@ async def moderate_image(image_bytes: bytes) -> dict:
             return {"safe": True, "blocked": False, "reason": "Parse error"}
     except Exception as e:
         logger.error(f"AI image moderation error: {e}")
+        from services.alerting import capture_exception
+        capture_exception(e)
         return {"safe": True, "blocked": False, "reason": "AI unavailable"}
 
 

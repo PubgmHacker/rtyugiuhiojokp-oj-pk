@@ -33,6 +33,10 @@ async def lifespan(app: FastAPI):
     """Startup + shutdown hooks."""
     logger.info("SOULDAWN DATING API starting up...")
 
+    # Без SENTRY_DSN — no-op, поведение не меняется (см. services/alerting.py)
+    from services.alerting import init as init_alerting
+    init_alerting(settings.SENTRY_DSN)
+
     if not settings.DEBUG and settings.JWT_SECRET == "change_this_in_production":
         raise RuntimeError(
             "JWT_SECRET is still the default value — set a random secret before running in production"
@@ -140,6 +144,8 @@ async def health(response: Response):
     Railway и балансировщику нужен честный ответ: сервис без БД
     работать не может, поэтому такое состояние отдаём как 503.
     """
+    from services.alerting import capture_message
+
     checks: dict[str, str] = {}
 
     try:
@@ -152,6 +158,7 @@ async def health(response: Response):
     except Exception as e:
         logger.warning(f"Health: база недоступна: {e}")
         checks["database"] = "fail"
+        capture_message(f"Health: база недоступна: {e}")
 
     try:
         from services.realtime import get_redis
@@ -162,6 +169,7 @@ async def health(response: Response):
     except Exception as e:
         logger.warning(f"Health: Redis недоступен: {e}")
         checks["redis"] = "degraded"
+        capture_message(f"Health: Redis недоступен: {e}")
 
     # Без Redis чат теряет real-time, но сервис остаётся работоспособным;
     # без базы — нет
@@ -172,6 +180,10 @@ async def health(response: Response):
     # Модерация фото без AI-ключа пропускает ВСЁ (у текста хотя бы есть
     # словарный фильтр). Сервис при этом работает, поэтому не 503 — но
     # состояние должно быть видно в мониторинге, а не только в логах
+    # Алертинг сюда не вешаем: "disabled" — статичное состояние конфигурации
+    # (нет ключа), а не сбой, и слать его в Sentry на каждый опрос /health
+    # означало бы спам. Настоящий сбой (AI недоступен во время запроса)
+    # алертится из services/ai_moderation.py, где он и происходит.
     try:
         from services.ai_moderation import image_moderation_available
 
