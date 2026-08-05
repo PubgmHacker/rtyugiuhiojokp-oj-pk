@@ -216,6 +216,25 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class SectionOpen(Base):
+    """Открытия разделов — см. api/models/models.py."""
+
+    __tablename__ = "dating_section_opens"
+    __table_args__ = (
+        UniqueConstraint("user_id", "section", name="uq_section_open"),
+        Index("ix_section_open_section", "section"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    section: Mapped[str] = mapped_column(String)
+    opens: Mapped[int] = mapped_column(Integer, default=1)
+    last_open_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class VoiceCall(Base):
     """Журнал звонков рулетки — см. api/models/models.py."""
 

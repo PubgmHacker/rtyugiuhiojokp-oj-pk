@@ -18,9 +18,11 @@ import {
   type RoomMessage,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { useSectionOpen } from "../lib/useSectionOpen";
 import { EmptyState, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 
 export default function Rooms() {
+  useSectionOpen("rooms");
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [active, setActive] = useState<Room | null>(null);
 

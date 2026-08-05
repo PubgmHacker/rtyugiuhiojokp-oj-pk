@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles, X } from "lucide-react";
-import { getDailyCard, type DailyCard as Card } from "../lib/api";
+import { getDailyCard, recordSectionOpen, type DailyCard as Card } from "../lib/api";
 import { haptic } from "../lib/haptics";
 
 /** Ключ хранит дату последнего закрытия: сравниваем с сегодняшней. */
@@ -49,6 +49,9 @@ export default function DailyCardBanner() {
           <button
             onClick={() => {
               haptic("light");
+              // Считаем раскрытие, а не показ баннера: баннер видят все, кто
+              // открыл ленту, и такая цифра ничего не сказала бы о разделе
+              if (!open) recordSectionOpen("daily");
               setOpen((v) => !v);
             }}
             className="flex-1 text-left min-w-0"

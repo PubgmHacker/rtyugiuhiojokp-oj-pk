@@ -287,6 +287,36 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class SectionOpen(Base):
+    """Открытия разделов — чтобы решать по цифрам, а не по вкусу.
+
+    Спор «эта фича нужна или лишняя» бесконечен, пока нет данных: каждый
+    судит по себе. Здесь копится ровно то, что нужно для решения — кто и
+    какой раздел открывал.
+
+    Одна строка на пару «человек + раздел» с обновлением счётчика: журнал
+    каждого тапа вырос бы в самую большую таблицу в базе, а для ответа
+    «сколько людей вообще заходит в кейсы» нужны уникальные посетители.
+    """
+
+    __tablename__ = "dating_section_opens"
+    __table_args__ = (
+        UniqueConstraint("user_id", "section", name="uq_section_open"),
+        # Сводка читается по разделу
+        Index("ix_section_open_section", "section"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: Код раздела: reels | rooms | voice | photo_ratings | cases | leaderboard | daily
+    section: Mapped[str] = mapped_column(String)
+    opens: Mapped[int] = mapped_column(Integer, default=1)
+    last_open_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class VoiceCall(Base):
     """Журнал пар голосовой рулетки.
 

@@ -12,6 +12,7 @@ import { motion } from "framer-motion";
 import { Mic, MicOff, PhoneOff, SkipForward } from "lucide-react";
 import { getIceServers } from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { useSectionOpen } from "../lib/useSectionOpen";
 import { ScreenHeader } from "../components/ui";
 
 const WS_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -19,6 +20,7 @@ const WS_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 type Stage = "idle" | "waiting" | "talking";
 
 export default function VoiceRoulette() {
+  useSectionOpen("voice");
   const [stage, setStage] = useState<Stage>("idle");
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");

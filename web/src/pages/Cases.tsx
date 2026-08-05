@@ -20,9 +20,11 @@ import {
   type CaseState,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, Card, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 
 export default function Cases() {
+  useSectionOpen("cases");
   const [state, setState] = useState<CaseState | null>(null);
   const [busy, setBusy] = useState(false);
   const [won, setWon] = useState<CaseReward | null>(null);

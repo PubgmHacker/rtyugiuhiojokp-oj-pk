@@ -8,7 +8,7 @@ import {
   Link,
 } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Flame, MessageCircle, User, Sparkles, Film, WifiOff } from "lucide-react";
+import { Flame, MessageCircle, User, Sparkles, LayoutGrid, WifiOff } from "lucide-react";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
 import { initNative, registerPushNotifications } from "./lib/native";
@@ -33,15 +33,17 @@ const PhotoRatings = lazy(() => import("./pages/PhotoRatings"));
 const Rooms = lazy(() => import("./pages/Rooms"));
 const Cases = lazy(() => import("./pages/Cases"));
 const VoiceRoulette = lazy(() => import("./pages/VoiceRoulette"));
+const More = lazy(() => import("./pages/More"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
-// Пять вкладок, как в референсе. Подписка живёт в профиле: покупка — редкое
-// действие, постоянная вкладка под неё выглядела бы навязчиво
+// Пять вкладок, как в референсе: Лента, Лайки, Чаты, Ещё, Профиль.
+// Знакомства делаются в первых трёх — остальные разделы собраны в «Ещё»,
+// иначе навигация конкурирует за внимание с тем, что вообще продаёт продукт.
 const NAV_ITEMS = [
   { path: "/discover", icon: Flame, label: "Лента" },
   { path: "/likes", icon: Sparkles, label: "Лайки" },
   { path: "/matches", icon: MessageCircle, label: "Чаты" },
-  { path: "/reels", icon: Film, label: "Видео" },
+  { path: "/more", icon: LayoutGrid, label: "Ещё" },
   { path: "/profile", icon: User, label: "Профиль" },
 ];
 
@@ -242,6 +244,7 @@ export default function App() {
           <Route path="/chat/:matchId" element={<Protected nav={false}><Chat /></Protected>} />
           <Route path="/plans" element={<Protected><Plans /></Protected>} />
           {/* Лента роликов сама во весь экран — своя нижняя навигация остаётся */}
+          <Route path="/more" element={<Protected><More /></Protected>} />
           <Route path="/reels" element={<Protected><Reels /></Protected>} />
           <Route path="/photo-ratings" element={<Protected><PhotoRatings /></Protected>} />
           <Route path="/rooms" element={<Protected><Rooms /></Protected>} />

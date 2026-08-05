@@ -20,6 +20,7 @@ import {
   type PhotoRatingTarget,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { useSectionOpen } from "../lib/useSectionOpen";
 import { EmptyState, ScreenHeader, Skeleton } from "../components/ui";
 
 const SCORES = [1, 2, 3, 4, 5];
@@ -27,6 +28,7 @@ const SCORES = [1, 2, 3, 4, 5];
 type Tab = "rate" | "mine";
 
 export default function PhotoRatings() {
+  useSectionOpen("photo_ratings");
   const [tab, setTab] = useState<Tab>("rate");
 
   return (

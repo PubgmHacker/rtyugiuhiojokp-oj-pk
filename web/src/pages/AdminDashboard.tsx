@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { LayoutDashboard, Users, AlertTriangle, ShieldCheck, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, AlertTriangle, ShieldCheck, LayoutGrid, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getAdminStats, type AdminStats } from "../lib/admin";
 import { useStore } from "../lib/store";
@@ -8,14 +8,16 @@ import RegistrationsChart from "../components/admin/RegistrationsChart";
 import UsersTable from "../components/admin/UsersTable";
 import ReportsTable from "../components/admin/ReportsTable";
 import ModerationLogsTable from "../components/admin/ModerationLogsTable";
+import SectionsTable from "../components/admin/SectionsTable";
 
-type Tab = "overview" | "users" | "reports" | "moderation";
+type Tab = "overview" | "users" | "reports" | "moderation" | "sections";
 
 const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
   { id: "overview", label: "Обзор", icon: LayoutDashboard },
   { id: "users", label: "Пользователи", icon: Users },
   { id: "reports", label: "Жалобы", icon: AlertTriangle },
   { id: "moderation", label: "Модерация", icon: ShieldCheck },
+  { id: "sections", label: "Разделы", icon: LayoutGrid },
 ];
 
 export default function AdminDashboard() {
@@ -144,6 +146,7 @@ export default function AdminDashboard() {
         {tab === "users" && <UsersTable />}
         {tab === "reports" && <ReportsTable />}
         {tab === "moderation" && <ModerationLogsTable />}
+        {tab === "sections" && <SectionsTable />}
       </div>
     </div>
   );

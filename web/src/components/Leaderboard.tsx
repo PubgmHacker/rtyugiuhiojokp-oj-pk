@@ -12,8 +12,11 @@ import { useEffect, useState } from "react";
 import { Crown, Trophy } from "lucide-react";
 import { getLeaderboard, type LeaderboardOut } from "../lib/api";
 import { EmptyState, Skeleton } from "./ui";
+import { useSectionOpen } from "../lib/useSectionOpen";
 
 export default function Leaderboard() {
+  // Считаем открытие таба, а не экрана: у рейтинга своей страницы нет
+  useSectionOpen("leaderboard");
   const [data, setData] = useState<LeaderboardOut | null>(null);
   const [failed, setFailed] = useState(false);
 

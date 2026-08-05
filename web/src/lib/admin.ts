@@ -109,3 +109,29 @@ export async function getModerationLogs(
   });
   return data;
 }
+
+/* ── Сводка по разделам ─────────────────────────────────────── */
+
+export interface SectionStat {
+  section: string;
+  users: number;
+  opens: number;
+  /** Какая доля людей вообще заходила в раздел. */
+  reach_percent: number;
+}
+
+export interface SectionStats {
+  days: number;
+  total_users: number;
+  sections: SectionStat[];
+}
+
+/**
+ * По этой сводке решают, какие разделы оставить. Живёт не в /admin, а в
+ * /sections: запись открытия делает обычный пользователь, и держать половину
+ * ручки в админском роутере значило бы разнести одну фичу по двум местам.
+ */
+export async function getSectionStats(days = 30): Promise<SectionStats> {
+  const { data } = await api.get("/sections/stats", { params: { days } });
+  return data;
+}

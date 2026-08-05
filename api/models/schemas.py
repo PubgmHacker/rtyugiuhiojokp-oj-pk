@@ -239,6 +239,23 @@ class ReelsOut(BaseModel):
     next_before: Optional[str] = None
 
 
+class SectionStat(BaseModel):
+    """Один раздел в сводке. `users` важнее `opens`: один энтузиаст,
+    открывший кейсы двести раз, не означает, что кейсы нужны продукту."""
+
+    section: str
+    users: int = 0
+    opens: int = 0
+    #: Какая доля людей вообще заходила в раздел.
+    reach_percent: int = 0
+
+
+class SectionStats(BaseModel):
+    days: int = 30
+    total_users: int = 0
+    sections: list[SectionStat] = Field(default_factory=list)
+
+
 class VoiceIceServers(BaseModel):
     """Параметры соединения для WebRTC. Отдаём с сервера: TURN-креденшелы
     меняются, а зашитые в бандл требовали бы пересборки приложения."""

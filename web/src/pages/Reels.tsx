@@ -18,10 +18,12 @@ import {
   type Reel,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, EmptyState, ScreenHeader, Spinner } from "../components/ui";
 import ReelUploader from "../components/ReelUploader";
 
 export default function Reels() {
+  useSectionOpen("reels");
   const [reels, setReels] = useState<Reel[] | null>(null);
   const [before, setBefore] = useState<string | null>(null);
   const [exhausted, setExhausted] = useState(false);

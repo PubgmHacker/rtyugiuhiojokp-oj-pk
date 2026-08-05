@@ -2338,3 +2338,100 @@ def test_turn_необязателен_но_отсутствие_логируе�
     исходник = inspect.getsource(voice._ice_servers)
     assert "stun:" in исходник
     assert "logger.info" in исходник
+
+
+# ════════════════════════════════════════════════════════════════
+#  Учёт открытий разделов и хаб «Ещё»
+# ════════════════════════════════════════════════════════════════
+
+def test_роуты_учёта_разделов(openapi):
+    paths = openapi["paths"]
+    assert "/api/sections/{section}/open" in paths
+    assert "/api/sections/stats" in paths
+
+
+def test_неизвестный_раздел_не_попадает_в_сводку():
+    """Опечатка в клиенте создала бы раздел-призрак, и сводка перестала бы
+    быть читаемой."""
+    import inspect
+
+    from routers import sections
+
+    исходник = inspect.getsource(sections.record_open)
+    assert "section not in KNOWN_SECTIONS" in исходник
+    # Падать на аналитике незачем — молча игнорируем
+    assert "204" in исходник
+
+
+def test_учёт_считает_людей_а_не_тапы():
+    """Журнал каждого тапа стал бы самой большой таблицей в базе, а для ответа
+    «сколько людей заходит в кейсы» нужны уникальные посетители."""
+    from models.models import SectionOpen
+
+    constraints = {
+        tuple(col.name for col in c.columns)
+        for c in SectionOpen.__table__.constraints
+        if c.__class__.__name__ == "UniqueConstraint"
+    }
+    assert ("user_id", "section") in constraints
+    assert "opens" in SectionOpen.__table__.columns
+
+
+def test_сводка_показывает_разделы_с_нулём():
+    """Пустая строка — самый честный аргумент за удаление раздела. Если
+    показывать только непустые, лишнего не увидишь никогда."""
+    import inspect
+
+    from routers import sections
+
+    исходник = inspect.getsource(sections.get_section_stats)
+    assert "for section in sorted(KNOWN_SECTIONS)" in исходник
+    assert "reach_percent" in исходник
+
+
+def test_сводка_только_админу():
+    import inspect
+
+    from routers import sections
+
+    assert "require_admin" in inspect.getsource(sections.get_section_stats)
+
+
+def test_все_разделы_учитываются_на_клиенте():
+    """Раздел без учёта не попадёт в сводку, и решение о нём придётся принимать
+    вслепую — ровно та проблема, ради которой учёт и заводился."""
+    from pathlib import Path
+
+    from routers.sections import KNOWN_SECTIONS
+
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    исходники = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in [*sorted((web / "pages").glob("*.tsx")), *sorted((web / "components").glob("*.tsx"))]
+    )
+
+    непокрытые = {s for s in KNOWN_SECTIONS if f'"{s}"' not in исходники}
+    assert not непокрытые, f"разделы без учёта открытий: {sorted(непокрытые)}"
+
+
+def test_вкладка_ещё_вместо_отдельной_вкладки_раздела():
+    """Пять вкладок — предел, и знакомства делаются в первых трёх. Раздел,
+    получивший свою вкладку, конкурирует за внимание с тем, что продаёт."""
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    app = (web / "App.tsx").read_text(encoding="utf-8")
+
+    начало = app.index("const NAV_ITEMS")
+    конец = app.index("];", начало)
+    nav = app[начало:конец]
+
+    assert nav.count("path:") == 5, "в навигации должно быть ровно пять вкладок"
+    assert '"/more"' in nav
+    # Второстепенные разделы живут в «Ещё», а не в навигации
+    for путь in ('"/reels"', '"/rooms"', '"/voice"', '"/cases"', '"/photo-ratings"'):
+        assert путь not in nav, f"{путь} не должен занимать вкладку"
+
+    more = (web / "pages" / "More.tsx").read_text(encoding="utf-8")
+    for путь in ("/reels", "/rooms", "/voice", "/cases", "/photo-ratings"):
+        assert путь in more, f"{путь} потерялся — из «Ещё» в него не попасть"

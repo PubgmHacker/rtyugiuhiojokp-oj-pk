@@ -312,6 +312,33 @@ export async function deleteReel(reelId: string): Promise<void> {
   await api.delete(`/reels/${reelId}`);
 }
 
+/* ── Учёт открытий разделов ─────────────────────────────────── */
+
+/** Коды разделов. Должны совпадать с KNOWN_SECTIONS в api/routers/sections.py. */
+export type Section =
+  | "reels"
+  | "rooms"
+  | "voice"
+  | "photo_ratings"
+  | "cases"
+  | "leaderboard"
+  | "daily";
+
+/**
+ * Отметить открытие раздела.
+ *
+ * Ошибку глушим: аналитика не должна ломать экран, который она измеряет.
+ * Разделов много, и без этих цифр спор «что лишнее» решается вкусом, а не
+ * данными.
+ */
+export async function recordSectionOpen(section: Section): Promise<void> {
+  try {
+    await api.post(`/sections/${section}/open`);
+  } catch {
+    /* не мешаем работе экрана */
+  }
+}
+
 /* ── Голосовая рулетка ──────────────────────────────────────── */
 
 /** Параметры WebRTC приходят с сервера: TURN-креденшелы меняются. */
