@@ -373,6 +373,15 @@ async def update_my_profile(
         if mod_result["blocked"]:
             raise HTTPException(status_code=422, detail="Bio violates content policy")
 
+    # Имя проверяем наравне с био: оно видно чаще, чем анкета целиком — в деке,
+    # в списке чатов, в комнатах и в уведомлениях. Через него уходили реклама,
+    # контакты и брань, потому что модерация стояла только на био
+    if data.display_name:
+        mod_result = await moderate_text(profile.display_name)
+        await log_moderation(user.id, "display_name", profile.display_name, mod_result)
+        if mod_result["blocked"]:
+            raise HTTPException(status_code=422, detail="Имя нарушает правила")
+
     await session.flush()
 
     # Своя анкета — возраст показываем владельцу всегда

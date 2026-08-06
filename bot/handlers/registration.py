@@ -159,6 +159,17 @@ async def process_name(message: Message, state: FSMContext):
     if len(name) < 2:
         await message.answer(T.REG_NAME_TOO_SHORT)
         return
+
+    # Имя проверяем наравне с био: его видно в деке, в чатах и в комнатах
+    # чаще, чем анкету целиком, а модерация стояла только на био — через имя
+    # уходили реклама, контакты и брань
+    verdict = await moderate_text(name)
+    if verdict.get("blocked"):
+        await message.answer(
+            T.REG_NAME_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+        )
+        return
+
     await state.update_data(reg_name=name[:50])
     await ask_age(message, state)
 

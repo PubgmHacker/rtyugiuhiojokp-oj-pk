@@ -977,6 +977,50 @@ async def test_буст_берёт_блокировку_до_подсчёта(ap
         )
 
 
+async def test_имя_анкеты_проходит_модерацию(app, monkeypatch):
+    """Модерация стояла только на био, а имя видно чаще самой анкеты — в деке,
+    в списке чатов, в комнатах, в уведомлениях. Через него уходили реклама,
+    контакты и брань."""
+    from routers import profiles
+
+    проверено: list[str] = []
+
+    async def _moderate(текст: str):
+        проверено.append(текст)
+        return {"blocked": "реклама" in текст, "reason": "спам"}
+
+    monkeypatch.setattr(profiles, "moderate_text", _moderate)
+    monkeypatch.setattr(profiles, "log_moderation", _async_return(None))
+
+    анкета = _profile("u-me")
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me", json={"display_name": "реклама @spam_channel"}
+        )
+
+    assert r.status_code == 422, "имя с рекламой прошло в анкету"
+    assert проверено, "имя вообще не отправлялось на модерацию"
+
+
+async def test_обычное_имя_принимается(app, monkeypatch):
+    """Иначе «починка» свелась бы к тому, что имя нельзя поменять вовсе."""
+    from routers import profiles
+
+    monkeypatch.setattr(profiles, "moderate_text", _async_return({"blocked": False}))
+    monkeypatch.setattr(profiles, "log_moderation", _async_return(None))
+
+    анкета = _profile("u-me")
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch("/api/profiles/me", json={"display_name": "Анна"})
+
+    assert r.status_code == 200, r.text
+    assert анкета.display_name == "Анна"
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 
