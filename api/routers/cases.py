@@ -25,6 +25,7 @@ from services.cases import (
     REWARD_BOOST, REWARD_STICKER, REWARDS, Reward, REWARD_SUPERLIKE,
     openings_per_day, roll,
 )
+from services.public_profile import в_utc
 from services.stickers import (
     СУПЕРЛАЙК_ЗА_ДУБЛЬ, Наклейка, выпала as стикер_выпал, каталог,
 )
@@ -156,7 +157,10 @@ async def open_case(
         # Продлеваем от текущего окончания, а не с нуля: иначе выпавшие минуты
         # сожгли бы уже действующий буст
         now = datetime.now(timezone.utc)
-        base = profile.boost_until if (profile.boost_until and profile.boost_until > now) else now
+        # Время из БД бывает naive (SQLite, старые записи) — сравнение с
+        # aware `now` падает прямо в обработчике, см. services/public_profile
+        прежний = в_utc(profile.boost_until)
+        base = прежний if (прежний and прежний > now) else now
         profile.boost_until = base + timedelta(minutes=reward.amount)
     else:
         profile.bonus_superlikes += reward.amount

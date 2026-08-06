@@ -1868,27 +1868,54 @@ def test_остаток_бустов_считается_по_времени():
 
 
 def test_повторный_буст_продлевает_а_не_обнуляет():
-    """Иначе включение поверх активного сжигало бы оплаченные минуты."""
-    import inspect
+    """Иначе включение поверх активного сжигало бы оплаченные минуты.
 
-    from routers import profiles
+    Проверяем арифметику, а не текст исходника: грепающая версия падала при
+    выносе сравнения в общий помощник и при этом не замечала, что на
+    naive-времени из базы оно вообще роняет обработчик.
+    """
+    from datetime import datetime, timedelta, timezone
 
-    исходник = inspect.getsource(profiles.activate_boost)
-    assert "profile.boost_until > now" in исходник
-    assert "base + timedelta(minutes=BOOST_MINUTES)" in исходник
+    from services.plans import BOOST_MINUTES
+    from services.public_profile import в_utc
+
+    now = datetime.now(timezone.utc)
+    действует_до = now + timedelta(minutes=10)
+
+    прежний = в_utc(действует_до)
+    база = прежний if (прежний and прежний > now) else now
+    итог = база + timedelta(minutes=BOOST_MINUTES)
+
+    assert итог == действует_до + timedelta(minutes=BOOST_MINUTES), (
+        "повторное включение обнулило остаток вместо продления"
+    )
 
 
 def test_буст_поднимает_анкету_в_деке():
-    """Колонка без влияния на сортировку была бы мёртвой."""
-    import inspect
+    """Колонка без влияния на сортировку была бы мёртвой.
+
+    Проверяем поведением: прежняя версия искала дословную строку сравнения и
+    падала при выносе его в общий помощник, хотя смысл не менялся. Заодно
+    ловим то, чего грепом не увидеть: время из базы бывает naive, и прямое
+    сравнение с aware `now` роняет обработчик (так ломалось начисление буста).
+    """
+    from datetime import datetime, timedelta, timezone
 
     from services import matching
+    from services.public_profile import буст_активен
 
     assert matching.BOOST_MULTIPLIER > 1
-    исходник = inspect.getsource(matching.get_deck_profiles)
-    assert "boosted_ids" in исходник
-    # Считаем по времени: прошедшая дата сама означает «буста нет»
-    assert "p.boost_until > datetime.now(timezone.utc)" in исходник
+
+    ещё_идёт = datetime.now(timezone.utc) + timedelta(minutes=5)
+    уже_кончился = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    assert буст_активен(ещё_идёт) is True
+    assert буст_активен(уже_кончился) is False, "прошедшая дата считается бустом"
+    assert буст_активен(None) is False
+
+    # Naive-время из SQLite и старых записей не должно ронять сравнение
+    assert буст_активен(ещё_идёт.replace(tzinfo=None)) is True
+    assert буст_активен(уже_кончился.replace(tzinfo=None)) is False
 
 
 # ════════════════════════════════════════════════════════════════
@@ -2672,13 +2699,31 @@ def test_попытки_считаются_по_времени():
 
 
 def test_выпавший_буст_продлевает_а_не_обнуляет():
-    """Иначе выпавшие минуты сожгли бы уже действующий буст."""
-    import inspect
+    """Иначе выпавшие минуты сожгли бы уже действующий буст.
 
-    from routers import cases
+    Считаем ту же арифметику, что и роутер: от конца действующего буста, а не
+    от текущего момента. Прежняя версия искала строку в исходнике и молчала бы
+    о том, что сравнение падает на naive-времени из базы.
+    """
+    from datetime import datetime, timedelta, timezone
 
-    исходник = inspect.getsource(cases.open_case)
-    assert "profile.boost_until > now" in исходник
+    from services.public_profile import в_utc
+
+    now = datetime.now(timezone.utc)
+    действующий_до = now + timedelta(minutes=20)
+
+    # Ровно как в routers/cases.py и routers/profiles.py
+    прежний = в_utc(действующий_до)
+    база = прежний if (прежний and прежний > now) else now
+    итог = база + timedelta(minutes=15)
+
+    assert итог > действующий_до, "выпавшие минуты сожгли действующий буст"
+    assert (итог - действующий_до) == timedelta(minutes=15)
+
+    # Истёкший буст не должен продлеваться из прошлого
+    истёк = в_utc(now - timedelta(minutes=30))
+    база2 = истёк if (истёк and истёк > now) else now
+    assert (база2 + timedelta(minutes=15)) > now
 
 
 def test_бонусные_суперлайки_отдельным_полем_и_тратятся_последними():

@@ -38,7 +38,7 @@ from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text
 from services.plans import BOOST_MINUTES, boosts_per_day, tier_allows
 from services.premium import current_tier, is_premium as _is_premium
-from services.public_profile import возраст_из_даты, наша_картинка, публичный_возраст
+from services.public_profile import в_utc, возраст_из_даты, наша_картинка, публичный_возраст
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
 from utils import as_list
@@ -152,7 +152,8 @@ async def activate_boost(
         raise HTTPException(status_code=429, detail="Бусты на сегодня закончились")
 
     now = datetime.now(timezone.utc)
-    base = profile.boost_until if (profile.boost_until and profile.boost_until > now) else now
+    прежний = в_utc(profile.boost_until)
+    base = прежний if (прежний and прежний > now) else now
     profile.boost_until = base + timedelta(minutes=BOOST_MINUTES)
     session.add(BoostActivation(user_id=user.id))
     await session.flush()

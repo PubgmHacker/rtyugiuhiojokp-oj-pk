@@ -76,3 +76,24 @@ def наша_картинка(url: Optional[str]) -> bool:
         return True
     # Не ссылка вовсе — это file_id Telegram, его кладёт бот без R2
     return "://" not in url
+
+
+def в_utc(момент: Optional[datetime]) -> Optional[datetime]:
+    """Привести время из базы к aware-виду.
+
+    Postgres с `timezone=True` отдаёт aware-время, а SQLite и старые записи —
+    naive. Сравнение naive и aware падает с TypeError прямо в обработчике
+    запроса: так ломалось начисление буста из кейса. Сравнивать время из БД
+    напрямую с `datetime.now(timezone.utc)` нельзя — только через это.
+    """
+    if момент is None:
+        return None
+    if момент.tzinfo is None:
+        return момент.replace(tzinfo=timezone.utc)
+    return момент
+
+
+def буст_активен(момент: Optional[datetime]) -> bool:
+    """Действует ли буст прямо сейчас."""
+    момент = в_utc(момент)
+    return bool(момент and момент > datetime.now(timezone.utc))

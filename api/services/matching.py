@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from models.models import User, Profile, Like, Block, Subscription, Referral
 from models.schemas import DeckProfile
-from services.public_profile import возраст_из_даты, публичный_возраст
+from services.public_profile import буст_активен, возраст_из_даты, публичный_возраст
 from services.stickers import картинка_наклейки
 from utils import as_list
 
@@ -220,10 +220,14 @@ async def get_deck_profiles(
     boosted_ids: set[str] = {
         p.user_id
         for p in profiles
-        if p.boost_until and p.boost_until > datetime.now(timezone.utc)
+        if буст_активен(p.boost_until)
     }
+    # Список кандидатов нужен и ниже (онлайн-статус), поэтому объявляем его
+    # до ветки: внутри `if profiles` он оставался неопределённым на пустой
+    # деке и главный экран падал с UnboundLocalError
+    candidate_ids = [p.user_id for p in profiles]
+
     if profiles:
-        candidate_ids = [p.user_id for p in profiles]
         result = await session.execute(
             select(Subscription.user_id).where(and_(
                 Subscription.user_id.in_(candidate_ids),
