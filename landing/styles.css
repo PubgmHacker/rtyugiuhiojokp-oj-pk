@@ -7,13 +7,15 @@
 
 /* ── Design tokens ─────────────────────────────────────────────── */
 :root {
-  /* Фон и поверхности — холодные серые с синим подтоном */
-  --color-bg: #0a0b0f;
-  --color-bg-elevated: #101218;
-  --color-surface: #16181f;
-  --color-surface-2: #1c1f28;
-  --color-surface-3: #252935;
-  --color-hairline: #262a35;
+  /* Фон и поверхности — тёплый сливовый подтон (345°), как в мини-аппе.
+     Значения повторяют web/src/styles/globals.css вручную: лендинг
+     собирается без тулчейна, поэтому токены надо менять в двух местах. */
+  --color-bg: #100e0e;
+  --color-bg-elevated: #191516;
+  --color-surface: #201b1c;
+  --color-surface-2: #292224;
+  --color-surface-3: #362c2f;
+  --color-hairline: #372c2f;
 
   /* Акцент: один цвет на все главные действия */
   --color-accent: #e14a35;
@@ -21,14 +23,18 @@
   --color-accent-deep: #c23a27;
 
   /* Текст */
-  --color-text: #f6f7fb;
-  --color-text-secondary: #c4c9d6;
-  --color-text-muted: #8f97a8;
+  --color-text: #fbf6f7;
+  --color-text-secondary: #d6c4c8;
+  --color-text-muted: #a8979b;
+  --color-text-faint: #918286;
   --color-on-accent: #ffffff;
 
   /* Семантика */
   --color-success: #34d399;
-  --color-danger: #f4525f;
+  /* Отодвинут от акцента по тону, как в мини-аппе: прежний #f4525f
+     расходился с тёплым акцентом всего на 12°, и «ошибка» читалась
+     как главное действие */
+  --color-danger: #ff5c8a;
   --color-warn: #f0b429;
   --color-info: #58a6ff;
   --color-verified: #58a6ff;
@@ -66,9 +72,9 @@
      развлекательное приложение, а не как спокойный продукт. */
   --gradient-dawn: var(--color-accent);
   --gradient-dawn-soft: var(--color-accent-soft);
-  --gradient-placeholder: linear-gradient(145deg, #2a2f3d 0%, #1a1d26 100%);
+  --gradient-placeholder: linear-gradient(145deg, #3d2a2f 0%, #261a1d 100%);
   --gradient-plum: var(--gradient-placeholder);
-  --gradient-scrim: linear-gradient(to top, rgb(8 9 12 / 0.94) 0%, rgb(8 9 12 / 0.74) 24%, rgb(8 9 12 / 0.28) 52%, transparent 76%);
+  --gradient-scrim: linear-gradient(to top, rgb(12 8 9 / 0.94) 0%, rgb(12 8 9 / 0.74) 24%, rgb(12 8 9 / 0.28) 52%, transparent 76%);
 
   /* Стекло */
   --glass-bg: rgb(255 255 255 / 0.05);
@@ -664,7 +670,7 @@ section[id] {
   position: relative;
   border-radius: 46px;
   padding: 14px;
-  background: linear-gradient(160deg, #252935, #12141a);
+  background: linear-gradient(160deg, #362c2f, #191516);
   border: 1px solid rgb(255 255 255 / 0.08);
   box-shadow: var(--shadow-card);
 }
@@ -676,7 +682,7 @@ section[id] {
   transform: translateX(-50%);
   width: 42%;
   height: 22px;
-  background: #14121e;
+  background: #1e1215;
   border-radius: 0 0 16px 16px;
   z-index: 5;
 }
@@ -728,7 +734,7 @@ section[id] {
   inset: 0;
   background:
     radial-gradient(120% 90% at 25% 15%, rgb(255 255 255 / 0.14), transparent 55%),
-    linear-gradient(160deg, #3d4457 0%, #2a2f3d 55%, #1a1d26 100%);
+    linear-gradient(160deg, #573d44 0%, #3d2a2f 55%, #261a1d 100%);
 }
 
 .mock-card__badge {
@@ -743,7 +749,7 @@ section[id] {
   font-size: 11px;
   font-weight: 800;
   color: #fff;
-  background: rgb(11 10 18 / 0.45);
+  background: rgb(18 10 12 / 0.45);
   backdrop-filter: blur(10px);
   border: 1px solid rgb(255 255 255 / 0.2);
 }

@@ -3,7 +3,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 /**
  * Конфигурация нативной обёртки Souldawn.
  * Цвета синхронизированы с дизайн-системой (web/src/styles/globals.css):
- * фон #0a0b0f, акцент #e14a35.
+ * фон #100e0e, акцент #e14a35.
  */
 const config: CapacitorConfig = {
   appId: "com.souldawn.dating",
@@ -23,7 +23,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 1200,
       launchAutoHide: true,
-      backgroundColor: "#0a0b0f",
+      backgroundColor: "#100e0e",
       showSpinner: false,
       iosSpinnerStyle: "small",
       spinnerColor: "#e14a35",
@@ -44,7 +44,7 @@ const config: CapacitorConfig = {
     // contentInset "never" вместе с safe-area в CSS: раскладку
     // контролирует вёрстка, а не WebView
     contentInset: "never",
-    backgroundColor: "#0a0b0f",
+    backgroundColor: "#100e0e",
     scrollEnabled: true,
     limitsNavigationsToAppBoundDomains: true,
     preferredContentMode: "mobile",

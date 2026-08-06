@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import math
+import shutil
+import subprocess
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -25,8 +27,8 @@ IOS_ASSETS = ROOT / "web" / "ios" / "App" / "App" / "Assets.xcassets"
 WEB_PUBLIC = ROOT / "web" / "public"
 
 # ── Палитра дизайн-системы ──────────────────────────────────────
-BG = (10, 11, 15)            # #0a0b0f
-ACCENT = (91, 102, 255)      # #5b66ff
+BG = (16, 14, 14)            # #100e0e — тёплый сливовый, как в приложении
+ACCENT = (225, 74, 53)       # #e14a35 — закатный акцент марки
 WHITE = (255, 255, 255)
 
 
@@ -120,10 +122,40 @@ def main() -> None:
     )
     print(f"✓ {WEB_PUBLIC / 'favicon.ico'}")
 
-    # Превью ссылки в соцсетях и мессенджерах
-    og = make_splash(1200, 630)
-    og.save(WEB_PUBLIC / "og-image.png", "PNG")
-    print(f"✓ {WEB_PUBLIC / 'og-image.png'}")
+    # Превью ссылки в соцсетях и мессенджерах.
+    #
+    # Источник правды — landing/og-image.svg: там марка, подпись и
+    # декоративная карточка. Раньше здесь стоял make_splash(1200, 630), и
+    # запуск генератора молча затирал превью голой иконкой на чёрном —
+    # ссылка на сервис знакомств выглядела пустой заглушкой.
+    render_og()
+
+
+def render_og() -> None:
+    """Растрирует landing/og-image.svg в оба места, где его ждут.
+
+    Лендинг и веб-клиент раздаются с разных корней, поэтому файл нужен
+    и там, и там. Растрируем через rsvg-convert (homebrew librsvg).
+    Если его нет — НЕ трогаем существующие PNG: лучше оставить прежнее
+    превью, чем заменить его пустым.
+    """
+    svg = ROOT / "landing" / "og-image.svg"
+    targets = [ROOT / "landing" / "og-image.png", WEB_PUBLIC / "og-image.png"]
+
+    rsvg = shutil.which("rsvg-convert")
+    if rsvg is None:
+        print("⚠ rsvg-convert не найден (brew install librsvg) — og-image.png оставлен как был")
+        return
+
+    first = targets[0]
+    subprocess.run(
+        [rsvg, "-w", "1200", "-h", "630", str(svg), "-o", str(first)],
+        check=True,
+    )
+    for other in targets[1:]:
+        shutil.copyfile(first, other)
+    for t in targets:
+        print(f"✓ {t}")
 
 
 if __name__ == "__main__":
