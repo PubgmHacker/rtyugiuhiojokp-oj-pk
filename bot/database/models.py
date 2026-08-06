@@ -210,7 +210,13 @@ class Message(Base):
 
 class Report(Base):
     __tablename__ = "dating_reports"
-    __table_args__ = (Index("ix_report_reported", "reported_id"),)
+    __table_args__ = (
+        Index("ix_report_reported", "reported_id"),
+        # Дедуп жалобы и антифлуд фильтруют по автору: без индекса каждая
+        # новая жалоба сканировала таблицу целиком, и с ростом она тормозила
+        # самый чувствительный путь (routers/report.py, routers/reels.py)
+        Index("ix_report_reporter", "reporter_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     reporter_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))

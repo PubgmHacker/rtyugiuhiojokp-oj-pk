@@ -3610,3 +3610,47 @@ asyncio.run(main())
         "запрещённое сообщение дошло до записи в базу — модерации нет"
     )
     assert ответ["ответы"], "человеку не сказали, почему сообщение не ушло"
+
+
+def test_у_горячих_фильтров_есть_индексы():
+    """Колонка, по которой фильтруют на горячем пути, обязана быть в индексе.
+
+    Так всплыл `dating_reports.reporter_id`: дедуп жалобы и антифлуд фильтруют
+    по автору, а индекс был только на том, НА КОГО жалуются. Каждая новая
+    жалоба сканировала таблицу целиком — а жалуется человек, когда ему уже
+    плохо, и ждать он не должен.
+    """
+    from models.models import Base
+
+    def проиндексирована(таблица: str, колонка: str) -> bool:
+        t = Base.metadata.tables[таблица]
+        # Индекс, первичный ключ или уникальное ограничение — любого хватит
+        if колонка in [c.name for c in t.primary_key.columns]:
+            return True
+        for ix in t.indexes:
+            if ix.columns.keys() and ix.columns.keys()[0] == колонка:
+                return True
+        # Уникальное ограничение индексом является, а внешний ключ — НЕТ:
+        # Postgres не создаёт под FK индекс сам, и ровно на этом
+        # dating_reports.reporter_id и оказался без индекса
+        from sqlalchemy import UniqueConstraint
+
+        for c in t.constraints:
+            if isinstance(c, UniqueConstraint) and list(c.columns.keys())[:1] == [колонка]:
+                return True
+        return False
+
+    # (таблица, колонка) → где по ней фильтруют
+    ГОРЯЧИЕ = [
+        ("dating_reports", "reporter_id"),   # дедуп жалобы, антифлуд
+        ("dating_reports", "reported_id"),   # сколько жалоб на человека
+        ("dating_likes", "liker_id"),        # кого я оценил (дека)
+        ("dating_likes", "liked_id"),        # кто меня лайкнул
+        ("dating_messages", "match_id"),     # переписка мэтча
+        ("dating_messages", "reel_id"),      # FK SET NULL при удалении ролика
+    ]
+
+    без_индекса = [
+        f"{т}.{к}" for т, к in ГОРЯЧИЕ if not проиндексирована(т, к)
+    ]
+    assert not без_индекса, f"фильтруют без индекса: {без_индекса}"
