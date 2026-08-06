@@ -246,6 +246,18 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
               {profile.age}
             </span>
           )}
+          {/* «Сейчас в сети» — самый полезный сигнал на карточке: подсказывает,
+              ответят ли сегодня. Точное время последнего входа не показываем,
+              это была бы слежка */}
+          {profile.is_online && (
+            <span className="flex items-center gap-1.5 text-[12px] text-white/85">
+              <span
+                className="w-2 h-2 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]"
+                aria-hidden="true"
+              />
+              в сети
+            </span>
+          )}
         </div>
 
         {(profile.city || profile.distance != null || profile.height_cm != null) && (

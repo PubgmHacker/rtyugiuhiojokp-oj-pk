@@ -95,6 +95,8 @@ export interface DeckProfile {
   subculture?: string;
   mbti?: string;
   height_cm?: number | null;
+  /** Был в сети недавно. Точное время сервер не отдаёт — это была бы слежка. */
+  is_online?: boolean;
 }
 
 export interface MatchResponse {

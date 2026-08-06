@@ -79,7 +79,13 @@ async def get_deck(
     limit: int = Query(default=10, ge=1, le=20),
 ):
     """Получить анкеты для свайпов."""
+    # Отметка активности: без неё «сейчас в сети» показывалось бы только по
+    # факту входа, а человек с долгой сессией числился бы offline, пока
+    # свайпает. Запрос деки — самое частое действие, по нему и судим
+    user.last_seen_at = datetime.now(timezone.utc)
+
     profiles = await get_deck_profiles(session, user.id, limit)
+    await session.commit()
     return profiles
 
 

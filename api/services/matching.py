@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import select, and_, not_, func, or_
@@ -19,6 +19,11 @@ settings = get_settings()
 
 #: Насколько платный буст поднимает анкету. Множитель — чтобы эффект не тонул
 #: в баллах за интересы, слагаемое — чтобы буст работал и у пустой анкеты.
+#: Сколько минут после последней активности считаем «сейчас в сети».
+#: Точное время последнего входа не показываем: «был в 14:32» — это слежка,
+#: а флаг помогает решить, писать ли сегодня.
+ОНЛАЙН_МИНУТ = 10
+
 BOOST_MULTIPLIER = 3.0
 BOOST_BONUS = 40.0
 
@@ -240,6 +245,20 @@ async def get_deck_profiles(
         )
         referral_boost_ids = {row[0] for row in result.all()}
 
+    # «Сейчас в сети» — одним запросом на всю деку: обращаться за этим на
+    # каждую карточку значило бы N+1 на самом горячем экране
+    недавно = datetime.now(timezone.utc) - timedelta(minutes=ОНЛАЙН_МИНУТ)
+    онлайн: set[str] = set()
+    if candidate_ids:
+        result = await session.execute(
+            select(User.id).where(and_(
+                User.id.in_(candidate_ids),
+                User.last_seen_at.is_not(None),
+                User.last_seen_at >= недавно,
+            ))
+        )
+        онлайн = {row[0] for row in result.all()}
+
     # Filter by preferences and build deck
     deck: list[DeckProfile] = []
     my_age = возраст_из_даты(my_profile.birth_date) if my_profile else None
@@ -317,6 +336,14 @@ async def get_deck_profiles(
             subculture=profile.subculture or "",
             mbti=profile.mbti or "",
             height_cm=profile.height_cm,
+            # Инкогнито и пауза уже отсеяны выборкой, но флаг всё равно
+            # считаем от них: если фильтр однажды ослабнет, «в сети» не должно
+            # выдать спрятавшегося
+            is_online=(
+                profile.user_id in онлайн
+                and not profile.is_incognito
+                and not profile.is_paused
+            ),
         ))
 
     # Умная сортировка вместо рандома: общие интересы, город, близость,
