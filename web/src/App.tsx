@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Flame, MessageCircle, User, Sparkles, LayoutGrid, WifiOff } from "lucide-react";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { useStore } from "./lib/store";
 import { initTelegram } from "./lib/telegram";
 import { initNative, registerPushNotifications } from "./lib/native";
@@ -221,6 +222,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <OfflineBanner />
+      {/* Исключение в любом экране не должно оставлять белый экран без выхода */}
+      <ErrorBoundary>
       <Suspense fallback={<ScreenFallback />}>
         <Routes>
           {/* Публичный лендинг — отдельный статический сайт (landing/),
@@ -260,6 +263,7 @@ export default function App() {
           <Route path="*" element={<Navigate to={token ? "/discover" : "/login"} replace />} />
         </Routes>
       </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
