@@ -14,6 +14,7 @@ import { getInitData, initTelegram, isInTelegram } from "../lib/telegram";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { openExternal, isNative } from "../lib/native";
+import { appleSignInAvailable, signInWithApple, ВходОтменён } from "../lib/appleSignIn";
 import { Button, Spinner } from "../components/ui";
 
 const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
@@ -133,6 +134,38 @@ export default function Login() {
     }
   }, [почта, почтовыйКод, finishLogin]);
 
+  // Вход через Apple: App Store требует его там, где вход идёт через сторонний
+  // сервис (Guideline 4.8). Кнопку показываем только если плагин действительно
+  // собран — иначе она вела бы в никуда
+  const [appleДоступен, setAppleДоступен] = useState(false);
+
+  useEffect(() => {
+    let живо = true;
+    appleSignInAvailable().then((можно) => {
+      if (живо) setAppleДоступен(можно);
+    });
+    return () => {
+      живо = false;
+    };
+  }, []);
+
+  const войтиЧерезApple = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { token, user } = await signInWithApple();
+      finishLogin(token, user);
+    } catch (e: any) {
+      // Отмену не показываем ошибкой: человек сам закрыл окно
+      if (!(e instanceof ВходОтменён)) {
+        setError("Не удалось войти через Apple. Попробуйте ещё раз");
+        haptic("error");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [finishLogin]);
+
   const loginAsGuest = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -222,6 +255,31 @@ export default function Login() {
             вход идёт по одноразовому коду, который выдаёт бот командой /link */}
         {native && !inTelegram ? (
           <>
+            {/* Apple требует, чтобы вход через Apple не был визуально слабее
+                альтернатив, поэтому он идёт первым и полноразмерной кнопкой */}
+            {appleДоступен && (
+              <>
+                <button
+                  onClick={войтиЧерезApple}
+                  disabled={loading}
+                  className="w-full h-[52px] rounded-[var(--radius-control)]
+                             bg-white text-black text-[16px] font-semibold
+                             flex items-center justify-center gap-2
+                             disabled:opacity-60 active:scale-[0.99] transition-transform"
+                >
+                  {/* Знак Apple рисуем сами: подключать иконочный пакет ради
+                      одного глифа — лишняя зависимость в бандле */}
+                  <svg width="17" height="20" viewBox="0 0 17 20" fill="currentColor" aria-hidden="true">
+                    <path d="M14.2 10.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.5-.1-2.8.8-3.5.8s-1.9-.8-3.1-.8C4.5 5.3 2.8 6.3 1.9 8c-1.8 3.2-.5 7.9 1.3 10.5.9 1.3 1.9 2.7 3.3 2.6 1.3 0 1.8-.8 3.4-.8s2 .8 3.4.8 2.3-1.3 3.2-2.6c1-1.5 1.4-2.9 1.4-3-.1 0-2.7-1-2.7-3.9zM11.9 3.6c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/>
+                  </svg>
+                  Войти через Apple
+                </button>
+                <p className="text-[12px] text-text-faint text-center -mt-0.5">
+                  или войдите кодом из бота
+                </p>
+              </>
+            )}
+
             <label
               htmlFor="link-code"
               className="text-[13px] text-text-secondary text-center"

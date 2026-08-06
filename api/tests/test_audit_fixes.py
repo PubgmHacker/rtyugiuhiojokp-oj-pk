@@ -3844,3 +3844,48 @@ def test_баннеры_бота_свои_и_существуют():
     папка = корень / "web" / "public" / "banners"
     for имя in имена:
         assert (папка / f"{имя}.png").exists(), f"нет файла баннера {имя}.png"
+
+
+def test_вход_через_apple_собран_целиком():
+    """Guideline 4.8: вход через Apple обязателен там, где вход идёт через
+    сторонний сервис. Сервер был готов раньше клиента, поэтому проверяем всю
+    цепочку — иначе легко забыть одно звено и получить отклонение.
+
+    Четыре звена: нативный плагин, регистрация в сборке iOS, право в
+    entitlements (без него запрос падает в рантайме) и кнопка в интерфейсе.
+    """
+    from pathlib import Path
+
+    корень = Path(__file__).resolve().parents[2]
+    web = корень / "web"
+
+    плагин = web / "native-plugins" / "capacitor-apple-signin"
+    assert (плагин / "package.json").exists(), "плагина нет"
+    swift = (
+        плагин / "ios" / "Sources" / "AppleSignInPlugin" / "AppleSignInPlugin.swift"
+    ).read_text(encoding="utf-8")
+    # Имя и почту Apple отдаёт только при ПЕРВОМ входе — не запросить их здесь
+    # значит не получить никогда
+    assert ".fullName" in swift and ".email" in swift, "не запрошены имя и почта"
+    assert "identityToken" in swift, "токен не отдаётся наружу"
+
+    # Плагин должен быть в сборке, иначе на устройстве его просто нет
+    spm = (web / "ios" / "App" / "CapApp-SPM" / "Package.swift").read_text(encoding="utf-8")
+    assert "SouldawnCapacitorAppleSignin" in spm, "плагин не подключён к сборке iOS"
+
+    # Право обязательно: без него ASAuthorization падает в рантайме
+    ent = web / "ios" / "App" / "App" / "App.entitlements"
+    assert ent.exists(), "нет App.entitlements"
+    assert "com.apple.developer.applesignin" in ent.read_text(encoding="utf-8")
+
+    pbx = (web / "ios" / "App" / "App.xcodeproj" / "project.pbxproj").read_text(
+        encoding="utf-8"
+    )
+    assert pbx.count("CODE_SIGN_ENTITLEMENTS") >= 2, (
+        "entitlements не прописаны в обеих конфигурациях Xcode — "
+        "в одной из сборок права не будет"
+    )
+
+    # И кнопка: сервер с плагином без кнопки — всё ещё нет входа
+    login = (web / "src" / "pages" / "Login.tsx").read_text(encoding="utf-8")
+    assert "signInWithApple" in login, "кнопки входа через Apple нет на экране входа"

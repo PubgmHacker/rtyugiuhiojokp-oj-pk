@@ -1,0 +1,20 @@
+{
+  "name": "@souldawn/capacitor-apple-signin",
+  "version": "1.0.0",
+  "description": "Вход через Apple в нативной сборке Souldawn (Guideline 4.8)",
+  "license": "UNLICENSED",
+  "private": true,
+  "author": "Souldawn",
+  "files": [
+    "ios/Sources",
+    "Package.swift"
+  ],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

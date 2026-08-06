@@ -20,6 +20,7 @@
     "@capacitor/push-notifications": "^8.1.2",
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
+    "@souldawn/capacitor-apple-signin": "file:./native-plugins/capacitor-apple-signin",
     "@souldawn/capacitor-iap": "file:./native-plugins/capacitor-iap",
     "axios": "^1.7.0",
     "framer-motion": "^12.0.0",

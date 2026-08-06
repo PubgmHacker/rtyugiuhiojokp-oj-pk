@@ -56,6 +56,10 @@ build/
 *.ipa
 *.dSYM.zip
 ExportOptions.plist
+# Артефакты сборки Swift: xcodebuild кладёт их прямо в папку плагина.
+# Это сотни мегабайт скачанных зависимостей и бинарников — в репозитории им
+# не место (однажды уже утекли в коммит).
+web/native-plugins/*/.build/
 web/ios/App/.swiftpm/
 web/ios/App/App.xcodeproj/xcuserdata/
 web/ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
