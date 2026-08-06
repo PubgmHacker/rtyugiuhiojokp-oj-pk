@@ -195,10 +195,12 @@ export default function Matches() {
                       <span className="font-semibold text-[15px] truncate">
                         {m.partner.display_name}
                       </span>
-                      {/* Наклейка рядом с именем — там же, где она в деке:
-                          показывать её в одном месте из трёх было бы разнобоем */}
+                      {/* Наклейка рядом с именем — там же, где она в деке.
+                          20px, а не 16: на 16 детальные мотивы (лабиринт,
+                          созвездие, колибри) превращаются в пятно — проверено
+                          рендером в реальных размерах */}
                       {m.partner.sticker && (
-                        <img src={m.partner.sticker} alt="" className="w-4 h-4 shrink-0" />
+                        <img src={m.partner.sticker} alt="" className="w-5 h-5 shrink-0" />
                       )}
                       {m.partner.is_verified && <VerifiedBadge size={14} />}
                       {m.last_message_at && (
