@@ -628,6 +628,21 @@ async def like_and_match(
             }
 
 
+def _дата_рождения_для(лет: int) -> datetime:
+    """Дата, когда родился человек, которому сегодня исполняется `лет`.
+
+    Через `replace(year=...)` нельзя: 29 февраля оно падает с ValueError на
+    невисокосном году — и дека перестала бы открываться у всех, но только раз
+    в четыре года, то есть нашлось бы это в проде.
+    """
+    сегодня = datetime.now()
+    try:
+        return сегодня.replace(year=сегодня.year - лет)
+    except ValueError:
+        # 29 февраля → 28-е: сдвиг на сутки в границе окна незаметен
+        return сегодня.replace(year=сегодня.year - лет, day=28)
+
+
 async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
     """Анкеты для показа в боте: фильтр по предпочтениям + сортировка по интересам."""
     cls = _session_cls()
@@ -672,6 +687,17 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         ]
         if my and my.looking_for and my.looking_for != "any":
             filters.append(Profile.gender.in_([my.looking_for, "other"]))
+
+        # Возрастной диапазон — самый базовый фильтр дейтинга, и он задаётся
+        # в мини-аппе. Без него человек выставил «25-30» в приложении, а бот
+        # показывал всех подряд. Считаем по дате рождения: границы окна —
+        # это «сегодня минус N лет».
+        if my and (my.age_min or my.age_max):
+            if my.age_max:
+                # Кто старше верхней границы — родился раньше этой даты
+                filters.append(Profile.birth_date >= _дата_рождения_для(my.age_max + 1))
+            if my.age_min:
+                filters.append(Profile.birth_date <= _дата_рождения_для(my.age_min))
 
         # Нишевые фильтры задаются в мини-аппе, а действовать должны и здесь:
         # иначе человек выставил «гот» в приложении, а бот показывает всех.
@@ -795,8 +821,11 @@ def _profile_to_dict(profile: Profile) -> dict:
     photos = profile.photos if isinstance(profile.photos, list) else json.loads(profile.photos or "[]")
     interests = profile.interests if isinstance(profile.interests, list) else json.loads(profile.interests or "[]")
 
+    # «Скрыть возраст» должно действовать и в боте: в мини-аппе возраст
+    # скрытым не отдаётся (api/services/public_profile.py), а бот считал его
+    # сам и показывал всем — настройка обещает «скрыто», а не «скрыто в вебе»
     age = None
-    if profile.birth_date:
+    if profile.birth_date and not getattr(profile, "hide_age", False):
         now = datetime.now()
         age = now.year - profile.birth_date.year
         if (now.month, now.day) < (profile.birth_date.month, profile.birth_date.day):

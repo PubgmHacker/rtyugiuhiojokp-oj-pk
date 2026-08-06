@@ -3889,3 +3889,69 @@ def test_вход_через_apple_собран_целиком():
     # И кнопка: сервер с плагином без кнопки — всё ещё нет входа
     login = (web / "src" / "pages" / "Login.tsx").read_text(encoding="utf-8")
     assert "signInWithApple" in login, "кнопки входа через Apple нет на экране входа"
+
+
+def test_бот_уважает_возрастной_фильтр_и_скрытый_возраст():
+    """Дека бота игнорировала возрастной диапазон и `hide_age`.
+
+    Возраст — самый базовый фильтр дейтинга: человек выставил «25-30» в
+    мини-аппе, а бот показывал всех подряд. А `hide_age` в мини-аппе
+    соблюдается, но бот считал возраст сам и показывал его всем — настройка
+    обещает «скрыто», а не «скрыто в вебе».
+
+    Запускается интерпретатором бота: aiogram в venv API нет.
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    бот = Path(__file__).resolve().parents[2] / "bot"
+    python = бот / ".venv" / "bin" / "python"
+    if not python.exists():
+        pytest.skip("venv бота не поднят в этом окружении")
+
+    скрипт = """
+import sys
+sys.path.insert(0, ".")
+import json, inspect
+from datetime import datetime
+from database.connection import get_deck_profiles, _profile_to_dict, _дата_рождения_для
+
+исходник = inspect.getsource(get_deck_profiles)
+
+class Анкета:
+    user_id = "u"; display_name = "А"; bio = ""; gender = "female"
+    birth_date = datetime(1995, 5, 5); city = ""; photos = []; interests = []
+    ai_bio = None; looking_for = "any"; goal = ""; subculture = ""; mbti = ""
+    height_cm = None; sticker = ""; hide_age = True
+
+скрытый = _profile_to_dict(Анкета())
+Анкета.hide_age = False
+открытый = _profile_to_dict(Анкета())
+
+# 29 февраля не должно ронять границу окна
+из_високосного = None
+try:
+    _дата_рождения_для(1)
+    из_високосного = "ок"
+except Exception as e:
+    из_високосного = f"падает: {e}"
+
+print(json.dumps({
+    "фильтр_возраста": ("age_min" in исходник and "age_max" in исходник),
+    "скрытый": скрытый["age"],
+    "открытый": открытый["age"],
+    "високосный": из_високосного,
+}))
+"""
+
+    результат = subprocess.run(
+        [str(python), "-c", скрипт], cwd=бот, capture_output=True, text=True
+    )
+    assert результат.returncode == 0, результат.stderr
+
+    ответ = json.loads(результат.stdout.strip().splitlines()[-1])
+    assert ответ["фильтр_возраста"], "дека бота не фильтрует по возрасту"
+    assert ответ["скрытый"] is None, "бот показал возраст, который человек скрыл"
+    assert ответ["открытый"], "возраст пропал у всех подряд"
+    assert ответ["високосный"] == "ок", ответ["високосный"]
