@@ -53,6 +53,7 @@ def _profile(uid: str, **over):
         interests=["кино"],
         ai_bio=None,
         goal="friendship",
+        relation_type="",
         subculture="",
         mbti="",
         height_cm=170,
@@ -68,11 +69,13 @@ def _profile(uid: str, **over):
         age_max=99,
         distance_max=100,
         filter_goal="",
+        filter_relation_type="",
         filter_subculture="",
         filter_city="",
         filter_height_min=None,
         filter_height_max=None,
         sample_key=0.5,
+        tg_channel="",
     )
     поля.update(over)
     return SimpleNamespace(**поля)

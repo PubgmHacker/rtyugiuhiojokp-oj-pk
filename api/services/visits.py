@@ -59,16 +59,28 @@ async def record_visit(session: AsyncSession, visitor_id: str, host_id: str) -> 
         logger.warning(f"Не удалось записать визит {visitor_id}->{host_id}: {e}")
 
 
-async def count_visits(session: AsyncSession, host_id: str) -> int:
-    """Сколько всего гостей — число показываем и без подписки."""
+async def count_visits(
+    session: AsyncSession, host_id: str, since: datetime | None = None
+) -> int:
+    """Сколько всего гостей — число показываем и без подписки.
+
+    `since` — нижняя граница по последнему заходу (см. раздел «Гости» с
+    выбором периода). Визит — одна строка на пару с обновлением времени, а не
+    журнал, поэтому фильтр по `last_seen_at` — единственный доступный способ
+    понять, заходил ли гость «сегодня»/«на неделе»: более раннего визита от
+    той же пары мы уже не помним.
+    """
+    conditions = [ProfileVisit.host_id == host_id]
+    if since is not None:
+        conditions.append(ProfileVisit.last_seen_at >= since)
     result = await session.execute(
-        select(func.count(ProfileVisit.id)).where(ProfileVisit.host_id == host_id)
+        select(func.count(ProfileVisit.id)).where(and_(*conditions))
     )
     return result.scalar() or 0
 
 
 async def list_visitors(
-    session: AsyncSession, host_id: str, limit: int = 50
+    session: AsyncSession, host_id: str, limit: int = 50, since: datetime | None = None
 ) -> list[tuple[Profile | None, str, int, datetime]]:
     """Гости с их анкетами: (профиль, id, сколько раз, когда последний раз).
 
@@ -91,6 +103,7 @@ async def list_visitors(
         .where(and_(
             ProfileVisit.host_id == host_id,
             User.is_banned == False,  # noqa: E712 — SQL-выражение, не Python
+            *([ProfileVisit.last_seen_at >= since] if since is not None else []),
         ))
         .order_by(desc(ProfileVisit.last_seen_at))
         .limit(limit)

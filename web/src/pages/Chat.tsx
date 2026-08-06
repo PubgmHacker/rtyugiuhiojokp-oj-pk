@@ -288,6 +288,19 @@ export default function Chat() {
               <span className="font-semibold text-[15px] truncate">{partnerName}</span>
               {match?.partner.is_verified && <VerifiedBadge size={14} />}
             </div>
+            {/* Канал показывает сервер только если у собеседника открыта эта
+                фича по тарифу — здесь просто собираем ссылку из username */}
+            {match?.partner.tg_channel ? (
+              <a
+                href={`https://t.me/${match.partner.tg_channel}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[11.5px] text-accent truncate block hover:underline"
+              >
+                @{match.partner.tg_channel}
+              </a>
+            ) : (
             <p className="text-[11.5px] text-text-muted truncate">
               {partnerTyping
                 ? "печатает…"
@@ -297,7 +310,9 @@ export default function Chat() {
                     ? "подключение…"
                     : "нет связи"}
             </p>
+            )}
           </div>
+
 
           <div className="relative">
             <button

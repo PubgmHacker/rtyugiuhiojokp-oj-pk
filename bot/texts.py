@@ -57,6 +57,11 @@ def reg_step(step: str) -> str:
             "Что вы ищете?\n\n"
             "<i>Так мы покажем вас тем, кто хочет того же.</i>"
         ),
+        "relation_type": (
+            "С кем? 🙂\n\n"
+            "<i>Друзья, подруги или партнёр — уточняет цель знакомства, "
+            "но это отдельный вопрос.</i>"
+        ),
         "city": (
             "Из какого вы города?\n\n"
             "<i>Напишите название или отправьте геопозицию — "
@@ -114,6 +119,15 @@ GOAL_LABELS = {
     "dates": "Свидания",
 }
 
+# Тип связи («с кем») — отдельная ось от цели («зачем»), значения обязаны
+# совпадать с web/src/lib/profileOptions.ts (RELATION_TYPES) и
+# keyboards.reg_relation_type_kb.
+RELATION_TYPE_LABELS = {
+    "friends": "Друзья",
+    "girlfriends": "Подруги",
+    "partner": "Партнёр",
+}
+
 SUBCULTURE_LABELS = {
     "alt": "Альт",
     "anime": "Аниме",
@@ -153,6 +167,9 @@ def profile_card(profile: dict) -> str:
     goal = profile.get("goal")
     if goal:
         facts.append(_esc(GOAL_LABELS.get(goal, goal)))
+    relation_type = profile.get("relation_type")
+    if relation_type:
+        facts.append(_esc(RELATION_TYPE_LABELS.get(relation_type, relation_type)))
     subculture = profile.get("subculture")
     if subculture:
         facts.append(_esc(SUBCULTURE_LABELS.get(subculture, subculture)))

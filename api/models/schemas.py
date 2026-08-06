@@ -56,6 +56,10 @@ class UserProfile(BaseModel):
     filter_city: str = ""
     filter_height_min: Optional[int] = None
     filter_height_max: Optional[int] = None
+    #: Тип связи («с кем» — друзья/подруги/партнёр). Отдельная ось от `goal`
+    #: («зачем»): пусто значит «не указано», как и у прочих нишевых полей.
+    relation_type: str = ""
+    filter_relation_type: str = ""
     # Заполняется только в списке «кто меня лайкнул»: текст, приложенный
     # к входящему лайку.
     like_message: str = ""
@@ -73,6 +77,10 @@ class UserProfile(BaseModel):
     referral_boost: bool = False
     referral_target: int = 3
     referral_boost_percent: int = 12
+    #: Голый юзернейм Telegram-канала (без @, без https://t.me/) — ссылку
+    #: собирает клиент. Пусто — блока нет. Отдаётся, только если тариф
+    #: разрешает `tg_channel` (см. services/plans.py, tier_allows).
+    tg_channel: str = ""
 
 
 class ProfileUpdate(BaseModel):
@@ -99,6 +107,10 @@ class ProfileUpdate(BaseModel):
     # Пустая строка — осознанное «сбросить», поэтому min_length не ставим.
     goal: Optional[str] = Field(None, max_length=32)
     subculture: Optional[str] = Field(None, max_length=32)
+    # Тип связи («с кем») — как goal/subculture, без жёсткой валидации по
+    # словарю: неизвестное значение просто не найдётся фильтром, а не 422.
+    relation_type: Optional[str] = Field(None, max_length=32)
+    filter_relation_type: Optional[str] = Field(None, max_length=32)
     # Пустая строка — «не указан»; иначе строго один из шестнадцати типов
     mbti: Optional[str] = Field(
         None, pattern=r"^$|^[EI][NS][FT][JP]$"
@@ -109,6 +121,10 @@ class ProfileUpdate(BaseModel):
     filter_city: Optional[str] = Field(None, max_length=100)
     filter_height_min: Optional[int] = Field(None, ge=120, le=230)
     filter_height_max: Optional[int] = Field(None, ge=120, le=230)
+    # Валидация формата — на сервере (роутер), не здесь: юзер может прислать
+    # "@name" или полную ссылку "https://t.me/name", и их надо сперва
+    # ободрать до голого username, а Field(pattern=...) сырой ввод не чистит.
+    tg_channel: Optional[str] = Field(None, max_length=100)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -148,6 +164,35 @@ class MatchResponse(BaseModel):
     last_message: Optional[str] = None
     last_message_at: Optional[datetime] = None
     unread_count: int = 0
+    #: "match" — взаимный лайк, "direct" — платное письмо без взаимности.
+    #: Список чатов отличает их визуально (см. services/direct_messages.py).
+    kind: str = "match"
+    #: Кто написал первым в "direct"-беседе — своё письмо клиент показывает
+    #: иначе, чем письмо от незнакомца.
+    initiator_id: Optional[str] = None
+    #: Ответил ли получатель на "direct"-письмо: пока False, инициатор не
+    #: может отправить второе сообщение.
+    direct_answered: bool = False
+
+
+class DirectMessageRequest(BaseModel):
+    """Написать человеку без взаимного лайка — платный крючок (см. Мимолёт)."""
+
+    target_id: str
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class DirectMessageResponse(BaseModel):
+    match: MatchResponse
+
+
+class DirectQuotaOut(BaseModel):
+    """Остаток писем без взаимности на сегодня — для честного гейта в UI."""
+
+    left: int = 0
+    total: int = 0
+    #: Тариф вовсе не позволяет — не вопрос лимита, а вопрос подписки.
+    allowed: bool = False
 
 
 class DeckProfile(BaseModel):
@@ -164,6 +209,8 @@ class DeckProfile(BaseModel):
     match_score: Optional[int] = None
     match_reason: Optional[str] = None
     goal: str = ""
+    #: Тип связи — показываем на карточке так же, как цель и субкультуру.
+    relation_type: str = ""
     subculture: str = ""
     mbti: str = ""
     height_cm: Optional[int] = None
@@ -338,6 +385,28 @@ class DailyCardOut(BaseModel):
     advice: str
 
 
+class TarotCardOut(BaseModel):
+    """Одна позиция расклада: название позиции + выпавшая карта."""
+
+    position: str
+    name: str
+    meaning: str
+
+
+class TarotSpreadOut(BaseModel):
+    """Расклад целиком: карты + общая AI-интерпретация (либо заготовка).
+
+    Развлечение, а не предсказание — дисклеймер обязателен в каждом ответе,
+    иначе раздел легко читается как настоящее гадание.
+    """
+
+    spread: str
+    title: str
+    cards: list[TarotCardOut]
+    interpretation: str
+    disclaimer: str
+
+
 class StickerOut(BaseModel):
     """Коллекционная наклейка.
 
@@ -480,6 +549,8 @@ class LeaderboardOut(BaseModel):
     """
 
     window_days: int = 7
+    #: Какой период реально посчитан — таб на клиенте подсвечивает его же
+    period: str = "week"
     entries: list[LeaderboardEntry] = Field(default_factory=list)
     my_place: Optional[int] = None
     my_likes: int = 0
@@ -513,6 +584,9 @@ class VisitorsOut(BaseModel):
     total: int = 0
     revealed: bool = False
     visitors: list[VisitorOut] = Field(default_factory=list)
+    #: Период, за который посчитано ("today" | "week" | "all") — эхо запроса,
+    #: чтобы клиент подсвечивал правильный таб.
+    period: str = "all"
 
 
 class PlanOut(BaseModel):

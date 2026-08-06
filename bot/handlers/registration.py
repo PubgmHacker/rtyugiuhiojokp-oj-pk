@@ -25,6 +25,7 @@ from keyboards import (
     reg_gender_kb,
     reg_looking_kb,
     reg_goal_kb,
+    reg_relation_type_kb,
     reg_back_kb,
     reg_city_kb,
     reg_photo_kb,
@@ -68,13 +69,18 @@ async def ask_goal(message: Message, state: FSMContext) -> None:
     await message.answer(T.reg_step("goal"), reply_markup=reg_goal_kb())
 
 
+async def ask_relation_type(message: Message, state: FSMContext) -> None:
+    await state.set_state(RegistrationStates.waiting_relation_type)
+    await message.answer(T.reg_step("relation_type"), reply_markup=reg_relation_type_kb())
+
+
 async def ask_city(message: Message, state: FSMContext) -> None:
     await state.set_state(RegistrationStates.waiting_city)
     # Reply-клавиатура с геопозицией и inline-кнопка «Назад» не сочетаются
     # в одном сообщении, поэтому отправляем двумя
     await message.answer(T.reg_step("city"), reply_markup=reg_city_kb())
     await message.answer(
-        "Если хотите вернуться:", reply_markup=reg_back_kb("goal")
+        "Если хотите вернуться:", reply_markup=reg_back_kb("relation_type")
     )
 
 
@@ -97,6 +103,7 @@ _STEP_ASK = {
     "gender": ask_gender,
     "looking_for": ask_looking_for,
     "goal": ask_goal,
+    "relation_type": ask_relation_type,
     "city": ask_city,
     "photo": ask_photo,
     "bio": ask_bio,
@@ -143,6 +150,7 @@ async def start_registration(callback: CallbackQuery, state: FSMContext):
             reg_gender=profile.get("gender"),
             reg_looking_for=profile.get("looking_for"),
             reg_goal=profile.get("goal") or "",
+            reg_relation_type=profile.get("relation_type") or "",
             reg_city=profile.get("city") or "",
             reg_photos=list(profile.get("photos") or []),
             reg_bio=profile.get("bio") or "",
@@ -245,11 +253,29 @@ async def process_goal(callback: CallbackQuery, state: FSMContext):
     # он означает «показывать всем, независимо от цели»
     await state.update_data(reg_goal=callback.data.rsplit(":", 1)[-1])
     await callback.answer()
-    await ask_city(callback.message, state)
+    await ask_relation_type(callback.message, state)
 
 
 @router.message(RegistrationStates.waiting_goal)
 async def goal_wrong_type(message: Message):
+    await message.answer(T.REG_EXPECT_BUTTON)
+
+
+# ── Тип связи ────────────────────────────────────────────────────
+
+@router.callback_query(
+    RegistrationStates.waiting_relation_type, F.data.startswith("reg:relation_type:")
+)
+async def process_relation_type(callback: CallbackQuery, state: FSMContext):
+    # «Не важно» присылает пустое значение — законный ответ, означает
+    # «не сужать по этому полю» (см. matching._passes_niche_filters)
+    await state.update_data(reg_relation_type=callback.data.rsplit(":", 1)[-1])
+    await callback.answer()
+    await ask_city(callback.message, state)
+
+
+@router.message(RegistrationStates.waiting_relation_type)
+async def relation_type_wrong_type(message: Message):
     await message.answer(T.REG_EXPECT_BUTTON)
 
 
@@ -450,6 +476,7 @@ async def _finish_registration(message: Message, state: FSMContext):
             "bio": data.get("reg_bio", ""),
             "looking_for": data.get("reg_looking_for", "any"),
             "goal": data.get("reg_goal", ""),
+            "relation_type": data.get("reg_relation_type", ""),
             "photos": data.get("reg_photos", []),
         }
 

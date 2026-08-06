@@ -3,11 +3,12 @@ from aiogram.fsm.state import StatesGroup, State
 
 class RegistrationStates(StatesGroup):
     """Анкета за минимум шагов, как в «Дайвинчике»:
-    имя → возраст → пол → кого ищем → цель → город → фото → о себе.
+    имя → возраст → пол → кого ищем → цель → тип связи → город → фото → о себе.
 
     Интересы, рост и субкультуру в боте намеренно не спрашиваем: это лишние
     шаги, на которых люди бросают регистрацию. Они заполняются в мини-аппе.
-    Цель знакомства — исключение: один тап, а подбор она меняет сильно.
+    Цель знакомства и тип связи — исключение: один тап, а подбор они меняют
+    сильно.
     """
 
     waiting_name = State()
@@ -15,6 +16,7 @@ class RegistrationStates(StatesGroup):
     waiting_gender = State()
     waiting_looking_for = State()
     waiting_goal = State()
+    waiting_relation_type = State()
     waiting_city = State()
     waiting_photo = State()
     waiting_bio = State()

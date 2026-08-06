@@ -16,6 +16,7 @@ import {
   Film,
   Gift,
   Mic,
+  Moon,
   Sparkles,
   Star,
   Trophy,
@@ -75,6 +76,12 @@ const FUN: Item[] = [
     title: "Кейсы",
     hint: "Суперлайки и буст по подписке",
     paid: true,
+  },
+  {
+    path: "/tarot",
+    icon: Moon,
+    title: "Таро",
+    hint: "Карта дня и расклады — повод начать разговор",
   },
 ];
 

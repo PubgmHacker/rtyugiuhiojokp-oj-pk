@@ -61,6 +61,16 @@ def _passes_niche_filters(mine: Profile, other: Profile) -> bool:
         return False
     if mine.filter_city and (other.city or "").strip().lower() != mine.filter_city.strip().lower():
         return False
+    # Тип связи («с кем») — та же безопасная схема, что у цели и субкультуры:
+    # пустой фильтр не сужает, а анкета без указанного типа не отсеивается.
+    # Жёсткий фильтр по этому полю в маленьком городе мог бы опустошить деку —
+    # ровно то, чего мы избегаем и в MBTI (см. profileOptions.ts).
+    if (
+        mine.filter_relation_type
+        and other.relation_type
+        and other.relation_type != mine.filter_relation_type
+    ):
+        return False
 
     if mine.filter_height_min or mine.filter_height_max:
         if other.height_cm is None:
@@ -100,12 +110,23 @@ def _compatibility(
         and my_profile.city.strip().lower() == other.city.strip().lower()
     )
 
+    # Совпадающий тип связи — небольшой бонус, а не решающий фактор: это
+    # не менее важно, чем интересы. Одинаковое значение цели и типа связи не
+    # складываются в отдельный "идеальный" балл — просто ещё одна точка совпадения.
+    same_relation_type = bool(
+        getattr(my_profile, "relation_type", "")
+        and getattr(other, "relation_type", "")
+        and my_profile.relation_type == other.relation_type
+    )
+
     score = 55.0
     score += min(len(shared), 5) * 6
     if same_city:
         score += 8
     if distance is not None and distance <= 30:
         score += 4
+    if same_relation_type:
+        score += 5
     score = max(40.0, min(96.0, score))
 
     if shared:
@@ -337,6 +358,7 @@ async def get_deck_profiles(
             match_score=compat_score,
             match_reason=compat_reason,
             goal=profile.goal or "",
+            relation_type=profile.relation_type or "",
             subculture=profile.subculture or "",
             mbti=profile.mbti or "",
             height_cm=profile.height_cm,
@@ -355,6 +377,7 @@ async def get_deck_profiles(
     # премиум-буст + лёгкий шум, чтобы дека не была детерминированной
     my_interests = set(as_list(my_profile.interests)) if my_profile else set()
     my_city = (my_profile.city or "").strip().lower() if my_profile else ""
+    my_relation_type = my_profile.relation_type if my_profile else ""
 
     referral_mult = 1 + settings.REFERRAL_BOOST_PERCENT / 100
 
@@ -363,6 +386,8 @@ async def get_deck_profiles(
         score += len(my_interests & set(p.interests)) * 10
         if my_city and (p.city or "").strip().lower() == my_city:
             score += 15
+        if my_relation_type and p.relation_type == my_relation_type:
+            score += 5
         if p.distance is not None:
             score += max(0.0, 20 - p.distance / 5)
         if p.id in premium_ids:

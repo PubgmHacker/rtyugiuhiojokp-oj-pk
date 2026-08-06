@@ -34,6 +34,7 @@ function закрытая(id: string): api.UserProfile {
 function пустойТоп(): api.LeaderboardOut {
   return {
     window_days: 7,
+    period: "week",
     entries: [],
     my_place: null,
     my_likes: 0,

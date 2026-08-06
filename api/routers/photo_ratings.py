@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, not_, select
+from sqlalchemy import and_, desc, func, not_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,6 +67,7 @@ async def get_rating_queue(
     if exclude:
         conditions.append(not_(Profile.user_id.in_(exclude)))
 
+    now = datetime.now(timezone.utc)
     result = await session.execute(
         select(Profile)
         .join(User, Profile.user_id == User.id)
@@ -74,8 +75,16 @@ async def get_rating_queue(
         # Тот же приём, что в деке: случайная точка по индексированному ключу
         # вместо ORDER BY random(), которому нужна сортировка всей таблицы.
         # Берём с запасом — анкеты без фото отсеются уже здесь, в Python:
-        # в SQL так нельзя, тип JSON в Postgres не сравнивается на равенство
-        .order_by(Profile.sample_key)
+        # в SQL так нельзя, тип JSON в Postgres не сравнивается на равенство.
+        #
+        # У кого сейчас активен boost_until (буст показов в деке), тому фото
+        # ещё и раньше попадает на оценку — это побочный, но уместный бонус:
+        # человек специально пришёл «показаться», и очередь оценки — то же
+        # самое паблик-внимание, только другого рода. Новой колонки под это
+        # не заводим: buost_until уже значит «сейчас моя анкета в приоритете»,
+        # и трактовать его так же здесь — не путаница, а расширение того же
+        # смысла на соседний список.
+        .order_by(desc(Profile.boost_until > now), Profile.sample_key)
         .limit(limit * 3)
     )
     profiles = [p for p in result.scalars().all() if as_list(p.photos)][:limit]

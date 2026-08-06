@@ -1,0 +1,190 @@
+/**
+ * Раздел Таро — четыре расклада поверх карты дня.
+ *
+ * Один экран с выбором расклада, а не четыре отдельных страницы: переключение
+ * вкладкой дешевле для навигации, чем каждый раз возвращаться в «Ещё».
+ *
+ * Расклад детерминирован на сервере (см. api/services/tarot_spreads.py) —
+ * кнопка «обновить» здесь не нужна и не появится: карты не меняются до
+ * следующих суток, поэтому запрашиваем расклад один раз при выборе вкладки.
+ *
+ * Акцент один на экран — тёплый accent на активной вкладке и в интерпретации,
+ * карты рядом нейтральные: разноцветная подсветка на каждой карте отвлекает
+ * от текста, который и есть повод для разговора.
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Sparkles } from "lucide-react";
+import {
+  getTarotDay,
+  getTarotPair,
+  getTarotRelationship,
+  getTarotThree,
+  type TarotSpread,
+  type TarotSpreadType,
+} from "../lib/api";
+import { haptic } from "../lib/haptics";
+import { useSectionOpen } from "../lib/useSectionOpen";
+import { Button, Card, ScreenHeader, Skeleton } from "../components/ui";
+
+const TABS: { type: TarotSpreadType; label: string }[] = [
+  { type: "day", label: "Карта дня" },
+  { type: "three", label: "Три карты" },
+  { type: "relationship", label: "Отношения" },
+  { type: "pair", label: "Он и я" },
+];
+
+export default function Tarot() {
+  useSectionOpen("tarot");
+  const [tab, setTab] = useState<TarotSpreadType>("day");
+  const [nameA, setNameA] = useState("");
+  const [nameB, setNameB] = useState("");
+  const [spread, setSpread] = useState<TarotSpread | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // «Он и я» просит два имени, поэтому расклад запрашивается по кнопке, а
+  // не сразу при переключении вкладки — иначе на пустых именах прилетела бы
+  // ошибка валидации до того, как человек успел их ввести.
+  const load = useCallback(async (type: TarotSpreadType) => {
+    setLoading(true);
+    setError("");
+    try {
+      let result: TarotSpread;
+      if (type === "day") result = await getTarotDay();
+      else if (type === "three") result = await getTarotThree();
+      else if (type === "relationship") result = await getTarotRelationship();
+      else result = await getTarotPair(nameA, nameB);
+      setSpread(result);
+    } catch {
+      setError("Не удалось получить расклад");
+    } finally {
+      setLoading(false);
+    }
+    // nameA/nameB читаются только при явном запросе, не при смене вкладки
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    setSpread(null);
+    setError("");
+    if (tab !== "pair") load(tab);
+  }, [tab, load]);
+
+  return (
+    <div className="pb-6">
+      <ScreenHeader title="Таро" />
+
+      <div className="px-4 pt-2 pb-1 flex gap-2 overflow-x-auto">
+        {TABS.map((t) => (
+          <button
+            key={t.type}
+            onClick={() => {
+              haptic("select");
+              setTab(t.type);
+            }}
+            className={`shrink-0 px-3.5 py-2 rounded-full text-[13.5px] font-semibold transition-colors ${
+              tab === t.type
+                ? "bg-accent text-on-accent"
+                : "bg-surface-2 text-text-secondary border border-hairline"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="px-4 pt-3">
+        {tab === "pair" && (
+          <Card className="p-4 mb-3">
+            <p className="text-caption text-text-muted mb-2">
+              Введите два имени — расклад один на пару имён и на сегодня
+            </p>
+            <div className="flex flex-col gap-2 mb-3">
+              <input
+                value={nameA}
+                onChange={(e) => setNameA(e.target.value)}
+                placeholder="Ваше имя"
+                maxLength={60}
+                className="px-3.5 py-2.5 rounded-[var(--radius-tile)] bg-surface-2
+                           border border-hairline text-[15px] outline-none
+                           focus:border-accent/60"
+              />
+              <input
+                value={nameB}
+                onChange={(e) => setNameB(e.target.value)}
+                placeholder="Имя партнёра"
+                maxLength={60}
+                className="px-3.5 py-2.5 rounded-[var(--radius-tile)] bg-surface-2
+                           border border-hairline text-[15px] outline-none
+                           focus:border-accent/60"
+              />
+            </div>
+            <Button
+              size="md"
+              fullWidth
+              disabled={!nameA.trim() || !nameB.trim() || loading}
+              onClick={() => load("pair")}
+            >
+              Разложить карты
+            </Button>
+          </Card>
+        )}
+
+        {loading && (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-16" />
+          </div>
+        )}
+
+        {error && (
+          <p role="alert" className="text-[13px] text-danger mb-2">
+            {error}
+          </p>
+        )}
+
+        {!loading && spread && (
+          <motion.div
+            key={`${spread.spread}:${spread.title}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <h2 className="text-caption text-text-muted mb-2 px-1">
+              {spread.title}
+            </h2>
+            <div className="flex flex-col gap-2 mb-3">
+              {spread.cards.map((card, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
+                             bg-surface-2 border border-hairline"
+                >
+                  <Sparkles size={17} className="text-accent shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14.5px] font-semibold">
+                      {card.position}: {card.name}
+                    </p>
+                    <p className="text-caption text-text-muted">{card.meaning}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Card className="p-4 border-accent/25 bg-accent/8 mb-2">
+              <p className="text-[13.5px] leading-relaxed">
+                {spread.interpretation}
+              </p>
+            </Card>
+
+            <p className="text-[11.5px] text-text-faint px-1">
+              {spread.disclaimer}
+            </p>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+}

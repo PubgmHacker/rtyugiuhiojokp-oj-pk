@@ -9,9 +9,17 @@ from datetime import datetime
 from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import User, Profile, Like, Match, Message, Reel
-from models.schemas import MatchResponse, UserProfile
+from models.schemas import (
+    DirectMessageRequest, DirectMessageResponse, DirectQuotaOut, MatchResponse, UserProfile,
+)
 from services.ai_matchmaker import generate_icebreakers
-from services.chat_delivery import reel_preview
+from services.ai_moderation import log_moderation, moderate_text
+from services.chat_delivery import fan_out, reel_preview, save_message
+from services.direct_messages import (
+    can_send_message, direct_quota_left, start_direct_message,
+)
+from services.plans import direct_messages_per_day, tier_allows
+from services.premium import current_tier
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
 from utils import as_list
@@ -31,6 +39,32 @@ async def _get_own_match(session: AsyncSession, match_id: str, user_id: str) -> 
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
     return match
+
+
+async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> MatchResponse:
+    """Собрать `MatchResponse` для только что созданной беседы (без превью
+    переписки — она появится со следующим GET /matches)."""
+    result = await session.execute(select(Profile).where(Profile.user_id == partner_id))
+    profile = result.scalar_one_or_none()
+    return MatchResponse(
+        id=match.id,
+        match_score=match.match_score,
+        ai_reason=match.ai_reason,
+        created_at=match.created_at,
+        partner=UserProfile(
+            id=partner_id,
+            display_name=profile.display_name if profile else "",
+            bio=profile.bio if profile else "",
+            age=публичный_возраст(profile),
+            city=profile.city if profile else "",
+            photos=as_list(profile.photos) if profile else [],
+            interests=as_list(profile.interests) if profile else [],
+            sticker=картинка_наклейки(profile.sticker if profile else None),
+        ),
+        kind=match.kind,
+        initiator_id=match.initiator_id,
+        direct_answered=match.direct_answered,
+    )
 
 
 @router.get("", response_model=list[MatchResponse])
@@ -127,6 +161,9 @@ async def get_matches(
                 last_message=preview,
                 last_message_at=last.created_at if last else None,
                 unread_count=unread.get(m.id, 0),
+                kind=m.kind,
+                initiator_id=m.initiator_id,
+                direct_answered=m.direct_answered,
             )
         )
 
@@ -169,6 +206,114 @@ async def get_messages(
          "created_at": m.created_at.isoformat() if m.created_at else None}
         for m in messages
     ]
+
+
+@router.post("/{match_id}/messages")
+async def post_message(
+    match_id: str,
+    data: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Отправить сообщение по HTTP — второй путь рядом с WebSocket-чатом.
+
+    Проходит через тот же `services/chat_delivery` (save_message/fan_out), что
+    и сокет: раньше в этом проекте парные пути расходились именно так — второй
+    источник сообщения не повторял фан-аут и собеседник ничего не получал.
+
+    Проверка "одно письмо до ответа" (`can_send_message`) стоит здесь же, до
+    вызова `save_message`, и одинаково действует что для обычного мэтча
+    (пропускает всегда), что для direct-переписки.
+    """
+    match = await _get_own_match(session, match_id, user.id)
+    partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
+
+    denied = await can_send_message(session, match, user.id)
+    if denied:
+        raise HTTPException(status_code=403, detail=denied.detail)
+
+    text = str(data.get("text", "")).strip()[:2000]
+    image_url = data.get("image_url")
+    if not text and not image_url:
+        raise HTTPException(status_code=400, detail="Пустое сообщение")
+
+    if text:
+        verdict = await moderate_text(text)
+        await log_moderation(user.id, "chat_message", text, verdict)
+        if verdict["blocked"]:
+            raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+
+    # Ответ получателя снимает ограничение "одно письмо до ответа" — фиксируем
+    # ДО save_message, чтобы попасть в ту же транзакцию, что и само сообщение
+    from services.direct_messages import mark_answered_if_needed
+    await mark_answered_if_needed(match, user.id)
+
+    payload = await save_message(match_id, user.id, text, image_url)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+    await session.commit()
+
+    await fan_out(payload, match_id, user.id, partner_id, text)
+    return payload
+
+
+@router.get("/direct/quota", response_model=DirectQuotaOut)
+async def get_direct_quota(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Остаток писем без взаимного лайка — честный гейт на клиенте: тариф не
+    позволяет вовсе, или лимит на сегодня исчерпан — разные экраны."""
+    tier = await current_tier(session, user.id)
+    allowed = tier_allows(tier, "direct_messages")
+    return DirectQuotaOut(
+        left=await direct_quota_left(session, user.id) if allowed else 0,
+        total=direct_messages_per_day(tier) if allowed else 0,
+        allowed=allowed,
+    )
+
+
+@router.post("/direct", response_model=DirectMessageResponse)
+async def send_direct_message(
+    data: DirectMessageRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Написать без взаимного лайка — платный крючок (аналог «Мимолёта»).
+
+    Заводит `Match(kind="direct")` и сразу отправляет первое сообщение через
+    тот же `save_message`/`fan_out`, что и обычный чат — переписка сразу
+    появляется в списке /matches и открывается в общем WS-чате.
+    """
+    text = data.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Пустое сообщение")
+
+    verdict = await moderate_text(text)
+    await log_moderation(user.id, "direct_message", text, verdict)
+    if verdict["blocked"]:
+        raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+
+    match = await start_direct_message(session, user.id, data.target_id)
+    if not isinstance(match, Match):
+        # DirectDenied — код стабилен для клиента, текст — для показа
+        status = 429 if match.code == "limit" else 403
+        raise HTTPException(status_code=status, detail=match.detail)
+
+    match_id = match.id
+    # save_message открывает СВОЮ сессию (services/chat_delivery.py читает
+    # через async_session_factory, а не через эту Depends-сессию) — если не
+    # закоммитить здесь, только что созданный Match в ней не виден
+    await session.commit()
+    payload = await save_message(match_id, user.id, text)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+
+    partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
+    await fan_out(payload, match_id, user.id, partner_id, text)
+
+    resp = await _to_resp(session, match, partner_id)
+    return DirectMessageResponse(match=resp)
 
 
 @router.post("/{match_id}/unmatch")

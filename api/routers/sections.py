@@ -30,7 +30,7 @@ router = APIRouter(prefix="/sections", tags=["sections"])
 #: Что считаем. Незнакомый код игнорируем: иначе опечатка в клиенте создаст
 #: раздел-призрак, и сводка перестанет быть читаемой.
 KNOWN_SECTIONS = frozenset(
-    {"reels", "rooms", "voice", "photo_ratings", "cases", "leaderboard", "daily"}
+    {"reels", "rooms", "voice", "photo_ratings", "cases", "leaderboard", "daily", "tarot"}
 )
 
 

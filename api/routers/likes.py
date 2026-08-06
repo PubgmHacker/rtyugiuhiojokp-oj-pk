@@ -45,11 +45,17 @@ async def _find_match(session: AsyncSession, a: str, b: str) -> Optional[Match]:
     return result.scalar_one_or_none()
 
 
-def _profile_to_user(
-    profile: Optional[Profile], user_id: str, like_message: str = ""
+async def _profile_to_user(
+    session: AsyncSession, profile: Optional[Profile], user_id: str, like_message: str = ""
 ) -> UserProfile:
     if not profile:
         return UserProfile(id=user_id, like_message=like_message)
+    # Канал виден только если у ВЛАДЕЛЬЦА анкеты открыт tg_channel — это его
+    # фича, не читающего; иначе доступ по подписке зависел бы от того, кто
+    # смотрит, а не у кого включена ссылка
+    tg_channel = profile.tg_channel or ""
+    if tg_channel and not tier_allows(await current_tier(session, user_id), "tg_channel"):
+        tg_channel = ""
     return UserProfile(
         id=user_id,
         display_name=profile.display_name or "",
@@ -68,6 +74,7 @@ def _profile_to_user(
         height_cm=profile.height_cm,
         sticker=картинка_наклейки(profile.sticker),
         like_message=like_message,
+        tg_channel=tg_channel,
     )
 
 
@@ -77,7 +84,7 @@ async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> Matc
     return MatchResponse(
         id=match.id, match_score=match.match_score,
         ai_reason=match.ai_reason, created_at=match.created_at,
-        partner=_profile_to_user(profile, partner_id),
+        partner=await _profile_to_user(session, profile, partner_id),
     )
 
 
@@ -327,5 +334,5 @@ async def get_likes_received(
             continue
         result = await session.execute(select(Profile).where(Profile.user_id == lk.liker_id))
         profile = result.scalar_one_or_none()
-        out.append(_profile_to_user(profile, lk.liker_id, lk.message or ""))
+        out.append(await _profile_to_user(session, profile, lk.liker_id, lk.message or ""))
     return out

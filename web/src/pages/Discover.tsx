@@ -10,6 +10,7 @@ import { haptic } from "../lib/haptics";
 import { Button, Chip, Spinner } from "../components/ui";
 import {
   GOALS,
+  RELATION_TYPES,
   SUBCULTURES,
   HEIGHT_MIN,
   HEIGHT_MAX,
@@ -30,6 +31,7 @@ export default function Discover() {
   const filtersActive = Boolean(
     user?.filter_goal ||
       user?.filter_subculture ||
+      user?.filter_relation_type ||
       user?.filter_city ||
       user?.filter_height_min ||
       user?.filter_height_max
@@ -108,6 +110,7 @@ function FilterSheet({
   const [ageMax, setAgeMax] = useState(user?.age_max ?? 45);
   const [distance, setDistance] = useState(user?.distance_max ?? 100);
   const [goal, setGoal] = useState(user?.filter_goal ?? "");
+  const [relationType, setRelationType] = useState(user?.filter_relation_type ?? "");
   const [subculture, setSubculture] = useState(user?.filter_subculture ?? "");
   const [city, setCity] = useState(user?.filter_city ?? "");
   // Рост фильтруем только если человек включил ползунки: иначе анкеты без
@@ -128,6 +131,7 @@ function FilterSheet({
     setAgeMax(user.age_max ?? 45);
     setDistance(user.distance_max ?? 100);
     setGoal(user.filter_goal ?? "");
+    setRelationType(user.filter_relation_type ?? "");
     setSubculture(user.filter_subculture ?? "");
     setCity(user.filter_city ?? "");
     setHeightOn(user.filter_height_min != null || user.filter_height_max != null);
@@ -143,6 +147,7 @@ function FilterSheet({
     setAgeMax(45);
     setDistance(100);
     setGoal("");
+    setRelationType("");
     setSubculture("");
     setCity("");
     setHeightOn(false);
@@ -160,6 +165,7 @@ function FilterSheet({
         age_max: ageMax,
         distance_max: distance,
         filter_goal: goal,
+        filter_relation_type: relationType,
         filter_subculture: subculture,
         filter_city: city.trim(),
         filter_height_min: heightOn ? heightMin : null,
@@ -185,6 +191,7 @@ function FilterSheet({
     ageMax,
     distance,
     goal,
+    relationType,
     subculture,
     city,
     heightOn,
@@ -316,6 +323,27 @@ function FilterSheet({
                     key={o.value}
                     active={goal === o.value}
                     onClick={() => setGoal(goal === o.value ? "" : o.value)}
+                  >
+                    {o.label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+
+            {/* Тип связи — «с кем», отдельный фильтр от цели знакомства */}
+            <div className="mb-7">
+              <p className="text-caption text-text-muted mb-2.5">С кем</p>
+              <div className="flex flex-wrap gap-2">
+                <Chip active={relationType === ""} onClick={() => setRelationType("")}>
+                  Любой
+                </Chip>
+                {RELATION_TYPES.map((o) => (
+                  <Chip
+                    key={o.value}
+                    active={relationType === o.value}
+                    onClick={() =>
+                      setRelationType(relationType === o.value ? "" : o.value)
+                    }
                   >
                     {o.label}
                   </Chip>

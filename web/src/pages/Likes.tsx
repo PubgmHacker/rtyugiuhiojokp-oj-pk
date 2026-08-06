@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, X, Lock, Crown, ChevronRight } from "lucide-react";
+import { Heart, X, Lock, Crown, ChevronRight, MessageCircleHeart } from "lucide-react";
 import {
   getLikesReceived,
   likeProfile,
@@ -11,6 +11,7 @@ import {
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import MatchModal from "../components/MatchModal";
+import DirectMessageSheet from "../components/DirectMessageSheet";
 import Leaderboard from "../components/Leaderboard";
 import {
   ScreenHeader,
@@ -83,6 +84,9 @@ function IncomingLikes() {
   const [error, setError] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [matchData, setMatchData] = useState<MatchData | null>(null);
+  // Написать без взаимности тому, кто вас лайкнул, но кого вы ещё не оценили:
+  // тоже платный крючок, отдельно от ответной симпатии
+  const [directFor, setDirectFor] = useState<UserProfile | null>(null);
 
   const load = useCallback(async () => {
     setError(false);
@@ -312,6 +316,19 @@ function IncomingLikes() {
                   >
                     <Heart size={18} fill="currentColor" />
                   </button>
+                  <button
+                    aria-label={`Написать ${p.display_name} без лайка`}
+                    disabled={busyId === p.id}
+                    onClick={() => {
+                      haptic("light");
+                      setDirectFor(p);
+                    }}
+                    className="w-10 h-10 rounded-full glass-strong text-accent
+                               flex items-center justify-center shrink-0
+                               disabled:opacity-40 active:scale-95 transition-transform"
+                  >
+                    <MessageCircleHeart size={17} />
+                  </button>
                 </div>
               </div>
             </motion.article>
@@ -321,6 +338,7 @@ function IncomingLikes() {
       </div>
 
       <MatchModal data={matchData} onClose={() => setMatchData(null)} />
+      <DirectMessageSheet profile={directFor} onClose={() => setDirectFor(null)} />
     </div>
   );
 }

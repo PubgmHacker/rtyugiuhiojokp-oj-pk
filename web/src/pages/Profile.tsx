@@ -20,6 +20,7 @@ import {
   Film,
   Star,
   Ban,
+  Send,
 } from "lucide-react";
 import {
   getMyProfile,
@@ -467,6 +468,9 @@ export default function Profile() {
         </div>
       </Card>
 
+      {/* ── Telegram-канал ─────────────────────────────────────── */}
+      <TgChannelCard profile={profile} setProfile={setProfile} />
+
       {/* ── Реферальная программа ─────────────────────────────── */}
       <Card className="p-4 mb-4">
         <div className="flex items-center gap-2.5 mb-2">
@@ -841,32 +845,135 @@ function DeleteAccountDialog({
   );
 }
 
+/* ── Telegram-канал: показывается ссылкой в чужой карточке ──── */
+
+function TgChannelCard({
+  profile,
+  setProfile,
+}: {
+  profile: UserProfile | null;
+  setProfile: (p: UserProfile) => void;
+}) {
+  const [value, setValue] = useState(profile?.tg_channel ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValue(profile?.tg_channel ?? "");
+  }, [profile?.tg_channel]);
+
+  // Фича платная (см. FEATURE_MIN_TIER["tg_channel"] на сервере) — пока
+  // тариф не открыт, поле просто не показываем: пусто в profile.tg_channel
+  // ничем не отличается от «фичи нет», а лишний диалог «нужна подписка»
+  // на каждый заход в профиль был бы навязчивым
+  if (!profile) return null;
+
+  const save = async () => {
+    haptic("light");
+    setBusy(true);
+    setError(null);
+    try {
+      setProfile(await updateMyProfile({ tg_channel: value }));
+      haptic("success");
+    } catch (e: any) {
+      haptic("error");
+      // Сервер отдаёт понятную причину: неверный формат или тариф не
+      // позволяет — обе ошибки нужно прочитать, а не додумывать
+      setError(e?.response?.data?.detail ?? "Не удалось сохранить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="flex items-center gap-2.5 mb-2">
+        <Send size={18} className="text-accent" />
+        <span className="font-semibold text-[15px]">Telegram-канал</span>
+      </div>
+      <p className="text-caption text-text-muted mb-3">
+        Покажется ссылкой в вашей карточке. Юзернейм без @ — например,
+        souldawn_channel.
+      </p>
+      <div className="flex gap-2">
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="username"
+          maxLength={100}
+          className="flex-1 px-4 h-11 rounded-full bg-surface border border-hairline
+                     outline-none focus:border-accent transition-colors text-[14.5px]"
+        />
+        <Button
+          variant="primary"
+          size="md"
+          disabled={busy || value === (profile.tg_channel ?? "")}
+          onClick={save}
+        >
+          {busy ? <Spinner size={16} /> : "Сохранить"}
+        </Button>
+      </div>
+      {error && <p className="text-[13px] text-danger mt-2">{error}</p>}
+    </Card>
+  );
+}
+
 /* ── Гости: кто заходил в анкету ────────────────────────────── */
 
 function VisitorsCard() {
+  const [period, setPeriod] = useState<"today" | "week" | "all">("all");
   const [data, setData] = useState<VisitorsOut | null>(null);
+  // Пока грузим новый период, старые данные лучше не показывать —
+  // иначе счётчик мигает старым числом при переключении таба
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    getMyVisitors()
-      .then(setData)
+    setLoaded(false);
+    getMyVisitors(period)
+      .then((d) => {
+        setData(d);
+        setLoaded(true);
+      })
       .catch(() => setData(null)); // раздел необязателен, молчим
-  }, []);
+  }, [period]);
 
-  // Пока не знаем и когда гостей нет — блока нет: пустая карточка «0 гостей»
-  // только занимает место на экране
-  if (!data || data.total === 0) return null;
+  // Пока не знаем и когда гостей нет за всё время — блока нет: пустая
+  // карточка «0 гостей» только занимает место на экране. Проверяем именно
+  // по «all», чтобы карточка не пропадала целиком при переключении на
+  // период, где гостей пока не набралось
+  if (!loaded && !data) return null;
+  if (data?.total === 0 && period === "all") return null;
 
   return (
     <Card className="p-4 mb-4">
       <div className="flex items-center gap-2.5 mb-3">
         <Eye size={18} className="text-accent" />
         <span className="font-semibold text-[15px] flex-1">Гости</span>
-        <span className="text-caption text-text-muted">
-          {data.total} {plural(data.total, "человек", "человека", "человек")}
-        </span>
+        {data && (
+          <span className="text-caption text-text-muted">
+            {data.total} {plural(data.total, "человек", "человека", "человек")}
+          </span>
+        )}
       </div>
 
-      {data.revealed ? (
+      <div className="flex gap-2 mb-3">
+        <Chip active={period === "today"} onClick={() => setPeriod("today")}>
+          Сегодня
+        </Chip>
+        <Chip active={period === "week"} onClick={() => setPeriod("week")}>
+          Неделя
+        </Chip>
+        <Chip active={period === "all"} onClick={() => setPeriod("all")}>
+          Всё время
+        </Chip>
+      </div>
+
+      {!data ? null : data.revealed ? (
+        data.visitors.length === 0 ? (
+          <p className="text-caption text-text-muted">
+            За этот период гостей не было.
+          </p>
+        ) : (
         <div className="flex flex-wrap gap-2">
           {data.visitors.map((v) => (
             <div
@@ -894,12 +1001,24 @@ function VisitorsCard() {
                 {v.profile.display_name || "Аноним"}
                 {v.profile.age ? `, ${v.profile.age}` : ""}
               </span>
+              {v.profile.tg_channel && (
+                <a
+                  href={`https://t.me/${v.profile.tg_channel}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[12px] text-accent hover:underline"
+                >
+                  @{v.profile.tg_channel}
+                </a>
+              )}
               {v.visits > 1 && (
                 <span className="text-[12px] text-text-muted">×{v.visits}</span>
               )}
             </div>
           ))}
         </div>
+        )
       ) : (
         // Число гостей показываем всем: скрыв и его, мы не дали бы повода
         // купить — человек не знает, что к нему вообще кто-то заходил

@@ -13,6 +13,7 @@ from models.models import Match, Message, User
 from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
 from services.chat_delivery import fan_out, save_message
+from services.direct_messages import can_send_message, mark_answered_if_needed
 from services.public_profile import наша_картинка
 from services.token_revocation import is_revoked
 
@@ -162,6 +163,23 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
                         "reason": "Сообщение нарушает правила",
                     })
                     continue
+
+            # "Одно письмо до ответа" в direct-беседах: проверяем свежим
+            # состоянием мэтча (перечитанным здесь же, а не значением на
+            # момент коннекта), а не отдельной веткой чата — тот же путь, что
+            # у HTTP-отправки (routers/matches.py:post_message)
+            async with async_session_factory() as check_session:
+                result = await check_session.execute(select(Match).where(Match.id == match_id))
+                fresh_match = result.scalar_one_or_none()
+                if fresh_match is None:
+                    await websocket.close(code=4004, reason="Match not found")
+                    break
+                denied = await can_send_message(check_session, fresh_match, user_id)
+                if denied:
+                    await websocket.send_json({"type": "rejected", "reason": denied.detail})
+                    continue
+                await mark_answered_if_needed(fresh_match, user_id)
+                await check_session.commit()
 
             payload = await save_message(match_id, user_id, text, image_url)
             if payload is None:

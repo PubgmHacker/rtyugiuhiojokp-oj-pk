@@ -11,7 +11,7 @@ import { MapPin, Sparkles } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { VerifiedBadge } from "./ui";
-import { GOALS, SUBCULTURES, optionLabel } from "../lib/profileOptions";
+import { GOALS, RELATION_TYPES, SUBCULTURES, optionLabel } from "../lib/profileOptions";
 
 export type SwipeDirection = "left" | "right" | "up";
 
@@ -284,8 +284,13 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
           </div>
         )}
 
-        {(profile.goal || profile.subculture || profile.mbti) && (
+        {(profile.goal || profile.relation_type || profile.subculture || profile.mbti) && (
           <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {profile.relation_type && (
+              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+                {optionLabel(RELATION_TYPES, profile.relation_type)}
+              </span>
+            )}
             {profile.goal && (
               <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
                 {optionLabel(GOALS, profile.goal)}

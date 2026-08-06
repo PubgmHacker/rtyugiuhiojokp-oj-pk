@@ -1138,10 +1138,12 @@ def _анкета(**поля):
     from types import SimpleNamespace
 
     поля.setdefault("goal", "")
+    поля.setdefault("relation_type", "")
     поля.setdefault("subculture", "")
     поля.setdefault("city", "")
     поля.setdefault("height_cm", None)
     поля.setdefault("filter_goal", "")
+    поля.setdefault("filter_relation_type", "")
     поля.setdefault("filter_subculture", "")
     поля.setdefault("filter_city", "")
     поля.setdefault("filter_height_min", None)
@@ -1193,6 +1195,38 @@ def test_фильтр_цели_знакомства():
     assert not _passes_niche_filters(мой, _анкета(goal="отношения"))
 
 
+def test_фильтр_типа_связи_пустой_не_сужает_выдачу():
+    """Пустой filter_relation_type — «не важно»: пропускает всех, как и
+    прочие нишевые фильтры. Тип связи — отдельная ось от цели (`goal`)."""
+    from services.matching import _passes_niche_filters
+
+    assert _passes_niche_filters(_анкета(), _анкета(relation_type="partner"))
+    assert _passes_niche_filters(_анкета(), _анкета(relation_type=""))
+
+
+def test_фильтр_типа_связи_отсекает_чужой_но_не_незаполненный():
+    """Задан фильтр «друзья» — партнёров не показываем, но и анкеты без
+    указанного типа связи не отсеиваем (человек мог просто не заполнить)."""
+    from services.matching import _passes_niche_filters
+
+    мой = _анкета(filter_relation_type="friends")
+    assert not _passes_niche_filters(мой, _анкета(relation_type="partner"))
+    assert _passes_niche_filters(мой, _анкета(relation_type="friends"))
+    assert _passes_niche_filters(мой, _анкета(relation_type=""))
+
+
+def test_фильтр_типа_связи_не_путается_с_фильтром_цели():
+    """Тип связи («с кем») и цель («зачем») — разные поля: совпадение по
+    одному не должно маскировать несовпадение по другому."""
+    from services.matching import _passes_niche_filters
+
+    мой = _анкета(filter_goal="дружба", filter_relation_type="partner")
+    # Цель совпадает, тип связи — нет: анкета не проходит фильтр
+    assert not _passes_niche_filters(мой, _анкета(goal="дружба", relation_type="friends"))
+    # Совпадают оба
+    assert _passes_niche_filters(мой, _анкета(goal="дружба", relation_type="partner"))
+
+
 # ════════════════════════════════════════════════════════════════
 #  Согласованность значений между ботом и мини-аппом
 # ════════════════════════════════════════════════════════════════
@@ -1240,6 +1274,93 @@ def test_значения_цели_и_субкультуры_совпадают_
 
     assert _ключи_py_словаря(тексты, "GOAL_LABELS") == цели
     assert _ключи_py_словаря(тексты, "SUBCULTURE_LABELS") == субкультуры
+
+
+def test_значения_типа_связи_совпадают_в_боте_и_вебе():
+    """Тип связи («с кем») — отдельная от цели ось, но проверка та же:
+    разъехавшиеся значения в боте и вебе молча опустошают фильтр."""
+    import re
+    from pathlib import Path
+
+    корень = Path(__file__).resolve().parents[2]
+    веб = (корень / "web" / "src" / "lib" / "profileOptions.ts").read_text(encoding="utf-8")
+    кнопки = (корень / "bot" / "keyboards.py").read_text(encoding="utf-8")
+    тексты = (корень / "bot" / "texts.py").read_text(encoding="utf-8")
+
+    типы = _значения_ts_списка(веб, "RELATION_TYPES")
+    assert типы, "не удалось разобрать RELATION_TYPES в profileOptions.ts"
+
+    типы_бота = {v for v in re.findall(r'callback_data="reg:relation_type:(\w*)"', кнопки) if v}
+    assert типы_бота == типы, f"расходятся: {типы_бота ^ типы}"
+
+    assert _ключи_py_словаря(тексты, "RELATION_TYPE_LABELS") == типы
+
+
+# ════════════════════════════════════════════════════════════════
+#  Расширенный список интересов (было 24 тега, стало ~100+ по категориям)
+# ════════════════════════════════════════════════════════════════
+
+def _все_интересы_из_веба(текст: str) -> set[str]:
+    """Все строки-теги из `INTEREST_CATEGORIES` (значения, а не ключи-категории)."""
+    import re
+
+    начало = текст.index("export const INTEREST_CATEGORIES")
+    # Блок кончается на строке с завершающей `};` объявления словаря
+    конец = текст.index("\n};", начало)
+    блок = текст[начало:конец]
+    # Ключи категорий — это строки сразу перед `: [`, их не берём: интересует
+    # только содержимое списков-значений
+    строки_списков = re.findall(r':\s*\[([^\]]*)\]', блок)
+    теги: set[str] = set()
+    for список in строки_списков:
+        теги |= set(re.findall(r'"([^"]+)"', список))
+    return теги
+
+
+def test_список_интересов_не_пуст_и_в_разумных_пределах():
+    """Список расширили с 24 до сотни с лишним тегов по категориям — не
+    плоской стеной, а разбитым на разделы. Проверяем диапазон, а не точное
+    число: важно, что список не сузили обратно и не разросся до тысячи."""
+    from pathlib import Path
+
+    корень = Path(__file__).resolve().parents[2]
+    веб = (корень / "web" / "src" / "lib" / "profileOptions.ts").read_text(encoding="utf-8")
+    теги = _все_интересы_из_веба(веб)
+    assert 80 <= len(теги) <= 130, f"неожиданный размер списка интересов: {len(теги)}"
+
+
+def test_классические_24_интереса_сохранены_в_новом_списке():
+    """Старые анкеты хранят интересы как обычный текст тега (не код), поэтому
+    расширение списка не должно потерять ни одного из исходных 24 тегов —
+    иначе у людей, кто выбрал их до обновления, тег стал бы «неизвестным»."""
+    from pathlib import Path
+
+    корень = Path(__file__).resolve().parents[2]
+    веб = (корень / "web" / "src" / "lib" / "profileOptions.ts").read_text(encoding="utf-8")
+
+    исходные_24 = {
+        "Музыка", "Кино", "Сериалы", "Книги",
+        "Спорт", "Зал", "Бег", "Йога",
+        "Путешествия", "Походы", "Кофе", "Кулинария",
+        "Вино", "Игры", "Аниме", "Искусство",
+        "Фотография", "Танцы", "Театр", "Животные",
+        "Мода", "Технологии", "Психология", "Волонтёрство",
+    }
+    теги = _все_интересы_из_веба(веб)
+    отсутствуют = исходные_24 - теги
+    assert not отсутствуют, f"пропали старые теги: {отсутствуют}"
+
+
+def test_старый_интерес_вне_нового_списка_не_ломает_обновление_анкеты():
+    """Анкета хранит интересы как обычный текст, без валидации по словарю
+    (ProfileUpdate.interests — просто list[str]). Расширение списка на
+    сервере не должно требовать миграции: тег, который в новый список
+    (по любой причине) не попал, обязан приниматься как есть, а не 422."""
+    from models.schemas import ProfileUpdate
+
+    старый_чужой_тег = "Совершенно-неизвестный-тег-из-прошлого"
+    update = ProfileUpdate(interests=["Музыка", старый_чужой_тег])
+    assert update.interests == ["Музыка", старый_чужой_тег]
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1490,7 +1611,7 @@ def test_гости_под_гейтом_но_число_видно_всем():
     роутер = (
         Path(__file__).resolve().parents[1] / "routers" / "profiles.py"
     ).read_text(encoding="utf-8")
-    assert "VisitorsOut(total=total, revealed=False, visitors=[])" in роутер
+    assert "VisitorsOut(total=total, revealed=False, visitors=[], period=period)" in роутер
 
 
 def test_свой_визит_не_считается():
@@ -1935,7 +2056,7 @@ def test_рейтинг_считается_за_окно_а_не_за_всё_в�
 
     assert 1 <= leaderboard.WINDOW_DAYS <= 31
     исходник = inspect.getsource(leaderboard._ranked_rows)
-    assert "Like.created_at >= _window_start()" in исходник
+    assert "Like.created_at >= _window_start(period)" in исходник
     # Считаем в БД: выгружать все лайки за неделю в память нельзя
     assert "func.count" in исходник and "group_by" in исходник
 
@@ -3984,7 +4105,7 @@ from database.connection import get_deck_profiles, _profile_to_dict, _дата_�
 class Анкета:
     user_id = "u"; display_name = "А"; bio = ""; gender = "female"
     birth_date = datetime(1995, 5, 5); city = ""; photos = []; interests = []
-    ai_bio = None; looking_for = "any"; goal = ""; subculture = ""; mbti = ""
+    ai_bio = None; looking_for = "any"; goal = ""; relation_type = ""; subculture = ""; mbti = ""
     height_cm = None; sticker = ""; hide_age = True
 
 скрытый = _profile_to_dict(Анкета())

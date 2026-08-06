@@ -28,18 +28,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 
-#: За какой период считаем лайки.
+#: За какой период считаем лайки по умолчанию (таб «неделя»).
 WINDOW_DAYS = 7
 #: Сколько мест в публичном топе.
 TOP_SIZE = 20
 
 
-def _window_start() -> datetime:
-    return datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS)
+def _window_start(period: str) -> datetime:
+    """Начало окна для выбранного периода.
+
+    «Сегодня» — от начала текущих суток в UTC, а не «последние 24 часа»:
+    иначе в 23:59 таб «сегодня» показывал бы почти то же самое, что «неделя»,
+    и не сбрасывался бы заново после полуночи. Тот же приём с naive/aware,
+    что и в admin.py: считаем в aware UTC от `datetime.now`, а не берём
+    полночь из БД, где хранение не всегда aware.
+    """
+    now = datetime.now(timezone.utc)
+    if period == "today":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return now - timedelta(days=WINDOW_DAYS)
 
 
 async def _ranked_rows(
-    session: AsyncSession, hidden: set[str], viewer_id: str
+    session: AsyncSession, hidden: set[str], viewer_id: str, period: str
 ) -> list[tuple[str, int]]:
     """(user_id, лайков) по убыванию за окно.
 
@@ -52,7 +63,7 @@ async def _ranked_rows(
     не поймёт, работает ли рейтинг.
     """
     conditions = [
-        Like.created_at >= _window_start(),
+        Like.created_at >= _window_start(period),
         Like.type != "pass",
         User.is_banned == False,  # noqa: E712 — SQL-выражение
         Profile.display_name != "",
@@ -88,14 +99,15 @@ async def get_leaderboard(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
     limit: int = Query(default=TOP_SIZE, ge=3, le=TOP_SIZE),
+    period: str = Query(default="week", pattern="^(today|week)$"),
 ):
-    """Топ анкет по лайкам за неделю плюс своё место."""
+    """Топ анкет по лайкам за период (сегодня/неделя) плюс своё место."""
     result = await session.execute(select(Block.blocked_id).where(Block.blocker_id == user.id))
     hidden = {row[0] for row in result.all()}
     result = await session.execute(select(Block.blocker_id).where(Block.blocked_id == user.id))
     hidden |= {row[0] for row in result.all()}
 
-    rows = await _ranked_rows(session, hidden, user.id)
+    rows = await _ranked_rows(session, hidden, user.id, period)
     top = rows[:limit]
 
     profiles_by_id: dict[str, Profile] = {}
@@ -127,7 +139,8 @@ async def get_leaderboard(
     my_likes = next((count for uid, count in rows if uid == user.id), 0)
 
     return LeaderboardOut(
-        window_days=WINDOW_DAYS,
+        window_days=1 if period == "today" else WINDOW_DAYS,
+        period=period,
         entries=entries,
         my_place=my_place,
         my_likes=my_likes,

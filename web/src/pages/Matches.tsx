@@ -203,6 +203,16 @@ export default function Matches() {
                         <img src={m.partner.sticker} alt="" className="w-5 h-5 shrink-0" />
                       )}
                       {m.partner.is_verified && <VerifiedBadge size={14} />}
+                      {/* Beседа без взаимного лайка — отличаем визуально: это
+                          не мэтч, собеседник может ещё не ответить */}
+                      {m.kind === "direct" && (
+                        <span
+                          className="px-1.5 py-[1px] rounded-full text-[10.5px] font-bold
+                                     shrink-0 bg-accent/12 text-accent"
+                        >
+                          {m.initiator_id === m.partner.id ? "написал(а) вам" : "письмо"}
+                        </span>
+                      )}
                       {m.last_message_at && (
                         <span className="ml-auto text-[11.5px] text-text-faint shrink-0">
                           {formatTime(m.last_message_at)}

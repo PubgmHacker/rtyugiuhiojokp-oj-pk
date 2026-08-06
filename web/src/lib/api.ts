@@ -61,10 +61,13 @@ export interface UserProfile {
   // Нишевые поля анкеты и фильтры по ним: пусто — не указано / не фильтруем
   goal?: string;
   subculture?: string;
+  // Тип связи («с кем») — отдельная ось от goal («зачем»)
+  relation_type?: string;
   mbti?: string;
   height_cm?: number | null;
   filter_goal?: string;
   filter_subculture?: string;
+  filter_relation_type?: string;
   filter_city?: string;
   filter_height_min?: number | null;
   filter_height_max?: number | null;
@@ -81,6 +84,8 @@ export interface UserProfile {
   referral_boost?: boolean;
   referral_target?: number;
   referral_boost_percent?: number;
+  /** Голый username Telegram-канала (без @ и без ссылки) — ссылку собирает клиент. */
+  tg_channel?: string | null;
 }
 
 export interface DeckProfile {
@@ -97,6 +102,7 @@ export interface DeckProfile {
   match_reason?: string | null;
   goal?: string;
   subculture?: string;
+  relation_type?: string;
   mbti?: string;
   height_cm?: number | null;
   /** Был в сети недавно. Точное время сервер не отдаёт — это была бы слежка. */
@@ -115,6 +121,12 @@ export interface MatchResponse {
   last_message?: string | null;
   last_message_at?: string | null;
   unread_count?: number;
+  /** "match" — взаимный лайк, "direct" — платное письмо без взаимности. */
+  kind?: "match" | "direct";
+  /** Кто написал первым в "direct"-беседе. */
+  initiator_id?: string | null;
+  /** Ответил ли получатель на "direct"-письмо. */
+  direct_answered?: boolean;
 }
 
 /** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
@@ -269,6 +281,31 @@ export async function getSuperlikeQuota(): Promise<SuperlikeQuota> {
 export async function getLikesReceived(): Promise<UserProfile[]> {
   const { data } = await api.get("/likes/received");
   return data;
+}
+
+/* ── Личка без взаимного лайка («Мимолёт») ──────────────────── */
+
+export interface DirectQuota {
+  left: number;
+  total: number;
+  /** false — тариф вовсе не позволяет, а не только лимит на сегодня. */
+  allowed: boolean;
+}
+
+/** Остаток писем без взаимного лайка — для честного гейта на кнопке. */
+export async function getDirectQuota(): Promise<DirectQuota> {
+  const { data } = await api.get("/matches/direct/quota");
+  return data;
+}
+
+/** Написать человеку, который вас не лайкал — платный крючок. Заводит
+ *  переписку kind="direct" и сразу отправляет первое сообщение. */
+export async function sendDirectMessage(
+  targetId: string,
+  text: string
+): Promise<MatchResponse> {
+  const { data } = await api.post("/matches/direct", { target_id: targetId, text });
+  return data.match;
 }
 
 export async function unmatch(matchId: string): Promise<void> {
@@ -435,7 +472,8 @@ export type Section =
   | "photo_ratings"
   | "cases"
   | "leaderboard"
-  | "daily";
+  | "daily"
+  | "tarot";
 
 /**
  * Отметить открытие раздела.
@@ -470,6 +508,46 @@ export interface DailyCard {
 
 export async function getDailyCard(): Promise<DailyCard> {
   const { data } = await api.get("/daily/card");
+  return data;
+}
+
+/* ── Таро ───────────────────────────────────────────────────── */
+
+export type TarotSpreadType = "day" | "pair" | "three" | "relationship";
+
+export interface TarotCard {
+  position: string;
+  name: string;
+  meaning: string;
+}
+
+export interface TarotSpread {
+  spread: TarotSpreadType;
+  title: string;
+  cards: TarotCard[];
+  interpretation: string;
+  disclaimer: string;
+}
+
+export async function getTarotDay(): Promise<TarotSpread> {
+  const { data } = await api.get("/tarot/day");
+  return data;
+}
+
+export async function getTarotThree(): Promise<TarotSpread> {
+  const { data } = await api.get("/tarot/three");
+  return data;
+}
+
+export async function getTarotRelationship(): Promise<TarotSpread> {
+  const { data } = await api.get("/tarot/relationship");
+  return data;
+}
+
+export async function getTarotPair(nameA: string, nameB: string): Promise<TarotSpread> {
+  const { data } = await api.get("/tarot/pair", {
+    params: { name_a: nameA, name_b: nameB },
+  });
   return data;
 }
 
@@ -628,6 +706,8 @@ export interface LeaderboardEntry {
 
 export interface LeaderboardOut {
   window_days: number;
+  /** Какой период реально посчитан: "today" | "week". */
+  period: string;
   entries: LeaderboardEntry[];
   my_place?: number | null;
   my_likes: number;
@@ -635,8 +715,8 @@ export interface LeaderboardOut {
   my_place_exact: boolean;
 }
 
-export async function getLeaderboard(): Promise<LeaderboardOut> {
-  const { data } = await api.get("/leaderboard");
+export async function getLeaderboard(period: "today" | "week" = "week"): Promise<LeaderboardOut> {
+  const { data } = await api.get("/leaderboard", { params: { period } });
   return data;
 }
 
@@ -673,10 +753,13 @@ export interface VisitorsOut {
   /** false — число гостей известно, а кто именно, видно только на Ultra. */
   revealed: boolean;
   visitors: VisitorOut[];
+  period: "today" | "week" | "all";
 }
 
-export async function getMyVisitors(): Promise<VisitorsOut> {
-  const { data } = await api.get("/profiles/me/visitors");
+export async function getMyVisitors(
+  period: "today" | "week" | "all" = "all"
+): Promise<VisitorsOut> {
+  const { data } = await api.get("/profiles/me/visitors", { params: { period } });
   return data;
 }
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -50,10 +51,18 @@ router = APIRouter(prefix="/profiles", tags=["profiles"])
 settings = get_settings()
 
 
-def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
+async def _deck_like_profile(
+    session: AsyncSession, profile: Optional[Profile], user_id: str
+) -> UserProfile:
     """Публичная часть чужой анкеты — то же, что видно на карточке в деке."""
     if not profile:
         return UserProfile(id=user_id)
+    # Канал показываем только если ЕГО ВЛАДЕЛЕЦ на тарифе, который открывает
+    # tg_channel — это фича гостя-визитёра, а не смотрящего, поэтому гейт
+    # проверяем по тому, кому принадлежит анкета, а не по тому, кто читает
+    tg_channel = profile.tg_channel or ""
+    if tg_channel and not tier_allows(await current_tier(session, user_id), "tg_channel"):
+        tg_channel = ""
     return UserProfile(
         id=user_id,
         display_name=profile.display_name or "",
@@ -70,6 +79,7 @@ def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
         mbti=profile.mbti or "",
         height_cm=profile.height_cm,
         sticker=картинка_наклейки(profile.sticker),
+        tg_channel=tg_channel,
     )
 
 
@@ -188,26 +198,40 @@ async def record_profile_visit(
 async def get_my_visitors(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    period: str = Query(default="all", pattern="^(today|week|all)$"),
 ):
     """Раздел «Гости»: кто заходил в анкету.
 
     Число гостей отдаём всем, а вот кто именно — только на Ultra. Скрывать и
     число тоже значило бы не дать повода купить: человек не знает, что там
     вообще кто-то есть.
+
+    Период фильтрует и то и другое одинаково — он не про гейт подписки, а про
+    то, какое окно смотреть; сам гейт (посчитано/показано) логика периода не
+    касается.
     """
-    total = await count_visits(session, user.id)
+    since = None
+    now = datetime.now(timezone.utc)
+    if period == "today":
+        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "week":
+        since = now - timedelta(days=7)
+
+    total = await count_visits(session, user.id, since=since)
     if not tier_allows(await current_tier(session, user.id), "visitors"):
-        return VisitorsOut(total=total, revealed=False, visitors=[])
+        return VisitorsOut(total=total, revealed=False, visitors=[], period=period)
 
     visitors = [
         VisitorOut(
-            profile=_deck_like_profile(profile, visitor_id),
+            profile=await _deck_like_profile(session, profile, visitor_id),
             visits=visits,
             last_seen_at=last_seen,
         )
-        for profile, visitor_id, visits, last_seen in await list_visitors(session, user.id)
+        for profile, visitor_id, visits, last_seen in await list_visitors(
+            session, user.id, since=since
+        )
     ]
-    return VisitorsOut(total=total, revealed=True, visitors=visitors)
+    return VisitorsOut(total=total, revealed=True, visitors=visitors, period=period)
 
 
 @router.post("/deck/reset")
@@ -285,8 +309,42 @@ async def get_my_profile(
         has_location=bool(profile and profile.latitude is not None),
         # Только своя анкета: в чужой почте нет и быть не должно
         email=user.email,
+        # Владелец видит свой канал вне зависимости от тарифа — гейт
+        # решает, покажется ли он ДРУГИМ (см. _deck_like_profile), а не
+        # прячет поле от самого человека в его же настройках
+        tg_channel=profile.tg_channel if profile else "",
         **(await _referral_stats(session, user.id)),
     )
+
+
+#: Юзернейм Telegram: латиница/цифры/подчёркивание, 5-32 символа, не
+#: начинается с цифры — стандартные правила самого Telegram.
+_TG_USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
+
+
+def _нормализовать_tg_channel(raw: str) -> str:
+    """Привести ввод к голому username или бросить 400.
+
+    Человек может вставить «@username», «t.me/username» или полную ссылку —
+    все варианты приходят с разных мест. Храним и отдаём только голый
+    username: сборка ссылки — забота клиента (см. web/src/lib/api.ts), а не
+    бэкенда.
+    """
+    username = raw.strip()
+    if not username:
+        return ""  # пустая строка — осознанный сброс канала
+
+    username = re.sub(r"^https?://", "", username, flags=re.IGNORECASE)
+    username = re.sub(r"^(t\.me|telegram\.me)/", "", username, flags=re.IGNORECASE)
+    username = username.lstrip("@")
+    username = username.split("?")[0].rstrip("/")
+
+    if not _TG_USERNAME_RE.match(username):
+        raise HTTPException(
+            status_code=400,
+            detail="Некорректный юзернейм канала: латиница, цифры и _, 5-32 символа, не начинается с цифры",
+        )
+    return username
 
 
 def _проверить_фото(новые: list[str], прежние: list[str]) -> list[str]:
@@ -350,6 +408,17 @@ async def update_my_profile(
             update_fields["photos"], as_list(profile.photos)
         )
 
+    if "tg_channel" in update_fields:
+        # Фича платная (см. FEATURE_MIN_TIER["tg_channel"]) — без неё
+        # молча игнорируем, а не 403: экрана с апсейлом под это поле нет,
+        # и клиент его просто не показывает без подписки
+        if tier_allows(await current_tier(session, user.id), "tg_channel"):
+            update_fields["tg_channel"] = _нормализовать_tg_channel(
+                update_fields["tg_channel"] or ""
+            )
+        else:
+            update_fields.pop("tg_channel")
+
     if "birth_date" in update_fields and update_fields["birth_date"]:
         try:
             # Колонка DateTime(timezone=True) — храним datetime, не date
@@ -392,6 +461,14 @@ async def update_my_profile(
         if mod_result["blocked"]:
             raise HTTPException(status_code=422, detail="Имя нарушает правила")
 
+    # Канал — такой же публичный текст, как имя, только он ведёт вовне:
+    # реклама и мошенничество через него утекали бы мимо модерации остальных полей
+    if "tg_channel" in update_fields and profile.tg_channel:
+        mod_result = await moderate_text(profile.tg_channel)
+        await log_moderation(user.id, "tg_channel", profile.tg_channel, mod_result)
+        if mod_result["blocked"]:
+            raise HTTPException(status_code=422, detail="Канал нарушает правила")
+
     await session.flush()
 
     # Своя анкета — возраст показываем владельцу всегда
@@ -431,6 +508,7 @@ async def update_my_profile(
         filter_height_min=profile.filter_height_min,
         filter_height_max=profile.filter_height_max,
         has_location=profile.latitude is not None,
+        tg_channel=profile.tg_channel,
         **(await _referral_stats(session, user.id)),
     )
 

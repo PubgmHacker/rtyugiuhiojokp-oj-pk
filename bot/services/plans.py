@@ -51,6 +51,18 @@ PLANS: tuple[Plan, ...] = (
 
 PLANS_BY_CODE: dict[str, Plan] = {p.code: p for p in PLANS}
 
+#: Копия api/services/plans.py::DIRECT_MESSAGES_PER_DAY — сколько писем без
+#: взаимного лайка можно отправить за сутки. Free — 0 (фича закрыта).
+DIRECT_MESSAGES_PER_DAY: dict[str, int] = {
+    TIER_FREE: 0,
+    TIER_PLUS: 3,
+    TIER_ULTRA: 10,
+}
+
+
+def direct_messages_per_day(tier: str) -> int:
+    return DIRECT_MESSAGES_PER_DAY.get(TIER_ORDER[tier_rank(tier)], 0)
+
 #: Что даёт уровень — для витрины в боте.
 TIER_PERKS: dict[str, tuple[str, ...]] = {
     TIER_PLUS: (

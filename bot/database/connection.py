@@ -705,6 +705,8 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         # графа пустая, и иначе выдача схлопнулась бы почти до нуля.
         if my and my.filter_goal:
             filters.append(Profile.goal.in_([my.filter_goal, ""]))
+        if my and my.filter_relation_type:
+            filters.append(Profile.relation_type.in_([my.filter_relation_type, ""]))
         if my and my.filter_subculture:
             filters.append(Profile.subculture.in_([my.filter_subculture, ""]))
         if my and my.filter_city:
@@ -843,6 +845,7 @@ def _profile_to_dict(profile: Profile) -> dict:
         "ai_bio": profile.ai_bio,
         "looking_for": profile.looking_for,
         "goal": profile.goal or "",
+        "relation_type": profile.relation_type or "",
         "subculture": profile.subculture or "",
         "mbti": profile.mbti or "",
         "height_cm": profile.height_cm,

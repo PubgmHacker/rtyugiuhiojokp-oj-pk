@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, RotateCcw, SlidersHorizontal, Mail, Zap } from "lucide-react";
+import { X, Heart, Star, RotateCcw, SlidersHorizontal, Mail, MessageCircleHeart, Zap } from "lucide-react";
 import type { DeckProfile, MatchResponse } from "../lib/api";
 import {
   likeProfile,
@@ -17,6 +17,7 @@ import { haptic } from "../lib/haptics";
 import { useIsMounted } from "../hooks/useSafeAsync";
 import SwipeCard, { type SwipeDirection } from "./SwipeCard";
 import MatchModal from "./MatchModal";
+import DirectMessageSheet from "./DirectMessageSheet";
 import { Button, IconButton, EmptyState, Skeleton } from "./ui";
 
 interface MatchData {
@@ -46,6 +47,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   // Лайк с сообщением: пишем до отправки, потому что текст уходит вместе
   // с лайком и увидят его ещё до взаимности
   const [noteFor, setNoteFor] = useState<DeckProfile | null>(null);
+  // Написать без взаимного лайка — отдельная шторка, не связанная со
+  // свайпом: карточка при этом остаётся в деке
+  const [directFor, setDirectFor] = useState<DeckProfile | null>(null);
   const [boost, setBoost] = useState<BoostState | null>(null);
   const [boostBusy, setBoostBusy] = useState(false);
 
@@ -308,9 +312,12 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               <IconButton
                 label={
                   boost.active
-                    ? "Буст активен"
+                    // Буст поднимает не только выдачу в деке, но и очередь
+                    // «Оценка фото» — уточняем это здесь, а не заводим для
+                    // этого отдельный контрол
+                    ? "Буст активен: анкета выше и в деке, и в очереди на оценку фото"
                     : boost.left_today
-                      ? `Поднять анкету на ${boost.minutes} минут`
+                      ? `Поднять анкету на ${boost.minutes} минут (и в деке, и в оценке фото)`
                       : boost.per_day
                         ? "Бусты на сегодня закончились"
                         : "Буст доступен в Plus"
@@ -389,6 +396,22 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
 
           <div className="pointer-events-auto">
             <IconButton
+              label="Написать без взаимного лайка"
+              onClick={() => {
+                const top = deck[0];
+                if (!top) return;
+                haptic("light");
+                setDirectFor(top);
+              }}
+              disabled={!deck.length}
+              size={48}
+            >
+              <MessageCircleHeart size={19} />
+            </IconButton>
+          </div>
+
+          <div className="pointer-events-auto">
+            <IconButton
               label="Пропустить"
               onClick={() => handleButton("left")}
               size={48}
@@ -426,6 +449,8 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
       />
 
       <MatchModal data={matchData} onClose={() => setMatchData(null)} />
+
+      <DirectMessageSheet profile={directFor} onClose={() => setDirectFor(null)} />
     </div>
   );
 }

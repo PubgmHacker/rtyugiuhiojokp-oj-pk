@@ -11,55 +11,88 @@
 import { useEffect, useState } from "react";
 import { Crown, Trophy } from "lucide-react";
 import { getLeaderboard, type LeaderboardOut } from "../lib/api";
-import { EmptyState, Skeleton } from "./ui";
+import { Chip, EmptyState, Skeleton } from "./ui";
 import { useSectionOpen } from "../lib/useSectionOpen";
 
 export default function Leaderboard() {
   // Считаем открытие таба, а не экрана: у рейтинга своей страницы нет
   useSectionOpen("leaderboard");
+  const [period, setPeriod] = useState<"today" | "week">("week");
   const [data, setData] = useState<LeaderboardOut | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    getLeaderboard()
+    setData(null);
+    setFailed(false);
+    getLeaderboard(period)
       .then(setData)
       .catch(() => setFailed(true));
-  }, []);
+  }, [period]);
+
+  // Переключатель периода нужен всегда, даже пока данные грузятся или не
+  // пришли: иначе переключение работает только когда рейтинг уже непустой,
+  // и человек не понимает, что таб вообще есть
+  const переключатель = (
+    <div className="flex gap-2 mb-3">
+      <Chip active={period === "today"} onClick={() => setPeriod("today")}>
+        Сегодня
+      </Chip>
+      <Chip active={period === "week"} onClick={() => setPeriod("week")}>
+        Неделя
+      </Chip>
+    </div>
+  );
 
   if (failed) {
     return (
-      <EmptyState
-        emoji="📊"
-        title="Рейтинг недоступен"
-        description="Попробуйте зайти позже."
-      />
+      <div className="px-4 pt-3">
+        {переключатель}
+        <EmptyState
+          emoji="📊"
+          title="Рейтинг недоступен"
+          description="Попробуйте зайти позже."
+        />
+      </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="px-4 pt-4 flex flex-col gap-2.5">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-16 rounded-[var(--radius-tile)]" />
-        ))}
+      <div className="px-4 pt-3">
+        {переключатель}
+        <div className="flex flex-col gap-2.5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-16 rounded-[var(--radius-tile)]" />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (!data.entries.length) {
     return (
-      <EmptyState
-        emoji="🏆"
-        title="Рейтинг пока пуст"
-        description={`Лайки за последние ${data.window_days} дней ещё не набрались. Загляните позже.`}
-      />
+      <div className="px-4 pt-3">
+        {переключатель}
+        <EmptyState
+          emoji="🏆"
+          title="Рейтинг пока пуст"
+          description={
+            period === "today"
+              ? "Лайков сегодня ещё не набралось. Загляните позже."
+              : `Лайки за последние ${data.window_days} дней ещё не набрались. Загляните позже.`
+          }
+        />
+      </div>
     );
   }
 
   return (
     <div className="px-4 pt-3 pb-4">
+      {переключатель}
       <p className="text-[13.5px] text-text-muted mb-3">
-        Больше всего лайков за {data.window_days} дней. Обновляется постоянно.
+        {period === "today"
+          ? "Больше всего лайков сегодня. Обновляется постоянно."
+          : `Больше всего лайков за ${data.window_days} дней. Обновляется постоянно.`}
       </p>
 
       {/* Своё место сверху: искать себя в списке из двадцати строк неудобно,
@@ -77,8 +110,12 @@ export default function Leaderboard() {
           </p>
           <p className="text-caption text-text-muted">
             {data.my_likes > 0
-              ? `${data.my_likes} ${plural(data.my_likes, "лайк", "лайка", "лайков")} за неделю`
-              : "Лайков за эту неделю ещё нет"}
+              ? `${data.my_likes} ${plural(data.my_likes, "лайк", "лайка", "лайков")} ${
+                  period === "today" ? "сегодня" : "за неделю"
+                }`
+              : period === "today"
+                ? "Лайков сегодня ещё нет"
+                : "Лайков за эту неделю ещё нет"}
           </p>
         </div>
       </div>

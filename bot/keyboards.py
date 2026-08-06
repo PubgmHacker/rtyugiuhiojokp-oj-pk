@@ -96,6 +96,25 @@ def reg_goal_kb(back_to: str | None = "looking_for") -> InlineKeyboardMarkup:
     )
 
 
+def reg_relation_type_kb(back_to: str | None = "goal") -> InlineKeyboardMarkup:
+    """Тип связи («с кем») — отдельная ось от цели знакомства («зачем»).
+    Значения совпадают с web/src/lib/profileOptions.ts (RELATION_TYPES) —
+    иначе выбранное в боте не найдётся фильтром в мини-аппе."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=_with_back(
+            [
+                [
+                    InlineKeyboardButton(text="Друзья", callback_data="reg:relation_type:friends"),
+                    InlineKeyboardButton(text="Подруги", callback_data="reg:relation_type:girlfriends"),
+                ],
+                [InlineKeyboardButton(text="Партнёр", callback_data="reg:relation_type:partner")],
+                [InlineKeyboardButton(text="Не важно", callback_data="reg:relation_type:")],
+            ],
+            back_to,
+        )
+    )
+
+
 def reg_back_kb(back_to: str) -> InlineKeyboardMarkup:
     """Только «Назад» — для шагов со свободным вводом."""
     return InlineKeyboardMarkup(

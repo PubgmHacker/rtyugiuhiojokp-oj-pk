@@ -115,7 +115,24 @@ FEATURE_MIN_TIER: dict[str, str] = {
     "incognito": TIER_PLUS,
     "deck_boost": TIER_PLUS,
     "visitors": TIER_ULTRA,
+    #: Написать человеку, который вас не лайкал (см. services/direct_messages.py).
+    #: Аналог «Мимолёта» — платный крючок, поэтому не бесплатно.
+    "direct_messages": TIER_PLUS,
 }
+
+#: Сколько писем без взаимного лайка можно отправить за сутки. Free — 0
+#: (фича закрыта), у Plus и Ultra разное число — тот же приём, что у
+#: суперлайков и бустов: у старшего уровня лимит выше, а не безлимит,
+#: иначе платная функция превращается в канал для спама.
+DIRECT_MESSAGES_PER_DAY: dict[str, int] = {
+    TIER_FREE: 0,
+    TIER_PLUS: 3,
+    TIER_ULTRA: 10,
+}
+
+
+def direct_messages_per_day(tier: str) -> int:
+    return DIRECT_MESSAGES_PER_DAY.get(TIER_ORDER[tier_rank(tier)], 0)
 
 
 def tier_rank(tier: str) -> int:
