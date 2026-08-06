@@ -177,7 +177,7 @@ function Protected({ children, nav = true }: { children: React.ReactNode; nav?: 
   const token = useStore((s) => s.token);
   if (!token) return <Navigate to="/login" replace />;
   return (
-    <div className={`min-h-screen-safe ${nav ? "pb-[68px]" : ""}`}>
+    <div className={`min-h-screen-safe ${nav ? "pb-nav" : ""}`}>
       <Suspense fallback={<ScreenFallback />}>{children}</Suspense>
       {nav && <BottomNav />}
     </div>

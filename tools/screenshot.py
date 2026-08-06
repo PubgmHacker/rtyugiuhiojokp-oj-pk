@@ -94,6 +94,25 @@ class Браузер:
             if ответ.get("id") == мой:
                 return ответ.get("result", {})
 
+    def войти(self) -> None:
+        """Положить фиктивную сессию, чтобы дойти до защищённых экранов.
+
+        Без неё всё, кроме /login, редиректит на вход, и посмотреть на дека,
+        профиль или коллекцию нельзя. Токен фиктивный: API в этом режиме не
+        отвечает, зато видна сама вёрстка, скелетоны и пустые состояния —
+        то, что и надо проверять глазами.
+        """
+        self.зов("Page.navigate", {"url": f"{БАЗА}/login"})
+        time.sleep(2)
+        self.зов("Runtime.evaluate", {"expression": """
+            localStorage.setItem('sd_token', 'снимок-экрана');
+            localStorage.setItem('sd_user', JSON.stringify({
+              id: 'снимок', display_name: 'Аня', photos: [], interests: [],
+              bio: '', gender: 'female', city: 'Москва', looking_for: 'any',
+              is_incognito: false
+            }));
+        """})
+
     def снять(self, путь: str, ширина: int) -> dict:
         self.зов("Emulation.setDeviceMetricsOverride", {
             "width": ширина, "height": 844, "deviceScaleFactor": 2, "mobile": True,
@@ -126,6 +145,7 @@ def main() -> int:
     браузер = Браузер()
     плохо = 0
     try:
+        браузер.войти()
         for путь in пути:
             for ширина in ШИРИНЫ:
                 з = браузер.снять(путь, ширина)

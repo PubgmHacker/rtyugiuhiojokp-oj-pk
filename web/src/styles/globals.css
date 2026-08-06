@@ -311,6 +311,13 @@
   padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
 }
 
+/* Отступ под фиксированный таббар. Его высота — содержимое плюс safe-area,
+   поэтому плоских 68px не хватало: на телефонах с «чёлкой» последний блок
+   страницы уезжал под навигацию и читался наполовину. */
+@utility pb-nav {
+  padding-bottom: calc(68px + max(env(safe-area-inset-bottom), 0.5rem));
+}
+
 @utility safe-x {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
