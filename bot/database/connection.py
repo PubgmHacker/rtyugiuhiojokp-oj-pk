@@ -480,6 +480,63 @@ async def activate_premium(
             return {"plan": sub.plan, "expires_at": sub.expires_at.isoformat()}
 
 
+async def revoke_premium_payment(payment_id: str, provider: str = "stars") -> dict:
+    """Откатить подписку после возврата денег.
+
+    Telegram позволяет вернуть Stars, и тогда боту приходит `refunded_payment`.
+    Без этого подписка оставалась активной до конца оплаченного срока, хотя
+    деньги уже вернулись пользователю: оплатил, получил Ultra, вернул Stars —
+    и пользуешься дальше бесплатно.
+
+    Срок урезаем ровно на те дни, что были начислены этим платежом, а не
+    гасим подписку целиком: у человека рядом могла быть другая, честно
+    оплаченная покупка, и отнимать её нельзя. Запись платежа удаляем, чтобы
+    возвращённый и заново оплаченный тот же charge_id снова зачёлся.
+    """
+    from datetime import timedelta
+
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(ProcessedPayment).where(
+                    and_(
+                        ProcessedPayment.provider == provider,
+                        ProcessedPayment.external_id == payment_id,
+                    )
+                )
+            )
+            платёж = result.scalar_one_or_none()
+            if not платёж:
+                # Возврат платежа, которого мы не зачитывали, — ничего не должны
+                return {"revoked": False, "reason": "платёж не найден"}
+
+            result = await session.execute(
+                select(Subscription).where(Subscription.user_id == платёж.user_id)
+            )
+            sub = result.scalar_one_or_none()
+
+            if sub and sub.expires_at:
+                сокращённый = sub.expires_at - timedelta(days=платёж.days or 0)
+                now = datetime.utcnow()
+                if сокращённый <= now:
+                    # Оплаченного срока не осталось — уровень падает до
+                    # бесплатного, иначе Ultra висел бы с истёкшей датой
+                    sub.expires_at = now
+                    sub.plan = "free"
+                else:
+                    sub.expires_at = сокращённый
+
+            await session.delete(платёж)
+            await session.flush()
+            return {
+                "revoked": True,
+                "user_id": платёж.user_id,
+                "days": платёж.days or 0,
+                "plan": sub.plan if sub else "free",
+            }
+
+
 # ════════════════════════════════════════════════════════════════
 #  LIKES & MATCHES
 # ════════════════════════════════════════════════════════════════

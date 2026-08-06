@@ -2284,6 +2284,113 @@ asyncio.run(main())
     )
 
 
+def test_возврат_stars_снимает_подписку():
+    """Возврат Stars был бесплатным Ultra.
+
+    Бот обрабатывал `successful_payment`, но не `refunded_payment`: человек
+    оплачивал, получал уровень, возвращал Stars через поддержку Telegram и
+    продолжал пользоваться до конца оплаченного срока.
+
+    Проверяем поведением: у аиограма спрашиваем, что хендлер вообще
+    зарегистрирован на это событие, и дёргаем настоящую функцию отката с
+    подменённой БД — срок должен уменьшиться ровно на дни платежа.
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    бот = Path(__file__).resolve().parents[2] / "bot"
+    python = бот / ".venv" / "bin" / "python"
+    if not python.exists():
+        pytest.skip("venv бота не поднят в этом окружении")
+
+    скрипт = """
+import sys
+sys.path.insert(0, ".")
+import asyncio
+import json
+from aiogram.types import Message
+import handlers.premium as premium
+
+# Прогоняем фильтры хендлеров на настоящем событии возврата: так проверяется
+# не имя функции, а то, что событие реально до кого-то доходит
+событие = Message.model_validate({
+    "message_id": 1,
+    "date": 0,
+    "chat": {"id": 5, "type": "private"},
+    "from": {"id": 5, "is_bot": False, "first_name": "Тест"},
+    "refunded_payment": {
+        "currency": "XTR",
+        "total_amount": 149,
+        "invoice_payload": "plan:plus_1m",
+        "telegram_payment_charge_id": "charge-возврат",
+    },
+})
+
+
+async def main():
+    import inspect
+
+    async def проверить(f, событие):
+        # MagicFilter возвращает само значение поля (не корутину), а обычные
+        # фильтры — awaitable. Поддерживаем оба, иначе тест «не находит»
+        # хендлер из-за своей же ошибки, а не из-за отсутствия обработчика
+        итог = f.callback(событие)
+        if inspect.isawaitable(итог):
+            итог = await итог
+        return bool(итог)
+
+    подошло = []
+    for h in premium.router.message.handlers:
+        # Хендлер подходит, только если прошли ВСЕ его фильтры — иначе
+        # StateFilter("*") у соседней команды матчит любое событие
+        ок = bool(h.filters)
+        for f in h.filters:
+            try:
+                if not await проверить(f, событие):
+                    ок = False
+                    break
+            except Exception:
+                ок = False
+                break
+        if ок:
+            подошло.append(getattr(h.callback, "__name__", "?"))
+
+    # И сама функция откатывает срок: подменяем БД, чтобы не поднимать Postgres
+    снято = {}
+
+    async def _revoke(payment_id, provider="stars"):
+        снято["id"] = payment_id
+        return {"revoked": True, "user_id": "u", "days": 30, "plan": "free"}
+
+    premium.revoke_premium_payment = _revoke
+
+    class FakeMsg:
+        refunded_payment = событие.refunded_payment
+
+        async def answer(self, *a, **kw):
+            pass
+
+    await premium.on_refunded_payment(FakeMsg())
+    print(json.dumps({"подошло": подошло, "снято": снято.get("id")}))
+
+
+asyncio.run(main())
+"""
+
+    результат = subprocess.run(
+        [str(python), "-c", скрипт], cwd=бот, capture_output=True, text=True
+    )
+    assert результат.returncode == 0, результат.stderr
+
+    ответ = json.loads(результат.stdout.strip().splitlines()[-1])
+    assert "on_refunded_payment" in ответ["подошло"], (
+        "событие возврата ни к кому не приходит — вернувший Stars "
+        f"продолжит пользоваться подпиской: {ответ}"
+    )
+    assert ответ["снято"] == "charge-возврат", "откат вызван не для того платежа"
+
+
 # ════════════════════════════════════════════════════════════════
 #  Групповые чаты по интересам
 # ════════════════════════════════════════════════════════════════

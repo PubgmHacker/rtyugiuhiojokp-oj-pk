@@ -18,7 +18,10 @@ from config import (
     RUB_PER_USDT,
     SBP_ENABLED,
 )
-from database import get_or_create_user, get_active_subscription, activate_premium
+from database import (
+    get_or_create_user, get_active_subscription, activate_premium,
+    revoke_premium_payment,
+)
 from keyboards import main_kb
 from services import cryptobot
 from services.plans import (
@@ -245,6 +248,35 @@ async def on_successful_payment(message: Message):
         message.successful_payment.telegram_payment_charge_id,
         provider="stars",
         code=code,
+    )
+
+
+@router.message(F.refunded_payment)
+async def on_refunded_payment(message: Message):
+    """Stars вернули — подписку надо снять.
+
+    Без этого обработчика возврат был бесплатным Ultra: человек оплачивал,
+    получал уровень, возвращал Stars через поддержку Telegram и продолжал
+    пользоваться до конца оплаченного срока.
+
+    Срок урезаем ровно на дни этого платежа, а не гасим подписку целиком:
+    рядом могла быть другая, честно оплаченная покупка.
+    """
+    charge_id = message.refunded_payment.telegram_payment_charge_id
+    итог = await revoke_premium_payment(charge_id, provider="stars")
+
+    if not итог.get("revoked"):
+        logger.warning(f"Возврат по неизвестному платежу charge={charge_id}")
+        return
+
+    logger.info(
+        f"Возврат Stars: charge={charge_id} user={итог.get('user_id')} "
+        f"снято дней={итог.get('days')} уровень={итог.get('plan')}"
+    )
+    await message.answer(
+        "Возврат получен — подписка отменена. Если это ошибка, "
+        "оформите её заново в разделе ⭐ Premium.",
+        reply_markup=main_kb(),
     )
 
 
