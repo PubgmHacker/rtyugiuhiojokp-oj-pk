@@ -132,3 +132,27 @@ describe("Chat — гонка загрузки истории при смене 
     expect(screen.getByText("привет из B")).toBeInTheDocument();
   });
 });
+
+describe("Chat — сбой загрузки истории", () => {
+  it("отличает «не загрузилось» от «переписки ещё нет»", async () => {
+    useStore.setState({ token: "test-token" });
+
+    // Сеть недоступна: раньше это молча показывало приглашение написать
+    // первым, и человек думал, что собеседник ничего не писал
+    vi.spyOn(api, "getMessages").mockRejectedValue(new Error("сеть недоступна"));
+    vi.spyOn(api, "getMatches").mockRejectedValue(new Error("сеть недоступна"));
+
+    const router = createMemoryRouter(
+      [{ path: "/chat/:matchId", element: <Chat /> }],
+      { initialEntries: ["/chat/match-a"] }
+    );
+
+    render(<RouterProvider router={router} />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Не удалось загрузить переписку")).toBeInTheDocument()
+    );
+    // Приглашение написать первым тут неуместно — оно врёт про состояние
+    expect(screen.queryByText("Вы понравились друг другу")).not.toBeInTheDocument();
+  });
+});

@@ -39,6 +39,7 @@ export default function Chat() {
   const [match, setMatch] = useState<MatchResponse | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
+  const [историяНеЗагрузилась, setИсторияНеЗагрузилась] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [icebreakers, setIcebreakers] = useState<string[]>([]);
@@ -86,7 +87,9 @@ export default function Chat() {
         });
         setMatch(matchList.find((m) => m.id === requestedMatchId) ?? null);
       } catch {
-        /* экран покажет пустую переписку */
+        // Сбой и «переписки ещё нет» выглядели одинаково: человек видел
+        // приглашение написать первым, хотя история просто не загрузилась
+        if (stillCurrent()) setИсторияНеЗагрузилась(true);
       } finally {
         if (stillCurrent()) setLoading(false);
       }
@@ -378,6 +381,17 @@ export default function Chat() {
                 className={`h-11 ${i % 2 ? "w-2/3 ml-auto" : "w-1/2"} rounded-[18px]`}
               />
             ))}
+          </div>
+        ) : messages.length === 0 && историяНеЗагрузилась ? (
+          <div className="h-full flex flex-col items-center justify-center text-center px-6">
+            <div className="text-[44px] mb-3">📡</div>
+            <p className="text-[15px] font-semibold mb-1">Не удалось загрузить переписку</p>
+            <p className="text-[13.5px] text-text-muted mb-6 max-w-[32ch]">
+              Сообщения на месте — не хватило связи. Проверьте соединение.
+            </p>
+            <Button variant="secondary" size="md" onClick={() => window.location.reload()}>
+              Повторить
+            </Button>
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-6">

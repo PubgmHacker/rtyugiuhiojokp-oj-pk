@@ -20,19 +20,29 @@ import {
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { useIsMounted } from "../hooks/useSafeAsync";
-import { EmptyState, ScreenHeader, Skeleton, Spinner } from "../components/ui";
+import { Button, EmptyState, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
 
 export default function Rooms() {
   useSectionOpen("rooms");
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [active, setActive] = useState<Room | null>(null);
+  // Сбой загрузки и «комнат правда нет» — разные вещи. Раньше ошибка молча
+  // превращалась в пустой список, и человек думал, что раздел пустой
+  const [сбой, setСбой] = useState(false);
 
-  useEffect(() => {
+  const загрузить = useCallback(() => {
+    setСбой(false);
+    setRooms(null);
     getRooms()
       .then(setRooms)
-      .catch(() => setRooms([]));
+      .catch(() => {
+        setRooms([]);
+        setСбой(true);
+      });
   }, []);
+
+  useEffect(загрузить, [загрузить]);
 
   if (active) {
     return <RoomChat room={active} onBack={() => setActive(null)} />;
@@ -56,9 +66,20 @@ export default function Rooms() {
       <div>
         <ScreenHeader title="Чаты по интересам" />
         <EmptyState
-          emoji="💬"
-          title="Комнат пока нет"
-          description="Скоро здесь появятся чаты по темам."
+          emoji={сбой ? "📡" : "💬"}
+          title={сбой ? "Не удалось загрузить" : "Комнат пока нет"}
+          description={
+            сбой
+              ? "Проверьте соединение и попробуйте снова."
+              : "Скоро здесь появятся чаты по темам."
+          }
+          action={
+            сбой ? (
+              <Button variant="secondary" size="md" onClick={загрузить}>
+                Повторить
+              </Button>
+            ) : undefined
+          }
         />
       </div>
     );
