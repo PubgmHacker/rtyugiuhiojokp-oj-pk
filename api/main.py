@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -21,11 +23,35 @@ logger = logging.getLogger(__name__)
 
 
 _MIGRATIONS = [
-    # create_all не меняет существующие таблицы — минимальные идемпотентные ALTER'ы
+    # Страховка для баз, заведённых до Alembic: идемпотентные ALTER'ы, которые
+    # create_all не делает. Основной путь изменения схемы — миграции ниже.
     "ALTER TABLE dating_users ALTER COLUMN telegram_id TYPE BIGINT",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_like_pair ON dating_likes (liker_id, liked_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_match_pair ON dating_matches (user1_id, user2_id)",
 ]
+
+
+def _применить_миграции() -> None:
+    """Накатить миграции Alembic до последней ревизии.
+
+    Без этого 24 файла в migrations/versions лежали мёртвым грузом:
+    `create_all` создаёт недостающие таблицы, но НЕ добавляет колонки в уже
+    существующие. На пустой базе всё работало, а на боевой новая колонка
+    (например, apple_id или email) просто не появлялась, и запросы к ней
+    падали в рантайме.
+
+    Блокирующий вызов, поэтому запускается до старта обслуживания запросов.
+    Ошибку не глотаем: работать на разъехавшейся схеме хуже, чем не
+    подняться, — второе видно сразу, а первое всплывает у пользователей.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    здесь = Path(__file__).resolve().parent
+    cfg = Config(str(здесь / "alembic.ini"))
+    cfg.set_main_option("script_location", str(здесь / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    command.upgrade(cfg, "head")
 
 
 @asynccontextmanager
@@ -49,6 +75,11 @@ async def lifespan(app: FastAPI):
         from models.models import Base
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+
+        # Миграции после create_all: на пустой базе create_all уже всё создал,
+        # а на боевой именно они добавляют новые колонки в существующие таблицы
+        await asyncio.to_thread(_применить_миграции)
+
         for stmt in _MIGRATIONS:
             try:
                 async with engine.begin() as conn:

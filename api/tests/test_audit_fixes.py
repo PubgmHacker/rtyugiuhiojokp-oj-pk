@@ -3454,3 +3454,51 @@ def test_цвета_интерфейса_читаемы_и_различимы():
         f"danger и accent расходятся всего на {расхождение:.0f}° — "
         "ошибка выглядит как главное действие"
     )
+
+
+def test_миграции_применяются_при_старте():
+    """24 файла миграций лежали мёртвым грузом.
+
+    `create_all` создаёт недостающие таблицы, но НЕ добавляет колонки в уже
+    существующие. На пустой базе всё работало, а на боевой новая колонка
+    (например, `apple_id` или `email`) просто не появлялась — и запрос к ней
+    падал в рантайме у пользователей. При этом `alembic upgrade head` не
+    вызывался нигде: ни в Dockerfile, ни в railway.json, ни в приложении.
+    """
+    import inspect
+
+    import main
+
+    lifespan = inspect.getsource(main.lifespan)
+    assert "_применить_миграции" in lifespan, (
+        "миграции не накатываются при старте — новые колонки не появятся "
+        "на существующей базе"
+    )
+    # Alembic блокирующий, а event loop здесь один: синхронный вызов подвесил
+    # бы приложение целиком (на этом уже обжигались с клиентом AI-модерации)
+    assert "to_thread" in lifespan, "блокирующий alembic вызывается прямо в loop"
+
+
+def test_цепочка_миграций_целая():
+    """Две головы или разрыв цепочки — деплой встанет на ровном месте, и
+    выяснится это только в проде."""
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    api = Path(__file__).resolve().parents[1]
+    cfg = Config(str(api / "alembic.ini"))
+    cfg.set_main_option("script_location", str(api / "migrations"))
+
+    sc = ScriptDirectory.from_config(cfg)
+    головы = sc.get_heads()
+    assert len(головы) == 1, f"у миграций {len(головы)} голов: {головы}"
+
+    # Вся цепочка должна доходить до базы одним куском
+    всего = len(list(sc.walk_revisions()))
+    длина, rev = 0, sc.get_revision(головы[0])
+    while rev:
+        длина += 1
+        rev = sc.get_revision(rev.down_revision) if rev.down_revision else None
+    assert длина == всего, f"цепочка рвётся: дошли до {длина} из {всего} ревизий"
