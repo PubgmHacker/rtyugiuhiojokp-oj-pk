@@ -206,3 +206,154 @@ async def test_кейс_выдаёт_наклейки_и_копит_коллек
     дублей = sum(x.count - 1 for x in мои)
     if дублей:
         assert анкета.bonus_superlikes > 0, "за дубликаты ничего не начислили"
+
+
+@pytest.fixture
+def ws_окружение(живая_база, monkeypatch):
+    """WebSocket-чат ходит в БД напрямую через `async_session_factory`, а не
+    через зависимость FastAPI, поэтому подменять надо саму фабрику.
+
+    Заодно глушим фан-аут: Redis и APNs в тестах нет, а проверяем мы сам чат.
+    Возвращает список разосланных событий — по нему видно, что сообщение не
+    просто легло в базу, а ушло собеседнику.
+    """
+    import database.connection as dbc
+    import routers.chat as chat_mod
+    import services.chat_delivery as delivery
+
+    Session = живая_база["Session"]
+    monkeypatch.setattr(dbc, "async_session_factory", Session)
+    monkeypatch.setattr(chat_mod, "async_session_factory", Session)
+    # raising=True намеренно: если имя в модуле переименуют, подмена молча
+    # перестанет работать и тест начнёт проверять пустоту
+    monkeypatch.setattr(delivery, "async_session_factory", Session)
+
+    разослано: list[dict] = []
+    доставлено = __import__("threading").Event()
+
+    async def _fan_out(payload, *a, **kw):
+        разослано.append(payload)
+        # Сигналим тесту: сообщение записано и разослано. Без этого тест
+        # закрывает сокет раньше, чем обработчик дописал в базу, и проверяет
+        # пустоту — гонка в тесте, а не в продукте
+        доставлено.set()
+
+    monkeypatch.setattr(chat_mod, "fan_out", _fan_out)
+    # Модерацию проверяем отдельно; здесь важен транспорт сообщения
+    monkeypatch.setattr(chat_mod, "moderate_text", _пропустить)
+    monkeypatch.setattr(chat_mod, "log_moderation", _ничего)
+    return {"разослано": разослано, "доставлено": доставлено}
+
+
+async def _пропустить(_текст):
+    return {"blocked": False}
+
+
+async def _ничего(*_a, **_kw):
+    return None
+
+
+async def test_сообщение_в_чате_доходит_и_сохраняется(app, живая_база, ws_окружение):
+    """Самый горячий путь продукта — и единственный, который до сих пор не
+    проверялся живьём: WebSocket-тестов не было вовсе.
+
+    Проверяем и запись в базу, и рассылку: сообщение, которое легло в БД, но
+    не ушло собеседнику, выглядит как «не доставлено», и наоборот.
+    """
+    from datetime import datetime, timezone
+
+    from fastapi.testclient import TestClient
+    from middleware.auth import create_access_token
+    from models.models import Match, Message
+
+    аня, боря = живая_база["аня"], живая_база["боря"]
+    Session = живая_база["Session"]
+
+    async with Session() as s:
+        мэтч = Match(user1_id=аня, user2_id=боря, is_active=True)
+        s.add(мэтч)
+        await s.commit()
+        match_id = мэтч.id
+
+    токен = create_access_token(аня, 1)
+
+    # TestClient синхронный — он и нужен: у httpx нет клиента WebSocket
+    # Рассылку делает fan_out, и он подменён — своего эха сокет не шлёт.
+    # Поэтому не ждём ответа, а закрываем соединение: выход из контекста
+    # дожидается завершения обработчика, и к проверке база уже записана.
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            f"/ws/chat/{match_id}?token={токен}"
+        ) as ws:
+            ws.send_json({"type": "message", "text": "привет из теста"})
+            # Ждём сигнала от подменённого fan_out: он срабатывает после
+            # записи в базу, и только тогда закрывать сокет безопасно
+            assert ws_окружение["доставлено"].wait(timeout=10), (
+                "сообщение не дошло до рассылки за 10 секунд"
+            )
+
+    async with Session() as s:
+        сообщения = (
+            await s.execute(select(Message).where(Message.match_id == match_id))
+        ).scalars().all()
+
+    assert len(сообщения) == 1, "сообщение не сохранилось в базе"
+    assert сообщения[0].sender_id == аня
+    assert ws_окружение["разослано"], "сообщение не разослано собеседнику"
+
+
+async def test_чужой_чат_не_открывается(app, живая_база, ws_окружение):
+    """Защита от IDOR: подставив чужой match_id, читать переписку нельзя."""
+    from fastapi.testclient import TestClient
+    from middleware.auth import create_access_token
+    from models.models import Match
+
+    Session = живая_база["Session"]
+    # Мэтч двух других людей — я в нём не участвую
+    async with Session() as s:
+        чужой = Match(user1_id="кто-то", user2_id="ещё-кто-то", is_active=True)
+        s.add(чужой)
+        await s.commit()
+        match_id = чужой.id
+
+    токен = create_access_token(живая_база["аня"], 1)
+
+    # `pytest.raises(Exception)` тут не годится: он ловит и падение самого
+    # теста, поэтому проходил даже со снятой защитой. Проверяем ровно то, что
+    # нужно, — сервер закрыл сокет и сообщение в чужой чат не записалось
+    from starlette.websockets import WebSocketDisconnect
+
+    закрыт = False
+    with TestClient(app) as client:
+        try:
+            with client.websocket_connect(
+                f"/ws/chat/{match_id}?token={токен}"
+            ) as ws:
+                ws.send_json({"type": "message", "text": "я тут не участвую"})
+                ws.receive_json()
+        except WebSocketDisconnect:
+            закрыт = True
+
+    assert закрыт, "сокет чужого чата остался открытым"
+    assert not ws_окружение["разослано"], "сообщение ушло в чужой чат"
+
+
+async def test_без_токена_сокет_не_открывается(app, живая_база, ws_окружение):
+    """Иначе переписку читал бы кто угодно, зная только match_id."""
+    from fastapi.testclient import TestClient
+
+    # Так же, как в тесте чужого чата: широкий `raises(Exception)` проходил
+    # даже со снятой проверкой токена, потому что ловил любое падение
+    from starlette.websockets import WebSocketDisconnect
+
+    закрыт = False
+    with TestClient(app) as client:
+        try:
+            with client.websocket_connect("/ws/chat/любой") as ws:
+                ws.send_json({"type": "message", "text": "без токена"})
+                ws.receive_json()
+        except WebSocketDisconnect:
+            закрыт = True
+
+    assert закрыт, "сокет открылся без токена"
+    assert not ws_окружение["разослано"], "сообщение прошло без токена"
