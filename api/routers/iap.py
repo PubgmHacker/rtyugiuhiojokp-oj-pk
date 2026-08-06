@@ -25,8 +25,10 @@ from models.schemas import (
     PlansOut,
     TierOut,
 )
-from services.appstore import ReceiptInvalid, is_configured, verify_transaction
-from services.premium import activate_premium, current_tier
+from services.appstore import (
+    ReceiptInvalid, is_configured, verify_transaction, разобрать_уведомление,
+)
+from services.premium import activate_premium, current_tier, отозвать_покупку
 from services.plans import PLANS, TIER_ORDER, TIERS, plan_for_appstore_id
 
 logger = logging.getLogger(__name__)
@@ -138,3 +140,55 @@ async def verify_purchase(
         expires_at=result["expires_at"],
         already_processed=result["already_processed"],
     )
+
+
+@router.post("/appstore/notifications")
+async def appstore_notifications(
+    data: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """Уведомления App Store Server Notifications V2.
+
+    Apple зовёт этот адрес сама, поэтому он открытый — и именно поэтому
+    подпись уведомления проверяется тем же верификатором, что и чеки. Без
+    проверки любой прислал бы поддельный REFUND и погасил подписку кому
+    угодно.
+
+    До этого возврат ловился только в момент, когда клиент сам предъявлял чек:
+    вернувший деньги продолжал пользоваться подпиской, а мог и вовсе больше не
+    открывать приложение.
+
+    Отвечаем 200 всегда, когда уведомление разобрано: Apple повторяет доставку
+    при любом другом коде, а повторять нечего — неизвестный тип нам просто
+    неинтересен.
+    """
+    if not is_configured():
+        raise HTTPException(status_code=503, detail="Покупки недоступны")
+
+    try:
+        уведомление = разобрать_уведомление(str(data.get("signedPayload", "")))
+    except ReceiptInvalid as e:
+        # Подпись не сошлась — это не наше уведомление
+        logger.warning(f"Уведомление App Store отклонено: {e}")
+        raise HTTPException(status_code=400, detail="Уведомление не подтверждено")
+
+    if not уведомление["отзыв"]:
+        logger.info(f"Уведомление App Store: {уведомление['тип']} {уведомление['подтип']}")
+        return {"handled": False}
+
+    original_id = уведомление["original_transaction_id"]
+    transaction_id = уведомление.get("transaction_id")
+    if not original_id and not transaction_id:
+        logger.error("Отзыв покупки без идентификатора транзакции")
+        return {"handled": False}
+
+    # Передаём оба: у продления transactionId новый, а в журнале платежей
+    # лежит именно он, тогда как в уведомлении приходит originalTransactionId
+    итог = await отозвать_покупку(
+        session,
+        transaction_id or original_id,
+        provider="appstore",
+        original_id=original_id,
+    )
+    await session.commit()
+    return {"handled": bool(итог.get("revoked"))}

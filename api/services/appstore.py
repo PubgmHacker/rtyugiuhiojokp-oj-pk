@@ -145,3 +145,65 @@ def verify_transaction(signed_transaction: str, expected_account_token: str) -> 
         app_account_token=token,
         is_subscription=expires_at is not None,
     )
+
+
+#: Типы уведомлений Apple, после которых доступ надо закрыть немедленно.
+#: REFUND — деньги вернули, REVOKE — покупку отозвали (например, Family
+#: Sharing), а CONSUMPTION_REQUEST приходит при споре и сам доступа не меняет.
+ОТЗЫВАЮЩИЕ = {"REFUND", "REVOKE"}
+
+
+def разобрать_уведомление(signed_payload: str) -> dict:
+    """Проверить уведомление App Store и вытащить из него суть.
+
+    Раньше отзыв ловился только в момент, когда клиент сам предъявлял чек
+    (`revocationDate` в `verify_transaction`). До этого момента вернувший
+    деньги продолжал пользоваться подпиской — а мог и вовсе больше не
+    открывать приложение с проверкой.
+
+    Подпись проверяем тем же верификатором, что и чеки: уведомление приходит
+    на открытый эндпоинт, и без проверки подписи любой мог бы прислать
+    поддельный REFUND и погасить подписку любому.
+
+    Возвращает `{"тип", "подтип", "отзыв", "original_transaction_id",
+    "transaction_id"}` — оба идентификатора, потому что у продления они разные.
+    """
+    if not is_configured():
+        raise ReceiptInvalid("Проверка чеков App Store не настроена")
+
+    from appstoreserverlibrary.signed_data_verifier import VerificationException
+
+    try:
+        payload = _load_verifier().verify_and_decode_notification(signed_payload)
+    except VerificationException as e:
+        raise ReceiptInvalid(f"Подпись уведомления не подтверждена: {e}") from e
+    except Exception as e:
+        logger.error(f"App Store notification verification failed: {e}")
+        raise ReceiptInvalid("Не удалось проверить уведомление") from e
+
+    тип = str(getattr(payload, "notificationType", "") or "")
+    подтип = str(getattr(payload, "subtype", "") or "")
+
+    original_id = None
+    transaction_id = None
+    данные = getattr(payload, "data", None)
+    подписанная = getattr(данные, "signedTransactionInfo", None) if данные else None
+    if подписанная:
+        try:
+            сделка = _load_verifier().verify_and_decode_signed_transaction(подписанная)
+            original_id = str(сделка.originalTransactionId)
+            # У продления transactionId свой, и в журнале платежей лежит
+            # именно он — ищем потом по обоим
+            transaction_id = str(сделка.transactionId)
+        except Exception as e:
+            # Тип уведомления уже известен и полезен сам по себе, но без
+            # original_transaction_id мы не поймём, чью подписку гасить
+            logger.warning(f"Уведомление без разбираемой транзакции: {e}")
+
+    return {
+        "тип": тип,
+        "подтип": подтип,
+        "отзыв": тип in ОТЗЫВАЮЩИЕ,
+        "original_transaction_id": original_id,
+        "transaction_id": transaction_id,
+    }

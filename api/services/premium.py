@@ -140,3 +140,69 @@ async def activate_premium(
         "expires_at": new_expires.isoformat(),
         "already_processed": False,
     }
+
+
+async def отозвать_покупку(
+    session: AsyncSession,
+    payment_id: str,
+    provider: str = "appstore",
+    original_id: str | None = None,
+) -> dict:
+    """Закрыть доступ после возврата денег.
+
+    Раньше отзыв ловился только когда клиент сам предъявлял чек: до этого
+    момента вернувший деньги пользовался подпиской, а мог и вовсе больше не
+    открывать приложение. Уведомление от Apple приходит сразу, поэтому и
+    доступ закрываем сразу.
+
+    `original_id` нужен из-за того, что у продления подписки `transactionId`
+    каждый раз новый, а `originalTransactionId` остаётся прежним. В журнале
+    платежей лежит первый, в уведомлении приходит второй — искать только по
+    одному значило бы молча не находить продлённые подписки. Поэтому
+    подстраховываемся ещё и полем `Subscription.stripe_id`, куда пишется
+    последний зачтённый платёж.
+
+    Гасим подписку целиком, а не урезаем на дни: у App Store срок живёт на
+    стороне Apple, и «остатка от других покупок» тут не бывает — подписка одна
+    и продлевается той же цепочкой.
+    """
+    ключи = [k for k in (payment_id, original_id) if k]
+
+    result = await session.execute(
+        select(ProcessedPayment).where(and_(
+            ProcessedPayment.provider == provider,
+            ProcessedPayment.external_id.in_(ключи),
+        ))
+    )
+    платежи = list(result.scalars().all())
+
+    sub = None
+    if платежи:
+        user_id = платежи[0].user_id
+        result = await session.execute(
+            select(Subscription).where(Subscription.user_id == user_id)
+        )
+        sub = result.scalar_one_or_none()
+    else:
+        # Продление: в журнале лежит transactionId первой покупки, а пришёл
+        # originalTransactionId. Последний зачтённый платёж записан в подписке
+        result = await session.execute(
+            select(Subscription).where(Subscription.stripe_id.in_(ключи))
+        )
+        sub = result.scalar_one_or_none()
+        if not sub:
+            return {"revoked": False, "reason": "платёж не найден"}
+        user_id = sub.user_id
+
+    if sub:
+        sub.expires_at = datetime.now(timezone.utc)
+        sub.plan = TIER_FREE
+
+    # Записи убираем: если человек оплатит заново, тот же transaction_id
+    # должен снова зачесться, а не считаться уже обработанным
+    for платёж in платежи:
+        await session.delete(платёж)
+    await session.flush()
+
+    logger.warning(f"Purchase revoked: user={user_id} provider={provider}")
+    return {"revoked": True, "user_id": user_id}

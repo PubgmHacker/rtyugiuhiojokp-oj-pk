@@ -1095,6 +1095,113 @@ async def test_забаненный_не_возвращается_через_app
     assert юзер.is_banned is True, "забаненный вернулся через Apple с чистой историей"
 
 
+async def test_поддельное_уведомление_apple_не_гасит_подписку(app, monkeypatch):
+    """Адрес уведомлений открытый — его зовёт сама Apple. Без проверки подписи
+    любой прислал бы REFUND и погасил подписку кому угодно."""
+    from routers import iap
+    from services.appstore import ReceiptInvalid
+
+    def _не_прошло(_payload: str):
+        raise ReceiptInvalid("подпись не сошлась")
+
+    monkeypatch.setattr(iap, "is_configured", lambda: True)
+    monkeypatch.setattr(iap, "разобрать_уведомление", _не_прошло)
+
+    гасили: list[str] = []
+
+    async def _отзыв(*a, **kw):
+        гасили.append("да")
+        return {"revoked": True}
+
+    monkeypatch.setattr(iap, "отозвать_покупку", _отзыв)
+
+    session = _Session([])
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/iap/appstore/notifications", json={"signedPayload": "подделка"}
+        )
+
+    assert r.status_code == 400, "поддельное уведомление принято"
+    assert not гасили, "подписку погасили по неподтверждённому уведомлению"
+
+
+async def test_возврат_в_app_store_закрывает_доступ(app, monkeypatch):
+    """Раньше отзыв замечали, только когда клиент сам предъявлял чек: до
+    этого вернувший деньги пользовался подпиской, а мог и не открывать
+    приложение вовсе."""
+    from routers import iap
+
+    monkeypatch.setattr(iap, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        iap,
+        "разобрать_уведомление",
+        lambda _p: {
+            "тип": "REFUND",
+            "подтип": "",
+            "отзыв": True,
+            "original_transaction_id": "ориг-1",
+            "transaction_id": "сделка-2",
+        },
+    )
+
+    вызов = {}
+
+    async def _отзыв(_session, payment_id, provider="appstore", original_id=None):
+        вызов.update(payment_id=payment_id, original_id=original_id)
+        return {"revoked": True, "user_id": "u"}
+
+    monkeypatch.setattr(iap, "отозвать_покупку", _отзыв)
+
+    session = _Session([])
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/iap/appstore/notifications", json={"signedPayload": "ок"}
+        )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["handled"] is True, "возврат пришёл, а доступ не закрыт"
+    # У продления transactionId свой, и в журнале лежит именно он —
+    # искать обязаны по обоим, иначе продлённая подписка не найдётся
+    assert вызов["payment_id"] == "сделка-2"
+    assert вызов["original_id"] == "ориг-1"
+
+
+async def test_обычное_уведомление_apple_ничего_не_ломает(app, monkeypatch):
+    """Продление и прочие события приходят на тот же адрес — они не должны
+    приводить к отзыву доступа."""
+    from routers import iap
+
+    monkeypatch.setattr(iap, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        iap,
+        "разобрать_уведомление",
+        lambda _p: {
+            "тип": "DID_RENEW",
+            "подтип": "",
+            "отзыв": False,
+            "original_transaction_id": "ориг-1",
+            "transaction_id": "сделка-2",
+        },
+    )
+
+    гасили: list[str] = []
+
+    async def _отзыв(*a, **kw):
+        гасили.append("да")
+        return {"revoked": True}
+
+    monkeypatch.setattr(iap, "отозвать_покупку", _отзыв)
+
+    session = _Session([])
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/iap/appstore/notifications", json={"signedPayload": "ок"}
+        )
+
+    assert r.status_code == 200
+    assert not гасили, "продление подписки погасило доступ"
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

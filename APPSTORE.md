@@ -140,6 +140,14 @@ xcrun simctl io booted screenshot shot1.png
 Восстановление покупок есть на экране профиля — ревьюер проверяет этот
 пункт отдельно.
 
+**Возвраты и отзывы покупок.** В App Store Connect в разделе App
+Information → App Store Server Notifications укажите URL
+`https://<домен>/api/iap/appstore/notifications` (версия V2). Подпись
+уведомления проверяется тем же верификатором, что и чеки, — адрес
+открытый, и без проверки любой прислал бы поддельный REFUND и погасил
+подписку кому угодно. По REFUND и REVOKE доступ закрывается сразу; без
+этого возврат замечался только в момент, когда клиент сам предъявлял чек.
+
 **Guideline 4.8 — Sign in with Apple.** Реализован: `POST /api/auth/apple`
 принимает identity-токен и проверяет его по-настоящему — подпись ключом
 Apple (RS256, ключи с `appleid.apple.com/auth/keys`), издателя, аудиторию
