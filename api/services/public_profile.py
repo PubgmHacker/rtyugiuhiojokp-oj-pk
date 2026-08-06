@@ -55,3 +55,24 @@ def публичный_возраст(profile: Any) -> Optional[int]:
     if getattr(profile, "hide_age", False):
         return None
     return возраст_из_даты(getattr(profile, "birth_date", None))
+
+
+def наша_картинка(url: Optional[str]) -> bool:
+    """Лежит ли картинка в нашем хранилище.
+
+    Всё, что показывается людям, обязано пройти загрузку: там AI-модерация и
+    срезание EXIF с координатами. Ссылка на чужой хост означает и необойдённую
+    модерацию, и утечку IP получателя на посторонний сервер в момент показа.
+
+    Пустое значение — не картинка, и это не ошибка: проверять нечего.
+    """
+    if not url:
+        return True
+
+    from config import get_settings
+
+    prefix = (get_settings().R2_PUBLIC_URL or "").rstrip("/") + "/"
+    if prefix != "/" and url.startswith(prefix):
+        return True
+    # Не ссылка вовсе — это file_id Telegram, его кладёт бот без R2
+    return "://" not in url

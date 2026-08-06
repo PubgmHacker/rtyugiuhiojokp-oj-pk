@@ -39,7 +39,7 @@ from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text
 from services.plans import BOOST_MINUTES, boosts_per_day, tier_allows
 from services.premium import current_tier, is_premium as _is_premium
-from services.public_profile import возраст_из_даты, публичный_возраст
+from services.public_profile import возраст_из_даты, наша_картинка, публичный_возраст
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
 from utils import as_list
@@ -299,16 +299,12 @@ def _проверить_фото(новые: list[str], прежние: list[str
     Строку, которой нет среди прежних и которая похожа на ссылку не к нам,
     отклоняем.
     """
-    prefix = (settings.R2_PUBLIC_URL or "").rstrip("/") + "/"
     известные = set(прежние)
 
     for фото in новые:
         if фото in известные:
             continue
-        if prefix != "/" and фото.startswith(prefix):
-            continue
-        if "://" not in фото:
-            # Не ссылка — это file_id Telegram
+        if наша_картинка(фото):
             continue
         raise HTTPException(
             status_code=400,

@@ -14,6 +14,7 @@ from models.models import Match, Message, User
 from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
 from services.chat_delivery import fan_out, save_message
+from services.public_profile import наша_картинка
 from services.token_revocation import is_revoked
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,17 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             text = str(data.get("text", "")).strip()[:2000]
             image_url = data.get("image_url")
             if not text and not image_url:
+                continue
+
+            # Картинка принимается только из нашего хранилища. Пакет собирается
+            # клиентом, и в обход интерфейса (загрузки фото в чат в нём нет)
+            # сюда можно было положить ссылку на что угодно: она показывалась
+            # собеседнику как <img>, не увидев ни AI-модерации, ни санитайзера
+            if not наша_картинка(image_url):
+                await websocket.send_json({
+                    "type": "rejected",
+                    "reason": "Картинку можно отправить только загрузкой",
+                })
                 continue
 
             # Личный чат — самый объёмный канал, и до сих пор единственный
