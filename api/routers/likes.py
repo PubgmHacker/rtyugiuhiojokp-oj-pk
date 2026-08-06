@@ -22,6 +22,7 @@ from services.realtime import publish_match, publish_new_like, publish_new_match
 from services.ai_matchmaker import score_match
 from services.ai_moderation import log_moderation, moderate_text
 from services.public_profile import публичный_возраст
+from services.stickers import картинка_наклейки
 from services.premium import current_tier
 from services.plans import superlikes_for, tier_allows
 from services.push import notify_new_match
@@ -65,6 +66,7 @@ def _profile_to_user(
         subculture=profile.subculture or "",
         mbti=profile.mbti or "",
         height_cm=profile.height_cm,
+        sticker=картинка_наклейки(profile.sticker),
         like_message=like_message,
     )
 

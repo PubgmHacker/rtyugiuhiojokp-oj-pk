@@ -1458,3 +1458,52 @@ async def test_коллекция_показывает_и_ненайденные
     assert чужая["owned"] == 0
     # Путь к картинке собирает сервер: на фронте он разъехался бы с папкой
     assert моя["image"].endswith("/sun.svg")
+
+
+async def test_наклейка_видна_везде_где_видно_чужую_анкету(app, monkeypatch):
+    """Наклейка — знак характера, и она должна быть там же, где сама анкета:
+    в деке, в списке лайкнувших, в чатах. Показать её в одном месте из трёх —
+    это как раз тот разнобой, которым в этом проекте уже болел `hide_age`."""
+    from routers import likes
+
+    monkeypatch.setattr(likes, "current_tier", _async_return("plus"))
+
+    лайк = SimpleNamespace(
+        liker_id="u-fan", liked_id="u-me", type="like", message="",
+        id="l1", created_at=datetime.now(timezone.utc),
+    )
+    session = _Session([
+        _Result(rows=[]),
+        _Result(rows=[лайк]),
+        _Result(scalar=_profile("u-fan", sticker="dawn")),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/likes/received")
+
+    (карточка,) = r.json()
+    assert карточка["sticker"] == "/stickers/dawn.svg", "наклейки нет в списке лайков"
+
+
+async def test_наклейка_не_утекает_мимо_платного_гейта(app, monkeypatch):
+    """Закрытая карточка не должна выдавать вообще ничего — включая наклейку.
+
+    Наклейка редкая и приметная: по ней бесплатный узнавал бы конкретного
+    человека там, где ему не показывают ни имени, ни фото.
+    """
+    from routers import likes
+
+    monkeypatch.setattr(likes, "current_tier", _async_return("free"))
+
+    лайк = SimpleNamespace(
+        liker_id="u-fan", liked_id="u-me", type="like", message="",
+        id="l1", created_at=datetime.now(timezone.utc),
+    )
+    session = _Session([_Result(rows=[]), _Result(rows=[лайк])])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/likes/received")
+
+    (карточка,) = r.json()
+    assert карточка["is_locked"] is True
+    assert not карточка.get("sticker"), "наклейка утекла мимо платного гейта"

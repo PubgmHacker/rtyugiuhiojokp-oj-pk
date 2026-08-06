@@ -75,6 +75,8 @@ export interface UserProfile {
   has_location?: boolean;
   /** Привязанная почта для восстановления доступа. */
   email?: string | null;
+  /** Путь к картинке выбранной наклейки; собирает сервер. */
+  sticker?: string | null;
   invited_count?: number;
   referral_boost?: boolean;
   referral_target?: number;

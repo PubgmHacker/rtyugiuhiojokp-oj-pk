@@ -13,6 +13,7 @@ from models.schemas import MatchResponse, UserProfile
 from services.ai_matchmaker import generate_icebreakers
 from services.chat_delivery import reel_preview
 from services.public_profile import публичный_возраст
+from services.stickers import картинка_наклейки
 from utils import as_list
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -108,6 +109,7 @@ async def get_matches(
             city=profile.city if profile else "",
             photos=as_list(profile.photos) if profile else [],
             interests=as_list(profile.interests) if profile else [],
+            sticker=картинка_наклейки(profile.sticker if profile else None),
         )
 
         last = last_messages.get(m.id)

@@ -39,6 +39,7 @@ from services.ai_moderation import log_moderation, moderate_text
 from services.plans import BOOST_MINUTES, boosts_per_day, tier_allows
 from services.premium import current_tier, is_premium as _is_premium
 from services.public_profile import в_utc, возраст_из_даты, наша_картинка, публичный_возраст
+from services.stickers import картинка_наклейки
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
 from utils import as_list
@@ -68,6 +69,7 @@ def _deck_like_profile(profile: Optional[Profile], user_id: str) -> UserProfile:
         subculture=profile.subculture or "",
         mbti=profile.mbti or "",
         height_cm=profile.height_cm,
+        sticker=картинка_наклейки(profile.sticker),
     )
 
 

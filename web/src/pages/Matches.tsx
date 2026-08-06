@@ -195,6 +195,11 @@ export default function Matches() {
                       <span className="font-semibold text-[15px] truncate">
                         {m.partner.display_name}
                       </span>
+                      {/* Наклейка рядом с именем — там же, где она в деке:
+                          показывать её в одном месте из трёх было бы разнобоем */}
+                      {m.partner.sticker && (
+                        <img src={m.partner.sticker} alt="" className="w-4 h-4 shrink-0" />
+                      )}
                       {m.partner.is_verified && <VerifiedBadge size={14} />}
                       {m.last_message_at && (
                         <span className="ml-auto text-[11.5px] text-text-faint shrink-0">
