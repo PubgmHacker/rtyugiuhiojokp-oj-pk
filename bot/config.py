@@ -58,14 +58,11 @@ THROTTLE_CALLBACK: float = float(os.getenv("THROTTLE_CALLBACK", "0.4"))
 WEBHOOK_PORT: int = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8081")))
 
 # ── Banners ─────────────────────────────────────────────────────
-# Цвета совпадают с дизайн-системой: фон #0a0b0f, акцент #5b66ff
+# Свои картинки со своего домена. Раньше баннеры вели на placehold.co: каждый
+# пользователь видел чужую картинку, мы зависели от чужой доступности и
+# отдавали туда статистику показов — а цвет там остался прежним индиго.
+# Рисуются генератором tools/make_banners.py, лежат в web/public/banners.
 BANNERS: dict[str, str] = {
-    "welcome": "https://placehold.co/900x600/0a0b0f/5b66ff.png?text=SOULDAWN",
-    "match": "https://placehold.co/900x600/0a0b0f/5b66ff.png?text=%D0%92%D0%B7%D0%B0%D0%B8%D0%BC%D0%BD%D0%BE!",
-    "profile": "https://placehold.co/900x600/0a0b0f/5b66ff.png?text=%D0%9C%D0%BE%D1%8F+%D0%B0%D0%BD%D0%BA%D0%B5%D1%82%D0%B0",
-    "like": "https://placehold.co/900x300/0a0b0f/34d399.png?text=%E2%9D%A4%EF%B8%8F",
-    "dislike": "https://placehold.co/900x300/0a0b0f/8f97a8.png?text=%F0%9F%91%8E",
-    "menu": "https://placehold.co/900x450/0a0b0f/5b66ff.png?text=SOULDAWN",
-    "deck": "https://placehold.co/900x1200/16181f/8f97a8.png?text=%D0%A4%D0%BE%D1%82%D0%BE",
+    имя: f"{SITE_URL}/banners/{имя}.png"
+    for имя in ("welcome", "menu", "match", "profile", "like", "dislike", "deck")
 }
-
