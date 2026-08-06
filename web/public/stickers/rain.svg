@@ -2,19 +2,32 @@
      width="120" height="120" role="img" aria-label="Дождь">
   <title>Дождь</title>
   <defs>
-    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
-      <stop offset="0%" stop-color="#3a4050"/>
-      <stop offset="100%" stop-color="#2a2f3c"/>
+    <radialGradient id="ф" cx="34%" cy="26%" r="86%">
+      <stop offset="0%" stop-color="#454c5e"/>
+      <stop offset="52%" stop-color="#343a49"/>
+      <stop offset="100%" stop-color="#232733"/>
     </radialGradient>
+    <!-- Тень под мотивом: плоская фигура на плоском фоне не отделяется от
+         подложки, и весь набор выглядит наклейками из одного слоя -->
+    <filter id="т" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="2"
+                    flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
   </defs>
   <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
-  <path d="M38 62a13 13 0 010-26 18 18 0 0134-5 14 14 0 013 27z"
+  <g filter="url(#т)">
+    <path d="M38 62a13 13 0 010-26 18 18 0 0134-5 14 14 0 013 27z"
               fill="#fff8e7"/>
         <g stroke="#fff8e7" stroke-width="5" stroke-linecap="round" opacity=".85">
           <path d="M44 74l-4 12M60 74l-4 14M76 74l-4 12"/>
         </g>
-  <!-- Блик: без него подложка выглядит плоской заливкой -->
-  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  </g>
+  <!-- Верхний блик: свет падает сверху-слева -->
+  <ellipse cx="41" cy="28" rx="27" ry="15" fill="#ffffff" opacity=".16"/>
+  <!-- Контровой свет снизу: без него низ шара «проваливается» и подложка
+       снова читается матовой пуговицей -->
+  <path d="M14 78a58 58 0 0092 0" fill="none" stroke="#ffffff"
+        stroke-opacity=".09" stroke-width="7" stroke-linecap="round"/>
   <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
-          stroke-opacity=".18" stroke-width="2"/>
+          stroke-opacity=".20" stroke-width="2"/>
 </svg>

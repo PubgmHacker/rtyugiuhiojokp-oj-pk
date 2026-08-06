@@ -2,17 +2,30 @@
      width="120" height="120" role="img" aria-label="Кристалл">
   <title>Кристалл</title>
   <defs>
-    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
-      <stop offset="0%" stop-color="#e8a13a"/>
-      <stop offset="100%" stop-color="#d1622a"/>
+    <radialGradient id="ф" cx="34%" cy="26%" r="86%">
+      <stop offset="0%" stop-color="#f0b14a"/>
+      <stop offset="52%" stop-color="#dc7a2f"/>
+      <stop offset="100%" stop-color="#bd4f22"/>
     </radialGradient>
+    <!-- Тень под мотивом: плоская фигура на плоском фоне не отделяется от
+         подложки, и весь набор выглядит наклейками из одного слоя -->
+    <filter id="т" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="2"
+                    flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
   </defs>
   <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
-  <path d="M60 20l34 26-34 54-34-54z" fill="#fff8e7"/>
+  <g filter="url(#т)">
+    <path d="M60 20l34 26-34 54-34-54z" fill="#fff8e7"/>
         <path d="M60 20L44 46h32zM26 46h68" stroke="#d1622a" stroke-width="4"
               fill="none" opacity=".45"/>
-  <!-- Блик: без него подложка выглядит плоской заливкой -->
-  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  </g>
+  <!-- Верхний блик: свет падает сверху-слева -->
+  <ellipse cx="41" cy="28" rx="27" ry="15" fill="#ffffff" opacity=".16"/>
+  <!-- Контровой свет снизу: без него низ шара «проваливается» и подложка
+       снова читается матовой пуговицей -->
+  <path d="M14 78a58 58 0 0092 0" fill="none" stroke="#ffffff"
+        stroke-opacity=".09" stroke-width="7" stroke-linecap="round"/>
   <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
-          stroke-opacity=".18" stroke-width="2"/>
+          stroke-opacity=".20" stroke-width="2"/>
 </svg>
