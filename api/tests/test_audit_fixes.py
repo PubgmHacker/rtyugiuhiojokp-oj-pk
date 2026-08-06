@@ -3502,3 +3502,111 @@ def test_цепочка_миграций_целая():
         длина += 1
         rev = sc.get_revision(rev.down_revision) if rev.down_revision else None
     assert длина == всего, f"цепочка рвётся: дошли до {длина} из {всего} ревизий"
+
+
+def test_личка_из_бота_проходит_модерацию():
+    """Личный чат — самый объёмный канал контента, и через бота он шёл вообще
+    без проверки: тот же текст из мини-аппа модерируется (api/routers/chat.py),
+    а из бота попадал собеседнику как есть.
+
+    Дёргаем настоящий хендлер с заблокированным вердиктом и смотрим, что
+    сообщение не сохранено и не разослано.
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    бот = Path(__file__).resolve().parents[2] / "bot"
+    python = бот / ".venv" / "bin" / "python"
+    if not python.exists():
+        pytest.skip("venv бота не поднят в этом окружении")
+
+    скрипт = """
+import sys
+sys.path.insert(0, ".")
+import asyncio, json
+import handlers.matches as m
+
+сохранено = []
+разослано = []
+
+
+async def _mod(текст):
+    return {"blocked": True, "reason": "мат"}
+
+
+async def _user(*a, **kw):
+    return {"id": "u-me"}
+
+
+async def _partner(match_id, user_id):
+    return {"user_id": "u-partner", "display_name": "Партнёр"}
+
+
+class FakeMessage:
+    text = "запрещённый текст"
+
+    class _From:
+        id = 1
+        username = ""
+        first_name = "Т"
+
+    from_user = _From()
+
+    def __init__(self):
+        self.ответы = []
+
+    async def answer(self, text, **kw):
+        self.ответы.append(text)
+
+
+class FakeState:
+    async def get_data(self):
+        return {"active_match_id": "m-1"}
+
+    async def clear(self):
+        pass
+
+    async def set_state(self, s):
+        pass
+
+
+async def main():
+    m.moderate_text = _mod
+    m.get_or_create_user = _user
+    m.get_match_partner = _partner
+    # Если модерация не сработает, тест упадёт именно здесь — значит текст
+    # дошёл до записи в базу
+    # Хендлер делает `from database.connection import _session_cls` ВНУТРИ
+    # функции, поэтому подменять надо в самом модуле, а не в хендлере
+    import database.connection as dbc
+
+    def _взрыв(*a, **kw):
+        сохранено.append(1)
+        raise RuntimeError("дошли до записи в БД")
+
+    dbc._session_cls = _взрыв
+
+    msg = FakeMessage()
+    try:
+        await m.send_message(msg, FakeState())
+    except RuntimeError:
+        pass
+
+    print(json.dumps({"сохранено": len(сохранено), "ответы": msg.ответы}))
+
+
+asyncio.run(main())
+"""
+
+    результат = subprocess.run(
+        [str(python), "-c", скрипт], cwd=бот, capture_output=True, text=True
+    )
+    if результат.returncode != 0:
+        pytest.skip(f"хендлер изменился: {результат.stderr[-300:]}")
+
+    ответ = json.loads(результат.stdout.strip().splitlines()[-1])
+    assert ответ["сохранено"] == 0, (
+        "запрещённое сообщение дошло до записи в базу — модерации нет"
+    )
+    assert ответ["ответы"], "человеку не сказали, почему сообщение не ушло"

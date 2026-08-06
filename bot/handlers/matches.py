@@ -16,6 +16,7 @@ from aiogram.fsm.context import FSMContext
 from config import BANNERS
 from database import get_or_create_user, get_user_matches, get_match_partner, get_profile
 from keyboards import matches_list_kb, chat_kb, main_kb, profile_kb
+from services.moderation import moderate_text, humanize
 from states import ChatStates
 from texts import chat_header
 from utils import safe_edit_text
@@ -99,6 +100,17 @@ async def send_message(message: Message, state: FSMContext):
     text = message.text or ""
     if not text.strip():
         await message.answer("Сообщение не может быть пустым")
+        return
+
+    # Личка — самый объёмный канал контента, и через бота он шёл вообще без
+    # проверки: тот же текст из мини-аппа модерируется (api/routers/chat.py),
+    # а отсюда попадал собеседнику как есть. Заблокировать отправителя тот
+    # может, но сообщение уже прочитано
+    verdict = await moderate_text(text.strip())
+    if verdict.get("blocked"):
+        await message.answer(
+            f"Сообщение не отправлено: {humanize(verdict.get('reason', ''))}"
+        )
         return
 
     # Store message via API or directly in DB
