@@ -115,6 +115,12 @@ class Profile(Base):
             "goal",
             postgresql_where=text("goal <> ''"),
         ),
+        # Тип связи — тот же случай: пустых («не указано») большинство.
+        Index(
+            "ix_profile_relation_type",
+            "relation_type",
+            postgresql_where=text("relation_type <> ''"),
+        ),
     )
 
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), primary_key=True)
@@ -167,6 +173,21 @@ class Profile(Base):
     #: Показывать все значило бы превратить карточку в витрину достижений, а
     #: смотрят на неё ради человека. Пусто — ничего не выбрано.
     sticker: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Ссылка на свой Telegram-канал в анкете (платная возможность).
+    #:
+    #: Хранится «голым» юзернеймом без @ и без https://t.me/ — так его нельзя
+    #: подменить ссылкой на произвольный хост, а собрать адрес для показа
+    #: тривиально. Пусто — блока в анкете нет.
+    tg_channel: Mapped[str] = mapped_column(String, default="")
+    #: Тип искомой связи: см. `services/relations.py`.
+    #:
+    #: Отдельно от `goal` (у того смысл «зачем»: отношения, дружба, общение) —
+    #: здесь «с кем»: друзья, подруги, партнёр. Разделено потому, что у
+    #: конкурента это два независимых фильтра, и совмещать их в одном поле
+    #: значило бы плодить пары вида «дружба_подруги».
+    relation_type: Mapped[str] = mapped_column(String, default="")
+    #: Фильтр по типу связи. Пусто — фильтр выключен.
+    filter_relation_type: Mapped[str] = mapped_column(String, default="")
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
@@ -219,6 +240,10 @@ class Match(Base):
         # Список чатов ищет мэтчи пользователя с любой стороны пары
         Index("ix_match_user1", "user1_id"),
         Index("ix_match_user2", "user2_id"),
+        # Суточный лимит платных писем считается по паре (кто, когда). Индекс
+        # нужен ещё и для FK: без него удаление пользователя сканировало бы
+        # таблицу мэтчей целиком.
+        Index("ix_match_initiator_created", "initiator_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -227,6 +252,28 @@ class Match(Base):
     match_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ai_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: Как возникла беседа: "match" — взаимный лайк, "direct" — платное письмо
+    #: без взаимности (см. `services/direct_messages.py`).
+    #:
+    #: Сделано полем существующего мэтча, а не отдельной таблицей, сознательно:
+    #: чат, сообщения, доставка, пуши, жалобы, блокировки и удаление аккаунта
+    #: уже завязаны на `match_id`. Вторая таблица беседы означала бы вторую
+    #: копию всего этого — а в этом проекте парные пути расходятся регулярно.
+    kind: Mapped[str] = mapped_column(String, default="match", server_default=text("'match'"))
+    #: Кто написал первым в беседе типа "direct". Нужен, чтобы отличать
+    #: отправителя от получателя после того, как беседа создана: у получателя
+    #: свои права (закрыть, пожаловаться), а лимит расходуется у отправителя.
+    initiator_id: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=True
+    )
+    #: Ответил ли получатель. До ответа отправитель ограничен одним письмом —
+    #: иначе платная функция превращается в канал для спама.
+    #:
+    #: Держим флагом, а не считаем сообщения запросом: проверка идёт на каждое
+    #: сообщение, в том числе в WebSocket, и лишний COUNT там неуместен.
+    direct_answered: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user1: Mapped["User"] = relationship(back_populates="matches1", foreign_keys=[user1_id])

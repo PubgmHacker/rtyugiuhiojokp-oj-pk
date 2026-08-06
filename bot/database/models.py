@@ -73,6 +73,11 @@ class Profile(Base):
             "goal",
             postgresql_where=text("goal <> ''"),
         ),
+        Index(
+            "ix_profile_relation_type",
+            "relation_type",
+            postgresql_where=text("relation_type <> ''"),
+        ),
     )
 
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), primary_key=True)
@@ -107,6 +112,12 @@ class Profile(Base):
     #: Показывать все значило бы превратить карточку в витрину достижений, а
     #: смотрят на неё ради человека. Пусто — ничего не выбрано.
     sticker: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: Telegram-канал в анкете (платно) — см. api/models/models.py.
+    #: Хранится голым юзернеймом, без @ и без https://t.me/.
+    tg_channel: Mapped[str] = mapped_column(String, default="")
+    #: Тип искомой связи и фильтр по нему — см. api/models/models.py
+    relation_type: Mapped[str] = mapped_column(String, default="")
+    filter_relation_type: Mapped[str] = mapped_column(String, default="")
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
@@ -150,6 +161,7 @@ class Match(Base):
         UniqueConstraint("user1_id", "user2_id", name="uq_match_pair"),
         Index("ix_match_user1", "user1_id"),
         Index("ix_match_user2", "user2_id"),
+        Index("ix_match_initiator_created", "initiator_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -158,6 +170,15 @@ class Match(Base):
     match_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ai_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: Тип беседы и поля платного письма без взаимности —
+    #: см. api/models/models.py и api/services/direct_messages.py
+    kind: Mapped[str] = mapped_column(String, default="match", server_default=text("'match'"))
+    initiator_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=True
+    )
+    direct_answered: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
