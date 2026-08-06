@@ -30,6 +30,7 @@ import {
   getMyReels,
   getMyVisitors,
   unblockUser,
+  logoutEverywhere,
   type UserProfile,
   type VisitorsOut,
   type Reel as ReelType,
@@ -46,6 +47,7 @@ const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
 export default function Profile() {
   const navigate = useNavigate();
   const { logout } = useStore();
+  const [выходВезде, setВыходВезде] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [geoStatus, setGeoStatus] = useState<"idle" | "busy" | "ok" | "fail">("idle");
@@ -605,6 +607,28 @@ export default function Profile() {
         >
           <LogOut size={17} />
           Выйти
+        </Button>
+
+        {/* Обычный выход чужую сессию не трогает: украденный токен живёт до
+            72 часов. Этот гасит все разом — включая текущий */}
+        <Button
+          variant="secondary"
+          size="md"
+          fullWidth
+          disabled={выходВезде}
+          onClick={async () => {
+            setВыходВезде(true);
+            try {
+              await logoutEverywhere();
+            } catch {
+              // Сервер недоступен — локально выйти всё равно даём
+            }
+            logout();
+            navigate("/login", { replace: true });
+          }}
+        >
+          {выходВезде ? <Spinner size={16} /> : <LogOut size={17} />}
+          Выйти на всех устройствах
         </Button>
 
         <Button

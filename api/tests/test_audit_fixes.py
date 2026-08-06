@@ -3716,3 +3716,53 @@ def test_сумма_шансов_кейса_единица():
     from services.cases import REWARD_STICKER
 
     assert any(r.code == REWARD_STICKER for r in REWARDS)
+
+
+def test_каждый_эндпоинт_кому_то_нужен():
+    """Эндпоинт, до которого никто не обращается, — мёртвый код, который
+    выглядит работающей функцией.
+
+    Так нашёлся `/auth/logout-all`: выход со всех устройств был написан и
+    протестирован, но ни одна кнопка к нему не вела — при угоне аккаунта
+    воспользоваться им было нельзя.
+
+    Клиентов несколько: мини-апп (`web/src/lib/*.ts`), бот (`bot/`) и внешние
+    вызовы (Apple, Telegram). Последние перечислены явно — их «не зовёт наш
+    код» является нормой.
+    """
+    import re
+    from pathlib import Path
+
+    from main import app
+
+    корень = Path(__file__).resolve().parents[2]
+
+    def норм(p: str) -> str:
+        return re.sub(r"\{[^}]+\}", "{x}", p).rstrip("/")
+
+    серверные = {
+        норм(p.replace("/api", "", 1))
+        for p in app.openapi()["paths"]
+        if p.startswith("/api")
+    }
+
+    # Всё, что зовёт любой наш клиент
+    зовут: set[str] = set()
+    for файл in [*(корень / "web" / "src" / "lib").glob("*.ts")]:
+        текст = файл.read_text(encoding="utf-8")
+        for вызов in re.findall(
+            r"api\.(?:get|post|patch|delete|put)\(\s*[`\"']([^`\"']+)", текст
+        ):
+            зовут.add(норм(re.sub(r"\$\{[^}]+\}", "{x}", вызов).split("?")[0]))
+
+    #: Зовут не наши клиенты, поэтому в коде вызова нет и быть не должно.
+    ВНЕШНИЕ = {
+        "/iap/appstore/notifications",  # сервер-сервер от Apple
+        "/auth/apple",                  # нативная сборка iOS
+        "/auth/me",                     # проверка токена сторонними клиентами
+    }
+
+    мёртвые = sorted(серверные - зовут - ВНЕШНИЕ)
+    assert not мёртвые, (
+        f"эндпоинты, до которых никто не обращается: {мёртвые}"
+    )

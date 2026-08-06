@@ -135,3 +135,34 @@ export async function getSectionStats(days = 30): Promise<SectionStats> {
   const { data } = await api.get("/sections/stats", { params: { days } });
   return data;
 }
+
+/**
+ * Ролик в очереди модерации.
+ *
+ * AI смотрит только присланные кадры, поэтому ручной просмотр нужен: то, что
+ * начинается прилично, дальше может быть любым.
+ */
+export interface AdminReel {
+  id: string;
+  author_id: string;
+  author_name: string;
+  video_url: string;
+  cover_url: string;
+  caption: string;
+  likes_count: number;
+  is_hidden: boolean;
+  created_at?: string | null;
+}
+
+export async function getAdminReels(onlyVisible = false): Promise<AdminReel[]> {
+  const { data } = await api.get(`/admin/reels?only_visible=${onlyVisible}`);
+  return data;
+}
+
+/** Ролик не удаляем: жалоба могла быть ложной, вернуть удалённое нечем. */
+export async function moderateReel(
+  reelId: string,
+  action: "hide" | "show"
+): Promise<void> {
+  await api.post("/admin/reels/action", { reel_id: reelId, action });
+}
