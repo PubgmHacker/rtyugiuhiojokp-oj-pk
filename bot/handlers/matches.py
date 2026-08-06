@@ -155,16 +155,6 @@ async def send_message(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(F.data == "settings")
-async def show_settings(callback: CallbackQuery):
-    await safe_edit_text(
-        callback.message,
-        "⚙️ <b>Настройки</b>\n\n"
-        "Настройки поиска и профиля доступны в Web App.",
-        reply_markup=main_kb(),
-    )
-
-
 @router.callback_query(F.data.startswith("chat:hint:"))
 async def chat_hint(callback: CallbackQuery):
     """Подсказка для первого сообщения (по общим интересам)."""

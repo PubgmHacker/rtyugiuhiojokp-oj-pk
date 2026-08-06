@@ -15,7 +15,9 @@ import { openExternal, isNative } from "../lib/native";
 import { Button, Spinner } from "../components/ui";
 
 const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_bot";
+// Дефолт — рабочий юзернейм: с неверным весь канал привлечения обрывался на
+// первом клике, и это уже ловил аудит на лендинге
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
 const CODE_LENGTH = 6;
 
 function getDeviceId(): string {
@@ -241,10 +243,12 @@ export default function Login() {
               {loading ? <Spinner size={20} /> : inTelegram ? "Войти" : "Открыть в Telegram"}
             </Button>
 
-            {/* Гостевой вход живёт только при DEBUG на бэкенде: в проде
-                запрос вернёт ошибку, поэтому показываем его как
-                второстепенный путь и только вне Telegram */}
-            {!inTelegram && (
+            {/* Гостевой вход работает только при DEBUG на бэкенде. В проде
+                запрос возвращал ошибку, и для человека это выглядело не как
+                «функции нет», а как сломанная кнопка. `import.meta.env.DEV`
+                вырезается из продакшн-сборки целиком, поэтому там кнопки
+                просто не будет */}
+            {import.meta.env.DEV && !inTelegram && (
               <Button
                 variant="secondary"
                 size="md"
