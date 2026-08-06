@@ -19,6 +19,7 @@ from middleware.auth import (
 from models.models import User, Profile, Subscription
 from models.schemas import AuthResponse, UserProfile
 from services.ban_memory import is_banned_identity
+from services.apple_auth import AppleAuthError, verify_identity_token
 from services.link_codes import redeem_code
 from services.token_revocation import revoke_all_for_user, revoke_token
 from utils import as_list
@@ -189,6 +190,59 @@ async def auth_link_code(
         return AuthResponse(success=False, token="", user=UserProfile(id=""))
 
     user.last_seen_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    token = create_access_token(user.id, user.telegram_id)
+    return AuthResponse(success=True, token=token, user=_user_to_profile(user, profile))
+
+
+@router.post("/apple", response_model=AuthResponse)
+async def auth_apple(
+    data: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """Вход через Sign in with Apple — второй способ входа для iOS.
+
+    App Store требует его там, где вход идёт через сторонний сервис
+    (Guideline 4.8): для дейтинга это частая причина отклонения. У пришедшего
+    из App Store человека Telegram может не быть вовсе, поэтому аккаунт
+    создаётся с одним `apple_id`, без `telegram_id`.
+
+    Имя Apple присылает только при ПЕРВОМ входе и только если человек его
+    разрешил, поэтому анкету заполняем тем, что дали, а дальше он правит её сам.
+    """
+    try:
+        payload = await verify_identity_token(str(data.get("identity_token", "")))
+    except AppleAuthError as exc:
+        # Наружу не рассказываем, что именно не сошлось: подсказка помогает
+        # подбирать токен, а человеку она всё равно ничего не даёт
+        logger.warning(f"Вход через Apple отклонён: {exc}")
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
+
+    apple_id = str(payload["sub"])
+
+    result = await session.execute(select(User).where(User.apple_id == apple_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        # Забаненный не должен получать чистую историю, зайдя через Apple:
+        # список банов живёт отдельно от аккаунта (см. auth_telegram)
+        previously_banned = await is_banned_identity(session, apple_id)
+
+        user = User(apple_id=apple_id, role="user", is_banned=previously_banned)
+        session.add(user)
+        await session.flush()
+        if previously_banned:
+            logger.warning(f"Повторная регистрация забаненного apple_id={apple_id}")
+
+        имя = str(data.get("full_name") or "").strip()
+        session.add(Profile(user_id=user.id, display_name=имя))
+    else:
+        user.last_seen_at = datetime.now(timezone.utc)
+
     await session.flush()
 
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))

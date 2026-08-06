@@ -1021,6 +1021,80 @@ async def test_обычное_имя_принимается(app, monkeypatch):
     assert анкета.display_name == "Анна"
 
 
+async def test_подделанный_токен_apple_не_пускает(app, monkeypatch):
+    """Тело JWT — обычный base64: без проверки подписи любой мог бы подставить
+    чужой `sub` и войти под чужим аккаунтом. Вход обязан отказать."""
+    from routers import auth
+    from services.apple_auth import AppleAuthError
+
+    async def _не_прошёл(_токен: str):
+        raise AppleAuthError("подпись не сошлась")
+
+    monkeypatch.setattr(auth, "verify_identity_token", _не_прошёл)
+    monkeypatch.setattr(auth, "is_banned_identity", _async_return(False))
+
+    session = _SessionСДефолтами([_Result(scalar=None), _Result(scalar=None)])
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/auth/apple", json={"identity_token": "подделка"})
+
+    данные = r.json()
+    assert данные["success"] is False, "подделанный токен пустил в аккаунт"
+    assert not данные["token"], "выдан рабочий токен по непроверенному входу"
+    assert not session.added, "создан аккаунт по непроверенному токену"
+
+
+async def test_вход_через_apple_создаёт_аккаунт_без_телеграма(app, monkeypatch):
+    """У пришедшего из App Store Telegram может не быть вовсе — аккаунт всё
+    равно должен создаться, иначе Sign in with Apple бесполезен."""
+    from routers import auth
+
+    async def _прошёл(_токен: str):
+        return {"sub": "apple-подпись-12345", "email": "x@privaterelay.appleid.com"}
+
+    monkeypatch.setattr(auth, "verify_identity_token", _прошёл)
+    monkeypatch.setattr(auth, "is_banned_identity", _async_return(False))
+
+    session = _SessionСДефолтами([
+        _Result(scalar=None),   # такого apple_id ещё нет
+        _Result(scalar=None),   # анкеты тоже нет
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/auth/apple",
+            json={"identity_token": "ок", "full_name": "Анна"},
+        )
+
+    данные = r.json()
+    assert данные["success"] is True, r.text
+    assert данные["token"], "вход прошёл, но токен не выдан"
+    созданные = {type(o).__name__ for o in session.added}
+    assert "User" in созданные and "Profile" in созданные
+    юзер = next(o for o in session.added if type(o).__name__ == "User")
+    assert юзер.apple_id == "apple-подпись-12345"
+    assert юзер.telegram_id is None, "аккаунту из App Store приписан Telegram"
+
+
+async def test_забаненный_не_возвращается_через_apple(app, monkeypatch):
+    """Бан живёт отдельно от аккаунта. Если это не проверить, забаненный
+    заходит через Apple и получает чистую историю."""
+    from routers import auth
+
+    async def _прошёл(_токен: str):
+        return {"sub": "apple-забаненный"}
+
+    monkeypatch.setattr(auth, "verify_identity_token", _прошёл)
+    monkeypatch.setattr(auth, "is_banned_identity", _async_return(True))
+
+    session = _SessionСДефолтами([_Result(scalar=None), _Result(scalar=None)])
+
+    async with await _client(app, session, _user()) as client:
+        await client.post("/api/auth/apple", json={"identity_token": "ок"})
+
+    юзер = next(o for o in session.added if type(o).__name__ == "User")
+    assert юзер.is_banned is True, "забаненный вернулся через Apple с чистой историей"
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 

@@ -34,6 +34,10 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
+    #: Sign in with Apple: у бота не используется, но колонка обязана
+    #: совпадать с api/models/models.py — бот тоже вызывает create_all() и,
+    #: стартовав первым на пустой базе, создал бы таблицу без неё
+    apple_id: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
