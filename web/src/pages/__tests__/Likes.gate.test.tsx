@@ -30,6 +30,17 @@ function закрытая(id: string): api.UserProfile {
   } as api.UserProfile;
 }
 
+/** Топ недели этому экрану не важен, но тип обязан совпадать с настоящим. */
+function пустойТоп(): api.LeaderboardOut {
+  return {
+    window_days: 7,
+    entries: [],
+    my_place: null,
+    my_likes: 0,
+    my_place_exact: false,
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -43,7 +54,7 @@ describe("Кто меня лайкнул — платный гейт", () => {
       закрытая("u2"),
       закрытая("u3"),
     ]);
-    vi.spyOn(api, "getLeaderboard").mockResolvedValue([]);
+    vi.spyOn(api, "getLeaderboard").mockResolvedValue(пустойТоп());
 
     render(
       <MemoryRouter>
@@ -70,7 +81,7 @@ describe("Кто меня лайкнул — платный гейт", () => {
         photos: ["https://x/1.jpg"],
       } as api.UserProfile,
     ]);
-    vi.spyOn(api, "getLeaderboard").mockResolvedValue([]);
+    vi.spyOn(api, "getLeaderboard").mockResolvedValue(пустойТоп());
 
     render(
       <MemoryRouter>
