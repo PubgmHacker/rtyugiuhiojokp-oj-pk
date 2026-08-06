@@ -80,10 +80,14 @@ interface IconButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
   children: ReactNode;
   label: string;
   size?: number;
-  tone?: "neutral" | "danger" | "success" | "warn" | "info";
+  tone?: "primary" | "neutral" | "danger" | "success" | "warn" | "info";
 }
 
 const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
+  // Главное действие экрана: залитый акцентом круг, а не цветной глиф на
+  // стекле. Столбец из пяти разноцветных иконок читается как страница
+  // UI-кита — цвет должен быть один и означать «нажми сюда»
+  primary: "bg-dawn text-white border-transparent",
   neutral: "text-text-secondary",
   danger: "text-danger",
   success: "text-success",
@@ -114,7 +118,7 @@ export function IconButton({
       }}
       style={{ width: size, height: size }}
       className={`
-        glass-strong ${TONE_CLASS[tone]}
+        ${tone === "primary" ? "" : "glass-strong"} ${TONE_CLASS[tone]}
         rounded-full flex items-center justify-center float-shadow
         disabled:opacity-30 disabled:pointer-events-none
         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent

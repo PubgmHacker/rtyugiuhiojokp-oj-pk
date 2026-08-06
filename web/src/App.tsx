@@ -71,23 +71,27 @@ function BottomNav() {
               className="relative flex-1 flex flex-col items-center justify-center
                          gap-1 pt-2.5 pb-1.5 tap-target"
             >
-              {isActive && (
-                <motion.span
-                  layoutId="nav-indicator"
-                  className="absolute top-0 h-[2.5px] w-8 rounded-full bg-dawn"
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                />
-              )}
-
               <div className="relative">
+                {/* Залитая капсула под активной иконкой: смена цвета того же
+                    глифа почти не читается на маленьком экране, а капсула
+                    видна мгновенно и переезжает между вкладками одним
+                    движением (layoutId) */}
+                {isActive && (
+                  <motion.span
+                    layoutId="nav-indicator"
+                    className="absolute -inset-x-3 -inset-y-1.5 rounded-full bg-dawn"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  />
+                )}
                 <motion.div
+                  className="relative"
                   animate={{ scale: isActive ? 1.06 : 1, y: isActive ? -1 : 0 }}
                   transition={{ type: "spring", stiffness: 480, damping: 26 }}
                 >
                   <item.icon
                     size={23}
                     strokeWidth={isActive ? 2.4 : 1.9}
-                    className={isActive ? "text-accent" : "text-text-faint"}
+                    className={isActive ? "text-white" : "text-text-faint"}
                     fill={isActive && item.path === "/discover" ? "currentColor" : "none"}
                   />
                 </motion.div>

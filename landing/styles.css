@@ -16,9 +16,9 @@
   --color-hairline: #262a35;
 
   /* Акцент: один цвет на все главные действия */
-  --color-accent: #5b66ff;
-  --color-accent-soft: #7b84ff;
-  --color-accent-deep: #4450e8;
+  --color-accent: #e14a35;
+  --color-accent-soft: #f26a52;
+  --color-accent-deep: #c23a27;
 
   /* Текст */
   --color-text: #f6f7fb;

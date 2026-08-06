@@ -293,7 +293,6 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               onClick={handleRewind}
               disabled={!lastSwiped}
               size={48}
-              tone="warn"
             >
               <RotateCcw size={20} />
             </IconButton>
@@ -316,7 +315,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
                 onClick={handleBoost}
                 disabled={boostBusy || boost.active}
                 size={48}
-                tone={boost.active ? "success" : "warn"}
+                tone={boost.active ? "success" : "neutral"}
               >
                 <Zap size={20} fill={boost.active ? "currentColor" : "none"} />
               </IconButton>
@@ -342,7 +341,6 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               onClick={() => handleButton("up")}
               disabled={superlikesLeft === 0}
               size={48}
-              tone="info"
             >
               <Star size={20} fill="currentColor" />
             </IconButton>
@@ -364,7 +362,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               label="Лайк"
               onClick={() => handleButton("right")}
               size={64}
-              tone="success"
+              tone="primary"
             >
               <Heart size={28} fill="currentColor" />
             </IconButton>
@@ -391,7 +389,6 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               label="Пропустить"
               onClick={() => handleButton("left")}
               size={48}
-              tone="danger"
             >
               <X size={22} strokeWidth={2.6} />
             </IconButton>
