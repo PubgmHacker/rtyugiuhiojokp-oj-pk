@@ -215,10 +215,9 @@ async def create_like(
         await _spend_bonus_superlike(session, user.id)
 
     if data.type == "pass":
-        # Коммит обязателен: без него «пропустить» откатывается вместе с
-        # сессией, и та же анкета возвращается в деку при следующем запросе —
-        # человек свайпает одних и тех же по кругу
-        await session.commit()
+        # Коммитить здесь не нужно: get_session коммитит после успешного
+        # обработчика (database/connection.py). Ранний return из этого не
+        # выпадает — зависимость доводит транзакцию до конца сама
         return LikeResponse(liked=False, matched=False)
 
     # Взаимность? (лайк уже под advisory-lock — гонки нет)

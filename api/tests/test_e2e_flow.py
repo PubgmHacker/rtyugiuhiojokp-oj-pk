@@ -86,8 +86,16 @@ async def клиент(app, живая_база, monkeypatch):
     текущий = {"id": живая_база["аня"]}
 
     async def _sess():
+        # Повторяем настоящую зависимость (database/connection.py): она
+        # коммитит после успешного обработчика. Без этого тест «ловит» баги,
+        # которых в проде нет
         async with Session() as s:
-            yield s
+            try:
+                yield s
+                await s.commit()
+            except Exception:
+                await s.rollback()
+                raise
 
     async def _user():
         async with Session() as s:
