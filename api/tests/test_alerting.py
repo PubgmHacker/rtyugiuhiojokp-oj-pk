@@ -145,3 +145,39 @@ def test_алертинг_реально_отправляет_с_настоящ�
     assert len(ушло) == 2, (
         f"обёртка не отправила события в Sentry (ушло {len(ушло)} из 2)"
     )
+
+
+async def test_зависший_вызов_ai_не_держит_поток_вечно(monkeypatch):
+    """Без таймаута зависший запрос к Zhipu держит поток из пула `to_thread`
+    неограниченно долго. Воркер один, пул общий — несколько таких запросов
+    упираются в него, и вместе с модерацией встают загрузки фото.
+
+    В боте таймаут был с самого начала, в API его забыли. Проверяем, что
+    зависание теперь заканчивается отказом, а не ожиданием.
+    """
+    import asyncio
+
+    from services import ai_moderation
+
+    monkeypatch.setattr(ai_moderation, "_AI_TIMEOUT", 0.2)
+
+    class ЗависшийКлиент:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(*_a, **_kw):
+                    import time
+
+                    time.sleep(5)  # дольше таймаута
+                    raise AssertionError("не должно дойти")
+
+    monkeypatch.setattr(ai_moderation, "_get_zhipu_client", lambda: ЗависшийКлиент())
+
+    начало = asyncio.get_event_loop().time()
+    итог = await ai_moderation.moderate_text("любой текст")
+    прошло = asyncio.get_event_loop().time() - начало
+
+    assert прошло < 3, f"вызов не оборвался по таймауту, прошло {прошло:.1f}с"
+    # Fail-open по содержимому осознан: рубить переписку из-за недоступного
+    # AI хуже, чем пропустить сообщение. Но ждать вечно нельзя.
+    assert итог["blocked"] is False

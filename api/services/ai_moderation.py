@@ -10,6 +10,13 @@ from config import get_settings
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+#: Столько ждём ответа Zhipu. Без таймаута зависший запрос держит поток из
+#: пула `to_thread` неограниченно долго: воркер один, пул общий, и несколько
+#: таких запросов упираются в него — вместе с модерацией встают загрузки фото.
+#: В боте этот таймаут был с самого начала (bot/services/moderation.py), в API
+#: его забыли.
+_AI_TIMEOUT = 12.0
+
 # Lazy import zhipuai — may not be installed in dev
 _zhipu_client = None
 
@@ -52,24 +59,27 @@ async def moderate_text(text: str) -> dict:
         # to_thread обязателен: SDK Zhipu синхронный, и прямой вызов
         # блокирует единственный event loop — на время запроса встаёт весь
         # сервер, включая чужие чаты и деку
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model="glm-4-flash",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a content moderation AI for a dating app. "
-                        "Analyze the following text and respond with JSON only:\n"
-                        '{"safe": true/false, "blocked": true/false, "reason": "brief explanation"}\n'
-                        "Block: NSFW, harassment, hate speech, spam, scam, drugs, violence.\n"
-                        "Allow: normal dating bios, compliments, greetings."
-                    ),
-                },
-                {"role": "user", "content": text},
-            ],
-            temperature=0.1,
-            max_tokens=200,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model="glm-4-flash",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a content moderation AI for a dating app. "
+                            "Analyze the following text and respond with JSON only:\n"
+                            '{"safe": true/false, "blocked": true/false, "reason": "brief explanation"}\n'
+                            "Block: NSFW, harassment, hate speech, spam, scam, drugs, violence.\n"
+                            "Allow: normal dating bios, compliments, greetings."
+                        ),
+                    },
+                    {"role": "user", "content": text},
+                ],
+                temperature=0.1,
+                max_tokens=200,
+            ),
+            timeout=_AI_TIMEOUT,
         )
         content = response.choices[0].message.content.strip()
         # Try to parse JSON from response
@@ -108,30 +118,33 @@ async def moderate_image(image_bytes: bytes) -> dict:
         b64 = base64.b64encode(image_bytes).decode("utf-8")
         # Тот же to_thread: разбор фото у модели дольше текста, и блокировка
         # loop здесь заметнее всего
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model="glm-4v-flash",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a content moderation AI for a dating app. "
-                        "Analyze the image. Respond with JSON only:\n"
-                        '{"safe": true/false, "blocked": true/false, "reason": "brief explanation"}\n'
-                        "Block: nudity, sexual content, violence, weapons, drugs.\n"
-                        "Allow: selfies, portraits, lifestyle photos, pets, travel."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                        {"type": "text", "text": "Analyze this image for dating app content policy."},
-                    ],
-                },
-            ],
-            temperature=0.1,
-            max_tokens=200,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model="glm-4v-flash",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a content moderation AI for a dating app. "
+                            "Analyze the image. Respond with JSON only:\n"
+                            '{"safe": true/false, "blocked": true/false, "reason": "brief explanation"}\n'
+                            "Block: nudity, sexual content, violence, weapons, drugs.\n"
+                            "Allow: selfies, portraits, lifestyle photos, pets, travel."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                            {"type": "text", "text": "Analyze this image for dating app content policy."},
+                        ],
+                    },
+                ],
+                temperature=0.1,
+                max_tokens=200,
+            ),
+            timeout=_AI_TIMEOUT,
         )
         content = response.choices[0].message.content.strip()
         try:

@@ -15,6 +15,11 @@ from utils import as_list
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+#: Столько ждём Zhipu. Скоринг мэтча зовётся в момент взаимного лайка, и без
+#: таймаута зависший запрос задерживает уведомление о мэтче обоим — а это
+#: главное событие продукта. Значение то же, что в модерации.
+_AI_TIMEOUT = 12.0
+
 _zhipu_client = None
 
 
@@ -57,32 +62,35 @@ async def score_match(
         common = list(set(interests1) & set(interests2))
 
         # Zhipu SDK синхронный — не блокируем event loop
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model="glm-4-flash",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an AI matchmaker for a dating app. Analyze compatibility.\n"
-                        "Respond with JSON only:\n"
-                        '{"score": 0-100, "reason": "1-2 sentence explanation in Russian"}\n'
-                        "Consider: interests overlap, bio complementarity, age range compatibility."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"User 1: {p1.display_name}, {p1.gender}, bio: {p1.bio}, "
-                        f"interests: {interests1}, looking for: {p1.looking_for}\n"
-                        f"User 2: {p2.display_name}, {p2.gender}, bio: {p2.bio}, "
-                        f"interests: {interests2}, looking for: {p2.looking_for}\n"
-                        f"Common interests: {common}"
-                    ),
-                },
-            ],
-            temperature=0.3,
-            max_tokens=300,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model="glm-4-flash",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an AI matchmaker for a dating app. Analyze compatibility.\n"
+                            "Respond with JSON only:\n"
+                            '{"score": 0-100, "reason": "1-2 sentence explanation in Russian"}\n'
+                            "Consider: interests overlap, bio complementarity, age range compatibility."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"User 1: {p1.display_name}, {p1.gender}, bio: {p1.bio}, "
+                            f"interests: {interests1}, looking for: {p1.looking_for}\n"
+                            f"User 2: {p2.display_name}, {p2.gender}, bio: {p2.bio}, "
+                            f"interests: {interests2}, looking for: {p2.looking_for}\n"
+                            f"Common interests: {common}"
+                        ),
+                    },
+                ],
+                temperature=0.3,
+                max_tokens=300,
+            ),
+            timeout=_AI_TIMEOUT,
         )
         content = response.choices[0].message.content.strip()
         try:
@@ -151,31 +159,34 @@ async def generate_icebreakers(
         return _FALLBACK_ICEBREAKERS
 
     try:
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model="glm-4-flash",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Ты помощник в дейтинг-приложении. Придумай 3 коротких, живых первых "
-                        "сообщения (айсбрейкера) на русском для начала диалога. Без пошлости, "
-                        "без банальных «привет, как дела». Опирайся на анкету собеседника. "
-                        'Ответ строго JSON: {"icebreakers": ["...", "...", "..."]}'
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Моя анкета: {me.display_name if me else ''}, bio: {me.bio if me else ''}, "
-                        f"интересы: {as_list(me.interests) if me else []}\n"
-                        f"Анкета собеседника: {partner.display_name}, bio: {partner.bio}, "
-                        f"интересы: {as_list(partner.interests)}, город: {partner.city}"
-                    ),
-                },
-            ],
-            temperature=0.8,
-            max_tokens=400,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model="glm-4-flash",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Ты помощник в дейтинг-приложении. Придумай 3 коротких, живых первых "
+                            "сообщения (айсбрейкера) на русском для начала диалога. Без пошлости, "
+                            "без банальных «привет, как дела». Опирайся на анкету собеседника. "
+                            'Ответ строго JSON: {"icebreakers": ["...", "...", "..."]}'
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Моя анкета: {me.display_name if me else ''}, bio: {me.bio if me else ''}, "
+                            f"интересы: {as_list(me.interests) if me else []}\n"
+                            f"Анкета собеседника: {partner.display_name}, bio: {partner.bio}, "
+                            f"интересы: {as_list(partner.interests)}, город: {partner.city}"
+                        ),
+                    },
+                ],
+                temperature=0.8,
+                max_tokens=400,
+            ),
+            timeout=_AI_TIMEOUT,
         )
         content = response.choices[0].message.content.strip()
         if "{" in content and "}" in content:
