@@ -193,6 +193,17 @@ async def health(response: Response):
     except Exception:
         checks["photo_moderation"] = "unknown"
 
+    # Без TURN голосовая рулетка не соберёт звонок у части людей: симметричный
+    # NAT мобильных операторов одним STUN не пробивается. Код готов и ждёт
+    # только учётных данных, поэтому состояние видно здесь — иначе «у меня не
+    # звонит» приходит жалобами, а не мониторингом
+    try:
+        from services.voice import turn_configured
+
+        checks["turn"] = "ok" if turn_configured() else "disabled"
+    except Exception:
+        checks["turn"] = "unknown"
+
     return {
         "status": "ok" if healthy else "unhealthy",
         "service": "souldawn-dating-api",

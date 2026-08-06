@@ -22,6 +22,16 @@ WAITING_KEY = "dating:voice:waiting"
 WAITING_TTL = 120
 
 
+def turn_configured() -> bool:
+    """Заданы ли учётные данные TURN.
+
+    Отдельная функция, а не проверка по месту: состояние показывается в
+    `/health`, потому что без TURN часть звонков не соединяется, и узнавать об
+    этом из жалоб «у меня не звонит» — плохой способ.
+    """
+    return bool(settings.TURN_URL and settings.TURN_USERNAME and settings.TURN_PASSWORD)
+
+
 def _ice_servers() -> list[dict]:
     """STUN всегда, TURN — если настроен.
 
@@ -32,7 +42,7 @@ def _ice_servers() -> list[dict]:
     """
     servers: list[dict] = [{"urls": ["stun:stun.l.google.com:19302"]}]
 
-    if settings.TURN_URL and settings.TURN_USERNAME and settings.TURN_PASSWORD:
+    if turn_configured():
         servers.append(
             {
                 "urls": [settings.TURN_URL],

@@ -1202,6 +1202,21 @@ async def test_обычное_уведомление_apple_ничего_не_л�
     assert not гасили, "продление подписки погасило доступ"
 
 
+async def test_отсутствие_turn_видно_в_health(app):
+    """Без TURN голосовая рулетка не соберёт звонок у части людей: NAT
+    мобильных операторов одним STUN не пробивается. Код готов и ждёт только
+    учётных данных — состояние обязано быть видно в мониторинге, иначе о нём
+    узнают из жалоб «у меня не звонит»."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        r = await client.get("/health")
+
+    данные = r.json()
+    assert "turn" in данные["checks"], "состояние TURN не показано в /health"
+    assert данные["checks"]["turn"] in ("ok", "disabled", "unknown")
+
+
 # ── Вспомогательное ─────────────────────────────────────────────
 
 
