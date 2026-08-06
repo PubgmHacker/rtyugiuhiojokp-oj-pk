@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Лабиринт">
+  <title>Лабиринт</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#7a4bb5"/>
+      <stop offset="100%" stop-color="#4e2d7a"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <g fill="none" stroke="#fff8e7" stroke-width="6" stroke-linecap="square">
+          <path d="M26 26h68v68H26z"/>
+          <path d="M40 40h40v40H54"/>
+          <path d="M54 54h14v14"/>
+        </g>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>

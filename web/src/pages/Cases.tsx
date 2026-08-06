@@ -22,11 +22,13 @@ import {
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, Card, ScreenHeader, Skeleton, Spinner } from "../components/ui";
+import StickerCollection from "../components/StickerCollection";
 
 export default function Cases() {
   useSectionOpen("cases");
   const [state, setState] = useState<CaseState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [дубль, setДубль] = useState(false);
   const [won, setWon] = useState<CaseReward | null>(null);
   const [error, setError] = useState("");
 
@@ -45,6 +47,7 @@ export default function Cases() {
       const result = await openCase();
       haptic("success");
       setWon(result.reward);
+      setДубль(Boolean(result.duplicate));
       setState((cur) =>
         cur ? { ...cur, left_today: result.left_today, per_day: result.per_day } : cur
       );
@@ -104,12 +107,30 @@ export default function Cases() {
                 className="mb-3 px-4 py-3 rounded-[var(--radius-tile)]
                            bg-success/12 border border-success/30"
               >
-                <p className="text-[15px] font-bold">Выпало: {won.title}</p>
-                <p className="text-caption text-text-muted">
-                  {won.code === "boost"
-                    ? "Буст уже включён"
-                    : "Суперлайки добавлены к вашим"}
-                </p>
+                <div className="flex items-center gap-3">
+                  {won.sticker && (
+                    <motion.img
+                      initial={{ scale: 0.5, rotate: -12 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ type: "spring", stiffness: 340, damping: 16 }}
+                      src={won.sticker.image}
+                      alt=""
+                      className="w-14 h-14 shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-bold">Выпало: {won.title}</p>
+                    <p className="text-caption text-text-muted">
+                      {won.sticker
+                        ? дубль
+                          ? `Такая уже есть — начислен суперлайк (${won.sticker.rarity_title})`
+                          : `Новая в коллекции · ${won.sticker.rarity_title}`
+                        : won.code === "boost"
+                          ? "Буст уже включён"
+                          : "Суперлайки добавлены к вашим"}
+                    </p>
+                  </div>
+                </div>
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -167,6 +188,10 @@ export default function Cases() {
           ))}
         </div>
       </div>
+
+      {/* Коллекция под витриной шансов: сначала «что можно выиграть», потом
+          «что уже собрано» — в этом порядке человек и думает */}
+      <StickerCollection />
     </div>
   );
 }

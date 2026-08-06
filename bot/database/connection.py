@@ -817,4 +817,8 @@ def _profile_to_dict(profile: Profile) -> dict:
         "subculture": profile.subculture or "",
         "mbti": profile.mbti or "",
         "height_cm": profile.height_cm,
+        # Наклейка из коллекции: в боте картинку не показать (это SVG в вебе),
+        # поэтому в текстовой карточке она отмечается значком редкости —
+        # см. texts.ЗНАЧОК_НАКЛЕЙКИ
+        "sticker": profile.sticker or "",
     }

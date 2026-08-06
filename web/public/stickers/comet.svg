@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Комета">
+  <title>Комета</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#7a4bb5"/>
+      <stop offset="100%" stop-color="#4e2d7a"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <!-- Хвост одной сужающейся массой: три параллельные линии из шара
+             читались медузой -->
+        <path d="M74 30l22 8-52 56-20 6 8-20z" fill="#fff8e7" opacity=".55"/>
+        <circle cx="82" cy="38" r="16" fill="#fff8e7"/>
+        <path d="M30 90l-6 6" stroke="#fff8e7" stroke-width="5"
+              stroke-linecap="round" opacity=".8"/>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>

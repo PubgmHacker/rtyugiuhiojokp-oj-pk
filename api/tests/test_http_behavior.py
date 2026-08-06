@@ -62,6 +62,7 @@ def _profile(uid: str, **over):
         hide_from_visitors=False,
         boost_until=None,
         bonus_superlikes=0,
+        sticker=None,
         looking_for="any",
         age_min=18,
         age_max=99,
@@ -1376,3 +1377,84 @@ async def test_почта_не_видна_в_чужой_анкете(app, monkey
 
     (карточка,) = r.json()
     assert not карточка.get("email"), "почта утекла в чужую анкету"
+
+
+# ── Коллекционные наклейки ──────────────────────────────────────
+
+
+async def test_чужую_наклейку_нельзя_поставить_в_анкету(app):
+    """Иначе любой поставил бы легендарную, не открыв ни одного кейса, и
+    коллекция потеряла бы смысл целиком."""
+    анкета = _profile("u-me", sticker=None)
+    session = _Session([
+        _Result(scalar=анкета),   # своя анкета
+        _Result(scalar=None),     # такой наклейки у меня нет
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/cases/stickers/select", json={"code": "phoenix"})
+
+    assert r.status_code == 403, "поставили наклейку, которой нет в коллекции"
+    assert анкета.sticker is None
+
+
+async def test_свою_наклейку_поставить_можно(app):
+    """Обратная сторона: иначе «защита» просто ломает функцию."""
+    from types import SimpleNamespace as NS
+
+    анкета = _profile("u-me", sticker=None)
+    session = _Session([
+        _Result(scalar=анкета),
+        _Result(scalar=NS(code="dawn", count=1)),   # эта у меня есть
+        _Result(rows=[NS(code="dawn", count=1)]),   # коллекция для ответа
+        _Result(scalar=анкета),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/cases/stickers/select", json={"code": "dawn"})
+
+    assert r.status_code == 200, r.text
+    assert анкета.sticker == "dawn"
+
+
+async def test_пустой_код_снимает_наклейку(app):
+    """От наклейки должно быть можно отказаться, не выбирая другую."""
+    from types import SimpleNamespace as NS
+
+    анкета = _profile("u-me", sticker="dawn")
+    session = _Session([
+        _Result(scalar=анкета),
+        _Result(rows=[NS(code="dawn", count=1)]),
+        _Result(scalar=анкета),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/cases/stickers/select", json={"code": ""})
+
+    assert r.status_code == 200, r.text
+    assert анкета.sticker is None
+
+
+async def test_коллекция_показывает_и_ненайденные(app):
+    """Пустые ячейки — половина смысла коллекции: без них не видно, что
+    собирать и сколько осталось."""
+    from types import SimpleNamespace as NS
+
+    анкета = _profile("u-me", sticker=None)
+    session = _Session([
+        _Result(rows=[NS(code="sun", count=3)]),   # есть только одна, трижды
+        _Result(scalar=анкета),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/cases/stickers")
+
+    данные = r.json()
+    assert данные["owned"] == 1
+    assert данные["total"] > 10, "в ответе только свои — собирать нечего"
+    моя = next(с for с in данные["stickers"] if с["code"] == "sun")
+    assert моя["owned"] == 3, "счётчик повторов потерян"
+    чужая = next(с for с in данные["stickers"] if с["code"] != "sun")
+    assert чужая["owned"] == 0
+    # Путь к картинке собирает сервер: на фронте он разъехался бы с папкой
+    assert моя["image"].endswith("/sun.svg")

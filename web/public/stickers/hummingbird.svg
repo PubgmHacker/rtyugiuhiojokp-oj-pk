@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Колибри">
+  <title>Колибри</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#e8a13a"/>
+      <stop offset="100%" stop-color="#d1622a"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <!-- Длинный клюв и цветок: без них силуэт повторял феникса -->
+        <ellipse cx="62" cy="58" rx="17" ry="13" transform="rotate(-20 62 58)"
+                 fill="#fff8e7"/>
+        <path d="M50 50l-26-12 24 20z" fill="#fff8e7"/>
+        <path d="M70 66l16 26-24-14z" fill="#fff8e7"/>
+        <path d="M74 46c10-8 18-8 24-2-8 6-16 8-24 6z" fill="#fff8e7" opacity=".75"/>
+        <circle cx="56" cy="50" r="3" fill="#d1622a"/>
+        <path d="M46 46l-16-6" stroke="#fff8e7" stroke-width="4"
+              stroke-linecap="round"/>
+        <circle cx="26" cy="38" r="7" fill="#d1622a" opacity=".85"/>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>

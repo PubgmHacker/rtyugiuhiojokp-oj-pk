@@ -12,6 +12,7 @@ from config import get_settings
 from models.models import User, Profile, Like, Block, Subscription, Referral
 from models.schemas import DeckProfile
 from services.public_profile import возраст_из_даты, публичный_возраст
+from services.stickers import картинка_наклейки
 from utils import as_list
 
 settings = get_settings()
@@ -338,6 +339,7 @@ async def get_deck_profiles(
             # Инкогнито и пауза уже отсеяны выборкой, но флаг всё равно
             # считаем от них: если фильтр однажды ослабнет, «в сети» не должно
             # выдать спрятавшегося
+            sticker=картинка_наклейки(profile.sticker),
             is_online=(
                 profile.user_id in онлайн
                 and not profile.is_incognito

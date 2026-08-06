@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Затмение">
+  <title>Затмение</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#e8a13a"/>
+      <stop offset="100%" stop-color="#d1622a"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <circle cx="60" cy="60" r="32" fill="#fff8e7"/>
+        <circle cx="74" cy="52" r="28" fill="#d1622a"/>
+        <g stroke="#fff8e7" stroke-width="5" stroke-linecap="round" opacity=".8">
+          <path d="M60 18v-8M60 110v-8M18 60h-8M110 60h-8"/>
+        </g>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>

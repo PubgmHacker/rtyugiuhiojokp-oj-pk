@@ -167,6 +167,9 @@ class DeckProfile(BaseModel):
     #: это слежка, а «сейчас в сети» помогает решить, писать ли сегодня.
     #: Скрывшим себя (инкогнито, пауза) не показывается.
     is_online: bool = False
+    #: Выбранная наклейка из коллекции — маленький знак характера на карточке.
+    #: Путь к картинке собирает сервер (см. services/stickers.py).
+    sticker: Optional[str] = None
 
 
 # ════════════════════════════════════════════════════════════════
@@ -331,6 +334,22 @@ class DailyCardOut(BaseModel):
     advice: str
 
 
+class StickerOut(BaseModel):
+    """Коллекционная наклейка.
+
+    `image` собирает сервер: если папку с картинками однажды перенесут, фронт
+    об этом не узнает и покажет битую картинку.
+    """
+
+    code: str
+    title: str
+    rarity: str
+    rarity_title: str
+    image: str
+    #: Сколько раз выпала этому человеку. 0 — ещё нет в коллекции.
+    owned: int = 0
+
+
 class CaseRewardOut(BaseModel):
     """Награда из кейса. Шанс показываем честно: скрытые шансы — ровно то,
     за что гача-механики и не любят."""
@@ -339,6 +358,8 @@ class CaseRewardOut(BaseModel):
     title: str
     amount: int
     chance_percent: int
+    #: Заполняется, только если выпала наклейка.
+    sticker: Optional[StickerOut] = None
 
 
 class CaseStateOut(BaseModel):
@@ -352,6 +373,23 @@ class CaseOpenResult(BaseModel):
     left_today: int = 0
     per_day: int = 0
     boost_minutes: int = 30
+    #: Такая наклейка уже была — вместо неё начислен суперлайк.
+    duplicate: bool = False
+    duplicate_superlikes: int = 0
+
+
+class StickerCollectionOut(BaseModel):
+    """Коллекция целиком: и собранные, и ещё не выпавшие.
+
+    Показываем ВСЕ: пустые ячейки — половина смысла коллекции, без них не
+    видно, что собирать.
+    """
+
+    stickers: list[StickerOut] = Field(default_factory=list)
+    owned: int = 0
+    total: int = 0
+    #: Выбранная наклейка — её видят другие в анкете.
+    selected: Optional[str] = None
 
 
 class RoomOut(BaseModel):

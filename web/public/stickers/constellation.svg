@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Созвездие">
+  <title>Созвездие</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#e8a13a"/>
+      <stop offset="100%" stop-color="#d1622a"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <g stroke="#fff8e7" stroke-width="4" opacity=".7">
+          <path d="M32 40l24 16 18-22 22 30-34 22z" fill="none"/>
+        </g>
+        <g fill="#fff8e7">
+          <circle cx="32" cy="40" r="7"/><circle cx="56" cy="56" r="6"/>
+          <circle cx="74" cy="34" r="6"/><circle cx="96" cy="64" r="7"/>
+          <circle cx="62" cy="86" r="6"/>
+        </g>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Сияние">
+  <title>Сияние</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#e8a13a"/>
+      <stop offset="100%" stop-color="#d1622a"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <g fill="none" stroke="#fff8e7" stroke-width="7" stroke-linecap="round">
+          <path d="M26 88c6-32 16-48 30-48s24 16 30 48" opacity=".9"/>
+          <path d="M40 88c4-22 10-34 20-34s16 12 20 34" opacity=".6"/>
+        </g>
+        <g fill="#fff8e7">
+          <circle cx="30" cy="34" r="4"/><circle cx="90" cy="30" r="5"/>
+          <circle cx="60" cy="24" r="3"/>
+        </g>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>

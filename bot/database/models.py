@@ -103,6 +103,10 @@ class Profile(Base):
     )
     # Суперлайки из кейсов — см. api/models/models.py
     bonus_superlikes: Mapped[int] = mapped_column(Integer, default=0)
+    #: Выбранная наклейка из коллекции — единственная, которую видят другие.
+    #: Показывать все значило бы превратить карточку в витрину достижений, а
+    #: смотрят на неё ради человека. Пусто — ничего не выбрано.
+    sticker: Mapped[str | None] = mapped_column(String, nullable=True)
     looking_for: Mapped[str] = mapped_column(String, default="any")
     age_min: Mapped[int] = mapped_column(Integer, default=18)
     age_max: Mapped[int] = mapped_column(Integer, default=99)
@@ -388,6 +392,37 @@ class ProfileVisit(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StickerOwned(Base):
+    """Наклейка, выпавшая человеку из кейса.
+
+    Зачем коллекция вообще: прежде из кейса выпадали только суперлайки и минуты
+    буста — их тратят и забывают, и повода открыть кейс завтра не остаётся.
+    Наклейка остаётся навсегда и её видно в анкете, поэтому у кейса появляется
+    второй смысл: собрать набор.
+
+    Дубликаты не храним отдельными строками: считаем, сколько раз выпала.
+    Иначе таблица растёт линейно от числа открытий, а показать надо ровно один
+    значок с числом.
+
+    Полезность за дубликат начисляется сразу при выпадении (суперлайк), поэтому
+    повтор не воспринимается как пустая трата попытки.
+    """
+
+    __tablename__ = "dating_stickers_owned"
+    __table_args__ = (
+        UniqueConstraint("user_id", "code", name="uq_sticker_owner"),
+        Index("ix_sticker_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: Код наклейки из services/stickers.py — он же имя файла в web/public/stickers.
+    code: Mapped[str] = mapped_column(String)
+    #: Сколько раз выпала. Первое выпадение — 1.
+    count: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

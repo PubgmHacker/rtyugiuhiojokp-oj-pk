@@ -99,6 +99,8 @@ export interface DeckProfile {
   height_cm?: number | null;
   /** Был в сети недавно. Точное время сервер не отдаёт — это была бы слежка. */
   is_online?: boolean;
+  /** Путь к картинке выбранной наклейки. */
+  sticker?: string | null;
 }
 
 export interface MatchResponse {
@@ -471,11 +473,32 @@ export async function getDailyCard(): Promise<DailyCard> {
 
 /* ── Кейсы ──────────────────────────────────────────────────── */
 
+/** Коллекционная наклейка. `image` приходит с сервера — путь там же, где данные. */
+export interface Sticker {
+  code: string;
+  title: string;
+  rarity: string;
+  rarity_title: string;
+  image: string;
+  /** Сколько раз выпала. 0 — ещё нет в коллекции. */
+  owned: number;
+}
+
 export interface CaseReward {
   code: string;
   title: string;
   amount: number;
   chance_percent: number;
+  /** Заполнено, только если выпала наклейка. */
+  sticker?: Sticker | null;
+}
+
+export interface StickerCollection {
+  stickers: Sticker[];
+  owned: number;
+  total: number;
+  /** Выбранная — её видят другие в анкете. */
+  selected?: string | null;
 }
 
 export interface CaseState {
@@ -489,6 +512,20 @@ export interface CaseOpenResult {
   left_today: number;
   per_day: number;
   boost_minutes: number;
+  /** Такая наклейка уже была — вместо неё начислен суперлайк. */
+  duplicate?: boolean;
+  duplicate_superlikes?: number;
+}
+
+export async function getStickers(): Promise<StickerCollection> {
+  const { data } = await api.get("/cases/stickers");
+  return data;
+}
+
+/** Пустой код снимает выбор. */
+export async function selectSticker(code: string): Promise<StickerCollection> {
+  const { data } = await api.post("/cases/stickers/select", { code });
+  return data;
 }
 
 export async function getCaseState(): Promise<CaseState> {

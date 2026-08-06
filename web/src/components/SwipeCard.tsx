@@ -246,6 +246,15 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
               {profile.age}
             </span>
           )}
+          {/* Наклейка из коллекции — маленький знак характера рядом с именем.
+              Одна: витрина достижений отвлекала бы от человека */}
+          {profile.sticker && (
+            <img
+              src={profile.sticker}
+              alt=""
+              className="w-7 h-7 shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,.5)]"
+            />
+          )}
           {/* «Сейчас в сети» — самый полезный сигнал на карточке: подсказывает,
               ответят ли сегодня. Точное время последнего входа не показываем,
               это была бы слежка */}

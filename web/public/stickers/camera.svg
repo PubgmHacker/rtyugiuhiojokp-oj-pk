@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Камера">
+  <title>Камера</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#3a4050"/>
+      <stop offset="100%" stop-color="#2a2f3c"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <path d="M22 42h20l6-8h24l6 8h20v44H22z" fill="#fff8e7"/>
+        <circle cx="60" cy="64" r="15" fill="#2a2f3c"/>
+        <circle cx="60" cy="64" r="7" fill="#fff8e7" opacity=".6"/>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>

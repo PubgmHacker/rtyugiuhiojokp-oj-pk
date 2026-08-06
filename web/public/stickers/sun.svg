@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+     width="120" height="120" role="img" aria-label="Солнце">
+  <title>Солнце</title>
+  <defs>
+    <radialGradient id="ф" cx="35%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#3a4050"/>
+      <stop offset="100%" stop-color="#2a2f3c"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ф)"/>
+  <circle cx="60" cy="60" r="20" fill="#fff8e7"/>
+        <g stroke="#fff8e7" stroke-width="5" stroke-linecap="round">
+          <path d="M60 26v-9M60 103v-9M26 60h-9M103 60h-9"/>
+          <path d="M36 36l-6-6M84 84l6 6M84 36l6-6M36 84l-6 6"/>
+        </g>
+  <!-- Блик: без него подложка выглядит плоской заливкой -->
+  <ellipse cx="42" cy="30" rx="26" ry="14" fill="#ffffff" opacity=".14"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#ffffff"
+          stroke-opacity=".18" stroke-width="2"/>
+</svg>
