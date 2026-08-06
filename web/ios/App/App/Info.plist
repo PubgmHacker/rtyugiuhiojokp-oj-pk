@@ -41,8 +41,6 @@
 	<string>Микрофон нужен для голосовой рулетки — случайных голосовых звонков. Мы не записываем разговоры.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Доступ к фото нужен, чтобы вы могли выбрать снимки для анкеты.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Разрешите сохранять фотографии из приложения в вашу галерею.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Геопозиция нужна, чтобы показывать людей рядом с вами и расстояние до них.</string>
 
