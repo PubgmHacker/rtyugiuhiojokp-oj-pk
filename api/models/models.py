@@ -41,6 +41,11 @@ class User(Base):
     #: сервис (Guideline 4.8), а у пришедшего из App Store telegram_id может не
     #: быть вовсе — поэтому оба поля nullable, но хотя бы одно обязано быть.
     apple_id: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
+    #: Почта для восстановления доступа. Единственный способ вернуться в свой
+    #: аккаунт, если потерян Telegram: без неё вместе с ним теряется и
+    #: оплаченная подписка. Подтверждается кодом, поэтому хранится уже
+    #: проверенной; nullable — привязка добровольная.
+    email: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)

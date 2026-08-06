@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,15 @@ from models.models import User, Profile, Subscription
 from models.schemas import AuthResponse, UserProfile
 from services.ban_memory import is_banned_identity
 from services.apple_auth import AppleAuthError, verify_identity_token
+from services.email_recovery import (
+    можно_отправлять,
+    нормализовать,
+    почта_похожа_на_настоящую,
+    проверить_код,
+    сгенерировать_код,
+    запомнить_код,
+)
+from services.mailer import отправить_код
 from services.link_codes import redeem_code
 from services.token_revocation import revoke_all_for_user, revoke_token
 from utils import as_list
@@ -284,3 +293,128 @@ async def logout_all(
     """
     revoked = await revoke_all_for_user(user.id)
     return {"success": revoked}
+
+
+# ── Почта: восстановление доступа ───────────────────────────────
+#
+# Аккаунт держался на одном Telegram: потерял его — потерял анкету и
+# оплаченную подписку, и вернуть их было нечем. Почта — единственный способ
+# доказать, что аккаунт твой. Хранится только подтверждённой: непроверенная
+# хуже, чем никакой, потому что ошибка в букве отдаёт доступ постороннему.
+
+
+@router.post("/email/attach")
+async def attach_email(
+    data: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Шаг 1: запросить код на почту.
+
+    Сама почта в аккаунт пока не пишется — только после подтверждения кодом.
+    """
+    адрес = нормализовать(str(data.get("email", "")))
+    if not почта_похожа_на_настоящую(адрес):
+        raise HTTPException(status_code=400, detail="Проверьте адрес почты")
+
+    # Занятая почта не должна подсказывать, что аккаунт существует: иначе
+    # эндпоинт превращается в проверку «есть ли тут такой человек»
+    result = await session.execute(select(User).where(User.email == адрес))
+    чужой = result.scalar_one_or_none()
+    if чужой and чужой.id != user.id:
+        logger.warning(f"Попытка привязать занятую почту (user={user.id})")
+        return {"sent": True}
+
+    if not await можно_отправлять(user.id):
+        raise HTTPException(
+            status_code=429, detail="Слишком много писем. Попробуйте через час"
+        )
+
+    код = сгенерировать_код()
+    await запомнить_код(адрес, код, user.id)
+
+    if not await отправить_код(адрес, код):
+        raise HTTPException(status_code=503, detail="Не удалось отправить письмо")
+
+    return {"sent": True}
+
+
+@router.post("/email/confirm")
+async def confirm_email(
+    data: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Шаг 2: подтвердить код и привязать почту к аккаунту."""
+    адрес = нормализовать(str(data.get("email", "")))
+    владелец = await проверить_код(адрес, str(data.get("code", "")))
+
+    if not владелец or владелец != user.id:
+        raise HTTPException(status_code=400, detail="Код неверный или устарел")
+
+    result = await session.execute(select(User).where(User.email == адрес))
+    чужой = result.scalar_one_or_none()
+    if чужой and чужой.id != user.id:
+        raise HTTPException(status_code=409, detail="Эта почта уже занята")
+
+    user.email = адрес
+    await session.commit()
+    logger.info(f"Почта привязана: user={user.id}")
+    return {"email": адрес}
+
+
+@router.post("/email/request")
+async def request_recovery(
+    data: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """Потерян Telegram: запросить код входа на привязанную почту.
+
+    Отвечаем одинаково независимо от того, есть такая почта или нет: иначе по
+    ответу можно узнать, зарегистрирован ли человек в дейтинг-сервисе, — а это
+    само по себе чувствительный факт.
+    """
+    адрес = нормализовать(str(data.get("email", "")))
+    if not почта_похожа_на_настоящую(адрес):
+        return {"sent": True}
+
+    result = await session.execute(select(User).where(User.email == адрес))
+    владелец = result.scalar_one_or_none()
+    if not владелец:
+        return {"sent": True}
+
+    if not await можно_отправлять(владелец.id):
+        return {"sent": True}
+
+    код = сгенерировать_код()
+    await запомнить_код(адрес, код, владелец.id)
+    await отправить_код(адрес, код)
+    return {"sent": True}
+
+
+@router.post("/email/login", response_model=AuthResponse)
+async def login_by_email(
+    data: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """Вход по коду с почты — когда Telegram недоступен."""
+    адрес = нормализовать(str(data.get("email", "")))
+    владелец = await проверить_код(адрес, str(data.get("code", "")))
+    if not владелец:
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
+
+    result = await session.execute(select(User).where(User.id == владелец))
+    user = result.scalar_one_or_none()
+    # Забаненному вход по почте не даёт обхода: проверка та же, что везде
+    if not user or user.is_banned or user.email != адрес:
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
+
+    user.last_seen_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    token = create_access_token(user.id, user.telegram_id)
+    await session.commit()
+    return AuthResponse(success=True, token=token, user=_user_to_profile(user, profile))

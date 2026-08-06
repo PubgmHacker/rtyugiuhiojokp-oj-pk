@@ -62,6 +62,9 @@ class UserProfile(BaseModel):
     #: Карточка скрыта до подписки: имя, фото и текст лайка не отданы.
     is_locked: bool = False
     has_location: bool = False
+    #: Привязанная почта — по ней можно вернуть аккаунт, если потерян Telegram.
+    #: Отдаётся только владельцу (эндпоинты /profiles/me и /auth/me).
+    email: Optional[str] = None
     invited_count: int = 0
     referral_boost: bool = False
     referral_target: int = 3

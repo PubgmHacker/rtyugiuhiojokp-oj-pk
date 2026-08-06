@@ -73,6 +73,8 @@ export interface UserProfile {
   /** Карточка скрыта до подписки: имени и фото в ответе нет. */
   is_locked?: boolean;
   has_location?: boolean;
+  /** Привязанная почта для восстановления доступа. */
+  email?: string | null;
   invited_count?: number;
   referral_boost?: boolean;
   referral_target?: number;
@@ -142,6 +144,32 @@ export async function authWithTelegram(initData: string): Promise<{ token: strin
 export async function authWithLinkCode(code: string): Promise<{ token: string; user: UserProfile }> {
   const { data } = await api.post("/auth/link", { code });
   if (!data.success) throw new Error("Неверный или устаревший код");
+  return { token: data.token, user: data.user };
+}
+
+/** Шаг 1 привязки почты: запросить код. В аккаунт почта пока не пишется. */
+export async function attachEmail(email: string): Promise<void> {
+  await api.post("/auth/email/attach", { email });
+}
+
+/** Шаг 2: подтвердить код — только теперь почта привязывается. */
+export async function confirmEmail(email: string, code: string): Promise<{ email: string }> {
+  const { data } = await api.post("/auth/email/confirm", { email, code });
+  return data;
+}
+
+/** Потерян Telegram: попросить код входа на привязанную почту. */
+export async function requestEmailRecovery(email: string): Promise<void> {
+  await api.post("/auth/email/request", { email });
+}
+
+/** Вход по коду с почты. */
+export async function loginByEmail(
+  email: string,
+  code: string
+): Promise<{ token: string; user: UserProfile }> {
+  const { data } = await api.post("/auth/email/login", { email, code });
+  if (!data.success) throw new Error("Код неверный или устарел");
   return { token: data.token, user: data.user };
 }
 

@@ -38,6 +38,7 @@ import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { getCurrentPosition, openExternal } from "../lib/native";
 import { Button, Card, Chip, Skeleton, VerifiedBadge, Spinner } from "../components/ui";
+import EmailRecovery from "../components/EmailRecovery";
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
 const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
@@ -417,6 +418,16 @@ export default function Profile() {
           <ChevronRight size={18} className="text-text-faint shrink-0" />
         </Link>
       )}
+
+      {/* ── Почта для восстановления ──────────────────────────── */}
+      {/* Стоит перед приватностью и удалением: это то, что спасает аккаунт,
+          и человек должен наткнуться на неё раньше, чем на «удалить» */}
+      <EmailRecovery
+        email={profile?.email}
+        onAttached={(email) =>
+          setProfile((прежний) => (прежний ? { ...прежний, email } : прежний))
+        }
+      />
 
       {/* ── Приватность ───────────────────────────────────────── */}
       {/* Доступна всем: прятать настройки приватности за подписку — плохо по

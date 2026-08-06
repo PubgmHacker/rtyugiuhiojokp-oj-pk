@@ -1227,3 +1227,152 @@ def _async_return(value):
         return value
 
     return _f
+
+
+# ── Восстановление доступа по почте ─────────────────────────────
+
+
+async def test_почта_не_привязывается_без_подтверждения(app, monkeypatch):
+    """Непроверенная почта хуже, чем никакой: ошибся в букве — и
+    восстановление уводит аккаунт постороннему. Поэтому шаг «запросить код»
+    сам по себе ничего в аккаунт не пишет."""
+    from routers import auth
+
+    monkeypatch.setattr(auth, "можно_отправлять", _async_return(True))
+    monkeypatch.setattr(auth, "запомнить_код", _async_return(None))
+    monkeypatch.setattr(auth, "отправить_код", _async_return(True))
+
+    я = _user()
+    session = _Session([_Result(scalar=None)])   # почта ничем не занята
+
+    async with await _client(app, session, я) as client:
+        r = await client.post("/api/auth/email/attach", json={"email": "me@example.test"})
+
+    assert r.status_code == 200, r.text
+    assert getattr(я, "email", None) is None, "почта привязана до подтверждения кодом"
+
+
+async def test_неверный_код_не_привязывает_почту(app, monkeypatch):
+    from routers import auth
+
+    monkeypatch.setattr(auth, "проверить_код", _async_return(None))
+
+    я = _user()
+    session = _Session([])
+
+    async with await _client(app, session, я) as client:
+        r = await client.post(
+            "/api/auth/email/confirm",
+            json={"email": "me@example.test", "code": "000000"},
+        )
+
+    assert r.status_code == 400
+    assert getattr(я, "email", None) is None
+
+
+async def test_код_чужого_аккаунта_не_привязывает_почту(app, monkeypatch):
+    """Код выдан другому пользователю — привязать им свою почту нельзя,
+    иначе чужую почту можно посадить на свой аккаунт."""
+    from routers import auth
+
+    monkeypatch.setattr(auth, "проверить_код", _async_return("u-другой"))
+
+    я = _user("u-me")
+    session = _Session([])
+
+    async with await _client(app, session, я) as client:
+        r = await client.post(
+            "/api/auth/email/confirm",
+            json={"email": "me@example.test", "code": "123456"},
+        )
+
+    assert r.status_code == 400, "код чужого аккаунта сработал"
+    assert getattr(я, "email", None) is None
+
+
+async def test_подтверждённая_почта_привязывается(app, monkeypatch):
+    """Обратная сторона: иначе «починка» свелась бы к тому, что почту нельзя
+    привязать вообще."""
+    from routers import auth
+
+    я = _user("u-me")
+    monkeypatch.setattr(auth, "проверить_код", _async_return("u-me"))
+
+    session = _Session([_Result(scalar=None)])
+
+    async with await _client(app, session, я) as client:
+        r = await client.post(
+            "/api/auth/email/confirm",
+            json={"email": "Me@Example.TEST", "code": "123456"},
+        )
+
+    assert r.status_code == 200, r.text
+    # Приводим к нижнему регистру: иначе Ivan@ и ivan@ заведут два аккаунта
+    assert я.email == "me@example.test"
+
+
+async def test_запрос_восстановления_не_выдаёт_есть_ли_аккаунт(app, monkeypatch):
+    """Разный ответ на «есть такая почта» и «нет» превращает эндпоинт в
+    проверку, зарегистрирован ли человек в дейтинге. Это чувствительный факт."""
+    from routers import auth
+
+    monkeypatch.setattr(auth, "можно_отправлять", _async_return(True))
+    monkeypatch.setattr(auth, "запомнить_код", _async_return(None))
+    monkeypatch.setattr(auth, "отправить_код", _async_return(True))
+
+    # Почты нет
+    session = _Session([_Result(scalar=None)])
+    async with await _client(app, session, _user()) as client:
+        нет = await client.post("/api/auth/email/request", json={"email": "no@example.test"})
+
+    # Почта есть
+    session = _Session([_Result(scalar=_user("u-есть"))])
+    async with await _client(app, session, _user()) as client:
+        есть = await client.post("/api/auth/email/request", json={"email": "yes@example.test"})
+
+    assert нет.status_code == есть.status_code == 200
+    assert нет.json() == есть.json(), "по ответу видно, зарегистрирован ли человек"
+
+
+async def test_забаненный_не_входит_по_почте(app, monkeypatch):
+    """Вход по почте не должен давать обход бана."""
+    from routers import auth
+
+    monkeypatch.setattr(auth, "проверить_код", _async_return("u-бан"))
+
+    забаненный = _user("u-бан", banned=True)
+    забаненный.email = "ban@example.test"
+    session = _Session([_Result(scalar=забаненный)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/auth/email/login",
+            json={"email": "ban@example.test", "code": "123456"},
+        )
+
+    assert r.json()["success"] is False, "забаненный вошёл по почте"
+
+
+async def test_почта_не_видна_в_чужой_анкете(app, monkeypatch):
+    """Почта — контакт вне сервиса: попав в чужую карточку, она превращает
+    дейтинг в способ собирать адреса. В этом проекте чужие анкеты собираются
+    в нескольких местах копипастой, поэтому проверяем ответ, а не намерения."""
+    from routers import likes
+
+    monkeypatch.setattr(likes, "current_tier", _async_return("plus"))
+
+    лайк = SimpleNamespace(
+        liker_id="u-fan", liked_id="u-me", type="like", message="",
+        id="l1", created_at=datetime.now(timezone.utc),
+    )
+    session = _Session([
+        _Result(rows=[]),
+        _Result(rows=[лайк]),
+        _Result(scalar=_profile("u-fan")),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/likes/received")
+
+    (карточка,) = r.json()
+    assert not карточка.get("email"), "почта утекла в чужую анкету"

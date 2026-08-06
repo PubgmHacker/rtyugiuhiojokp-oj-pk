@@ -38,6 +38,11 @@ class User(Base):
     #: совпадать с api/models/models.py — бот тоже вызывает create_all() и,
     #: стартовав первым на пустой базе, создал бы таблицу без неё
     apple_id: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    #: Почта для восстановления доступа. Единственный способ вернуться в свой
+    #: аккаунт, если потерян Telegram: без неё вместе с ним теряется и
+    #: оплаченная подписка. Подтверждается кодом, поэтому хранится уже
+    #: проверенной; nullable — привязка добровольная.
+    email: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -6,6 +6,8 @@ import {
   authWithTelegram,
   authDev,
   authWithLinkCode,
+  requestEmailRecovery,
+  loginByEmail,
   type UserProfile,
 } from "../lib/api";
 import { getInitData, initTelegram, isInTelegram } from "../lib/telegram";
@@ -92,6 +94,44 @@ export default function Login() {
       setLoading(false);
     }
   }, [code, finishLogin]);
+
+  // Потерян Telegram — единственный оставшийся путь в свой аккаунт вместе с
+  // оплаченной подпиской. Поэтому вход по почте есть и в мини-аппе, и в
+  // нативной сборке, а не только там, где нет initData
+  const [почтаОткрыта, setПочтаОткрыта] = useState(false);
+  const [почта, setПочта] = useState("");
+  const [почтовыйКод, setПочтовыйКод] = useState("");
+  const [письмоУшло, setПисьмоУшло] = useState(false);
+
+  const запроситьПисьмо = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await requestEmailRecovery(почта.trim());
+      // Ответ одинаковый, есть такая почта или нет: иначе по нему видно,
+      // зарегистрирован ли человек в дейтинге
+      setПисьмоУшло(true);
+    } catch {
+      setError("Не удалось отправить письмо. Попробуйте позже");
+      haptic("error");
+    } finally {
+      setLoading(false);
+    }
+  }, [почта]);
+
+  const войтиПоПочте = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { token, user } = await loginByEmail(почта.trim(), почтовыйКод.trim());
+      finishLogin(token, user);
+    } catch {
+      setError("Код неверный или устарел");
+      haptic("error");
+    } finally {
+      setLoading(false);
+    }
+  }, [почта, почтовыйКод, finishLogin]);
 
   const loginAsGuest = useCallback(async () => {
     setLoading(true);
@@ -260,6 +300,74 @@ export default function Login() {
               </Button>
             )}
           </>
+        )}
+
+        {/* Вход по почте — для тех, кто потерял Telegram. Прячем за ссылкой:
+            основной путь один, а этот нужен редко и не должен спорить с ним */}
+        {почтаОткрыта ? (
+          <div className="flex flex-col gap-2.5 mt-1">
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={почта}
+              onChange={(e) => setПочта(e.target.value)}
+              placeholder="Почта, привязанная к аккаунту"
+              disabled={письмоУшло || loading}
+              aria-label="Почта для восстановления доступа"
+              className="w-full h-[52px] px-4 rounded-[var(--radius-control)]
+                         bg-surface-2 border border-border text-[15px]
+                         text-text placeholder:text-text-faint
+                         focus:outline-none focus:border-primary disabled:opacity-60"
+            />
+            {письмоУшло && (
+              <>
+                <p className="text-[12.5px] text-text-muted text-center">
+                  Если такая почта привязана, код уже отправлен. Он действует 15 минут.
+                </p>
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={почтовыйКод}
+                  onChange={(e) =>
+                    setПочтовыйКод(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  placeholder="000000"
+                  aria-label="Код из письма"
+                  className="w-full h-[52px] rounded-[var(--radius-control)]
+                             bg-surface-2 border border-border text-center
+                             text-[22px] tracking-[0.35em] font-semibold
+                             text-text placeholder:text-text-faint
+                             focus:outline-none focus:border-primary"
+                />
+              </>
+            )}
+            <Button
+              size="md"
+              fullWidth
+              disabled={loading || (письмоУшло ? почтовыйКод.length < 6 : !почта.includes("@"))}
+              onClick={письмоУшло ? войтиПоПочте : запроситьПисьмо}
+            >
+              {loading ? <Spinner size={18} /> : письмоУшло ? "Войти" : "Получить код"}
+            </Button>
+            <button
+              onClick={() => {
+                setПочтаОткрыта(false);
+                setПисьмоУшло(false);
+                setError("");
+              }}
+              className="text-[12.5px] text-text-muted underline underline-offset-2"
+            >
+              Назад
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setПочтаОткрыта(true)}
+            className="mt-1 text-[12.5px] text-text-muted underline underline-offset-2"
+          >
+            Потеряли доступ к Telegram?
+          </button>
         )}
 
         <p className="mt-3 text-[11.5px] text-text-faint text-center leading-relaxed">

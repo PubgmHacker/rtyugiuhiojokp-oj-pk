@@ -281,6 +281,8 @@ async def get_my_profile(
         filter_height_min=profile.filter_height_min if profile else None,
         filter_height_max=profile.filter_height_max if profile else None,
         has_location=bool(profile and profile.latitude is not None),
+        # Только своя анкета: в чужой почте нет и быть не должно
+        email=user.email,
         **(await _referral_stats(session, user.id)),
     )
 

@@ -86,6 +86,15 @@ class Settings(BaseSettings):
     MAX_AGE: int = 99
     DECK_SIZE: int = 10  # анкет за один запрос
 
+    # ── Почта: подтверждение и восстановление доступа ────────────
+    # Без SMTP_HOST/SMTP_FROM письма не уходят, и это видно в ответе API,
+    # а не «делаем вид, что отправили». В DEBUG код пишется в лог.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+
     # ── Алертинг (Sentry) ────────────────────────────────────────
     # Без DSN — полный no-op (см. services/alerting.py): ни импорта пакета,
     # ни сетевых вызовов. Раньше сбой AI-модерации или другой внешней
