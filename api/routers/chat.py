@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select, update, and_, or_
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import async_session_factory
 from middleware.auth import verify_access_token

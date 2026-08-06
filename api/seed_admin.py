@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
-import sys
 from pathlib import Path
 
 # Auto-load .env from project root
@@ -30,7 +28,6 @@ if _env_file.exists():
                 import os
                 os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
-from sqlalchemy import text
 
 
 async def create_admin(telegram_id: int, name: str = "Admin", email: str | None = None) -> None:

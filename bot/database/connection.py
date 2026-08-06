@@ -4,7 +4,6 @@ import json
 import logging
 import random
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import select, text, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -18,7 +17,6 @@ from database.models import (
     Profile,
     Like,
     Match,
-    Message,
     ProcessedPayment,
     Referral,
     Report,

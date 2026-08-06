@@ -4,13 +4,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, and_, or_, desc, func, text as sa_text
+from sqlalchemy import select, and_, desc, func, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import User, Profile, Like, Match, Subscription
+from models.models import User, Profile, Like, Match
 from models.schemas import (
     LikeRequest,
     LikeResponse,
@@ -22,7 +22,7 @@ from services.realtime import publish_match, publish_new_like, publish_new_match
 from services.ai_matchmaker import score_match
 from services.ai_moderation import log_moderation, moderate_text
 from services.public_profile import публичный_возраст
-from services.premium import current_tier, is_premium as _is_premium
+from services.premium import current_tier
 from services.plans import superlikes_for, tier_allows
 from services.push import notify_new_match
 from utils import as_list

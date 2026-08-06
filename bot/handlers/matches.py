@@ -13,9 +13,8 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
-from config import BANNERS
 from database import get_or_create_user, get_user_matches, get_match_partner, get_profile
-from keyboards import matches_list_kb, chat_kb, main_kb, profile_kb
+from keyboards import matches_list_kb, chat_kb, main_kb
 from services.moderation import moderate_text, humanize
 from states import ChatStates
 from texts import chat_header

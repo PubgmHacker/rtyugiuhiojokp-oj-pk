@@ -24,7 +24,6 @@ from models.models import (
     Match,
     Message,
     Referral,
-    Subscription,
 )
 from models.schemas import (
     BoostOut,

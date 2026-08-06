@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from models.models import User, Profile, Like
+from models.models import Profile
 from utils import as_list
 
 settings = get_settings()

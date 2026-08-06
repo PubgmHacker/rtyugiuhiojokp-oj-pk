@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from models.models import User, Profile, Like, Block, Subscription, Referral
 from models.schemas import DeckProfile
-from services.ai_matchmaker import score_match
 from services.public_profile import возраст_из_даты, публичный_возраст
 from utils import as_list
 

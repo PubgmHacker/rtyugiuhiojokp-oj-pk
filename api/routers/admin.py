@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_, or_, desc, case, String
+from sqlalchemy import select, func, or_, desc, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.admin_auth import require_admin
 from models.models import (
-    User, Profile, Like, Match, Message, Reel, Report, Subscription, AiModerationLog
+    User, Profile, Like, Match, Reel, Report, Subscription, AiModerationLog
 )
 from services.ban_memory import forgive, remember_ban
 from services.token_revocation import clear_user_revocation, revoke_all_for_user

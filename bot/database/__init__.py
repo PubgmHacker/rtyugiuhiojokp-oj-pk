@@ -56,4 +56,17 @@ __all__ = [
     "delete_user_account",
     "create_report",
     "block_user",
+    # Модели переэкспортируются осознанно: пакет database — единая точка входа
+    # к слою данных бота. В __all__ они внесены явно, чтобы это было решением,
+    # а не выглядело забытым импортом.
+    "Base",
+    "Block",
+    "User",
+    "Profile",
+    "Like",
+    "Match",
+    "Message",
+    "ProcessedPayment",
+    "Referral",
+    "Subscription",
 ]

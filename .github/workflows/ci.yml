@@ -80,9 +80,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
+      # Гейт настоящий: раньше стоял continue-on-error и job был зелёный
+      # всегда, то есть находки никто не видел. Набор правил узкий и по делу
+      # (см. ruff.toml) — только то, что ломает продукт, иначе шум приучает
+      # игнорировать красный цвет в CI.
       - name: Проверка стиля
         run: ruff check api bot
-        continue-on-error: true
 
   web:
     name: Фронтенд

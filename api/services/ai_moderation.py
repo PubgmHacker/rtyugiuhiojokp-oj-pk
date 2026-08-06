@@ -4,7 +4,6 @@ import asyncio
 import base64
 import json
 import logging
-from typing import Optional
 
 from config import get_settings
 

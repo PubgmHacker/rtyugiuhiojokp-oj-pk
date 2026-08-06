@@ -16,7 +16,7 @@ from middleware.auth import (
     get_current_user,
     verify_telegram_init_data,
 )
-from models.models import User, Profile, Subscription
+from models.models import User, Profile
 from models.schemas import AuthResponse, UserProfile
 from services.ban_memory import is_banned_identity
 from services.apple_auth import AppleAuthError, verify_identity_token
@@ -85,7 +85,8 @@ async def auth_telegram(
         tg_user = user_str
 
     tg_id = int(tg_user.get("id", 0))
-    username = tg_user.get("username", "")
+    # username из Telegram не храним: он меняется владельцем в любой момент,
+    # а имя в анкете человек задаёт сам
     first_name = tg_user.get("first_name", "")
     last_name = tg_user.get("last_name", "")
 
