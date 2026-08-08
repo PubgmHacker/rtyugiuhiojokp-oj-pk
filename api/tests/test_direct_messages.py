@@ -52,8 +52,13 @@ async def три_человека(tmp_path):
                 city="Москва", photos=["https://x/1.jpg"],
                 looking_for="any", is_paused=пауза,
             ))
+        # Аня на верхнем уровне: личка без взаимного лайка продаётся именно
+        # там. Уровень берём из тарифной линейки, а не пишем словом, — фича
+        # уже переезжала с Plus на Aurora, и зашитое имя пришлось бы искать
+        # по всем тестам заново.
+        from services.plans import FEATURE_MIN_TIER
         s.add(Subscription(
-            user_id=аня, plan="ultra",
+            user_id=аня, plan=FEATURE_MIN_TIER["direct_messages"],
             expires_at=datetime.now(timezone.utc) + timedelta(days=30),
         ))
         await s.commit()
@@ -123,20 +128,35 @@ async def клиент(app, три_человека, monkeypatch):
 
 async def test_бесплатному_личка_без_лайка_закрыта(клиент, три_человека):
     """Free — тариф не позволяет вовсе, а не «лимит на сегодня 0»."""
+    from services.plans import FEATURE_MIN_TIER, TIERS
+
     аня, боря = три_человека["аня"], три_человека["боря"]
     клиент.от_имени(боря)  # Боря на free
 
+    нужный = TIERS[FEATURE_MIN_TIER["direct_messages"]].name
+
     r = await клиент.get("/api/matches/direct/quota")
     assert r.status_code == 200
-    assert r.json() == {"left": 0, "total": 0, "allowed": False}
+    # Проверяем смысл, а не форму целиком: сравнение со словарём дословно
+    # ломается от любого нового поля в ответе, хотя поведение не менялось
+    тело = r.json()
+    assert тело["allowed"] is False, "на free личка обязана быть закрыта"
+    assert тело["left"] == 0 and тело["total"] == 0
+    assert тело["required_tier_name"] == нужный, (
+        "клиент показывает название тарифа из этого поля — оно должно "
+        "совпадать с реальным гейтом"
+    )
 
     r = await клиент.post("/api/matches/direct", json={"target_id": аня, "text": "привет"})
     assert r.status_code == 403, r.text
-    assert "Plus" in r.json()["detail"]
+    assert нужный in r.json()["detail"]
 
 
-async def test_ultra_может_написать_без_лайка_и_чат_появляется_в_списке(клиент, три_человека):
-    """Основной путь: Ultra пишет тому, кто её не лайкал — появляется чат."""
+async def test_верхний_тариф_может_написать_без_лайка_и_чат_появляется_в_списке(
+    клиент, три_человека
+):
+    """Основной путь: с верхним тарифом человек пишет тому, кто его не
+    лайкал, — появляется чат."""
     боря = три_человека["боря"]
 
     r = await клиент.post("/api/matches/direct", json={"target_id": боря, "text": "Привет! Заметил, что мы оба любим кино"})
@@ -195,8 +215,12 @@ async def test_суточный_лимит_писем(клиент, три_че�
     """
     import services.direct_messages as dm
     import services.premium as premium_mod
+    from services.plans import FEATURE_MIN_TIER
 
-    monkeypatch.setattr(premium_mod, "current_tier", _async_return("plus"))
+    monkeypatch.setattr(
+        premium_mod, "current_tier",
+        _async_return(FEATURE_MIN_TIER["direct_messages"]),
+    )
     monkeypatch.setattr(dm, "direct_messages_per_day", lambda tier: 1)
 
     боря = три_человека["боря"]

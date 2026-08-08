@@ -18,7 +18,12 @@ from services.chat_delivery import fan_out, reel_preview, save_message
 from services.direct_messages import (
     can_send_message, direct_quota_left, start_direct_message,
 )
-from services.plans import direct_messages_per_day, tier_allows
+from services.plans import (
+    FEATURE_MIN_TIER,
+    TIERS,
+    direct_messages_per_day,
+    tier_allows,
+)
 from services.premium import current_tier
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
@@ -270,6 +275,7 @@ async def get_direct_quota(
         left=await direct_quota_left(session, user.id) if allowed else 0,
         total=direct_messages_per_day(tier) if allowed else 0,
         allowed=allowed,
+        required_tier_name=TIERS[FEATURE_MIN_TIER["direct_messages"]].name,
     )
 
 

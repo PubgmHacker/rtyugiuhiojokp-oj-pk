@@ -21,7 +21,12 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.models import Block, Match, Profile
-from services.plans import direct_messages_per_day, tier_allows
+from services.plans import (
+    FEATURE_MIN_TIER,
+    TIERS,
+    direct_messages_per_day,
+    tier_allows,
+)
 from services.premium import current_tier
 
 
@@ -40,8 +45,13 @@ DENIED_NOT_FOUND = DirectDenied("not_found", "Анкета не найдена")
 DENIED_BLOCKED = DirectDenied("blocked", "Написать нельзя")
 DENIED_PAUSED = DirectDenied("unavailable", "Анкета сейчас не принимает сообщения")
 DENIED_ALREADY_MATCH = DirectDenied("already_match", "У вас уже есть чат с этим человеком")
+#: Имя уровня подставляем из тарифной линейки, а не вписываем словом: при
+#: переносе фичи на другой уровень (так уже было — она переехала с Plus на
+#: Aurora) текст молча остался бы врать.
 DENIED_TIER = DirectDenied(
-    "tier", "Написать без взаимного лайка можно на Plus и выше"
+    "tier",
+    "Написать без взаимного лайка можно на "
+    f"{TIERS[FEATURE_MIN_TIER['direct_messages']].name}",
 )
 DENIED_LIMIT = DirectDenied("limit", "Письма без взаимности на сегодня закончились")
 DENIED_ONE_BEFORE_REPLY = DirectDenied(

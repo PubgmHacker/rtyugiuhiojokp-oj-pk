@@ -15,14 +15,19 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 #: Уровни от младшего к старшему.
 TIER_FREE = "free"
 TIER_PLUS = "plus"
 TIER_ULTRA = "ultra"
+#: Верхний уровень. Название из той же истории, что и марка: Souldawn —
+#: рассвет, Aurora — заря; латиницей, как и соседи, чтобы линейка читалась
+#: одним рядом.
+TIER_AURORA = "aurora"
 
-TIER_ORDER: tuple[str, ...] = (TIER_FREE, TIER_PLUS, TIER_ULTRA)
+TIER_ORDER: tuple[str, ...] = (TIER_FREE, TIER_PLUS, TIER_ULTRA, TIER_AURORA)
 
 
 @dataclass(frozen=True)
@@ -39,7 +44,13 @@ class Plan:
 
     @property
     def title(self) -> str:
-        name = "Ultra" if self.tier == TIER_ULTRA else "Plus"
+        """«Ultra на 3 мес.» — имя уровня берём из `TIERS`, а не из условия.
+
+        Раньше здесь стоял тернарник «Ultra, иначе Plus»: с появлением
+        третьего уровня он молча назвал бы Aurora «Plus», и человек увидел бы
+        в счёте не то, что покупает.
+        """
+        name = TIERS[self.tier].name if self.tier in TIERS else self.tier
         if self.months == 1:
             return f"{name} на месяц"
         return f"{name} на {self.months} мес."
@@ -49,9 +60,21 @@ class Plan:
         """Цена за месяц — по ней видно выгоду длинного срока."""
         return round(self.price_rub / self.months)
 
+    @property
+    def price_per_day(self) -> int:
+        """Цена за день — ею длинный срок продаётся лучше всего: «4 ₽ в день»
+        читается как мелочь, а «1290 ₽» как крупная трата. Округляем вверх,
+        чтобы не обещать цену ниже настоящей.
+        """
+        return math.ceil(self.price_rub / self.days)
+
 
 #: Скидка за срок намеренно заметная: длинный срок выгоднее и для нас —
-#: он снижает отток. Месяц у Plus — 149 ₽, у Ultra — 299 ₽.
+#: он снижает отток. Месяц: Plus — 149 ₽, Ultra — 299 ₽, Aurora — 599 ₽.
+#:
+#: Шаг между уровнями примерно двукратный. Верхний уровень нужен не потому,
+#: что «пусть будет дороже»: у трёх вариантов средний выбирают чаще, чем
+#: старший из двух, — Ultra продаётся лучше именно на фоне Aurora.
 PLANS: tuple[Plan, ...] = (
     Plan("plus_1m", TIER_PLUS, 1, 30, 149, "com.souldawn.dating.plus.monthly"),
     Plan("plus_3m", TIER_PLUS, 3, 90, 379, "com.souldawn.dating.plus.quarterly"),
@@ -59,6 +82,9 @@ PLANS: tuple[Plan, ...] = (
     Plan("ultra_1m", TIER_ULTRA, 1, 30, 299, "com.souldawn.dating.ultra.monthly"),
     Plan("ultra_3m", TIER_ULTRA, 3, 90, 749, "com.souldawn.dating.ultra.quarterly"),
     Plan("ultra_12m", TIER_ULTRA, 12, 365, 2590, "com.souldawn.dating.ultra.yearly"),
+    Plan("aurora_1m", TIER_AURORA, 1, 30, 599, "com.souldawn.dating.aurora.monthly"),
+    Plan("aurora_3m", TIER_AURORA, 3, 90, 1490, "com.souldawn.dating.aurora.quarterly"),
+    Plan("aurora_12m", TIER_AURORA, 12, 365, 4990, "com.souldawn.dating.aurora.yearly"),
 )
 
 PLANS_BY_CODE: dict[str, Plan] = {p.code: p for p in PLANS}
@@ -82,7 +108,7 @@ TIERS: dict[str, TierInfo] = {
         TIER_FREE,
         "Бесплатно",
         superlikes=1,
-        perks=("Свайпы без ограничений", "Чат с мэтчами"),
+        perks=("Свайпы без ограничений", "Чат с мэтчами", "1 суперлайк в день"),
     ),
     TIER_PLUS: TierInfo(
         TIER_PLUS,
@@ -91,8 +117,9 @@ TIERS: dict[str, TierInfo] = {
         perks=(
             "Видно, кто вас лайкнул",
             "Режим инкогнито",
-            "5 суперлайков в день",
-            "Приоритет в выдаче",
+            "5 суперлайков в день вместо 1",
+            "Буст анкеты раз в день",
+            "Все расклады Таро и AI-таролог",
         ),
     ),
     TIER_ULTRA: TierInfo(
@@ -101,8 +128,22 @@ TIERS: dict[str, TierInfo] = {
         superlikes=15,
         perks=(
             "Всё из Plus",
-            "15 суперлайков в день",
             "Кто заходил в вашу анкету",
+            "15 суперлайков в день вместо 5",
+            "3 буста в день вместо одного",
+            "Приоритет в выдаче",
+        ),
+    ),
+    TIER_AURORA: TierInfo(
+        TIER_AURORA,
+        "Aurora",
+        superlikes=30,
+        perks=(
+            "Всё из Ultra",
+            "Письма без взаимного лайка — 10 в день",
+            "Ссылка на свой канал в анкете",
+            "30 суперлайков в день вместо 15",
+            "5 бустов в день",
             "Максимальный приоритет в выдаче",
         ),
     ),
@@ -110,24 +151,34 @@ TIERS: dict[str, TierInfo] = {
 
 #: Минимальный уровень для каждой платной возможности. Проверка идёт через
 #: `tier_allows`, поэтому добавить возможность — это одна строка здесь.
+#:
+#: У каждого уровня свой ОТДЕЛЬНЫЙ повод купить именно его: на одних числах
+#: («суперлайков побольше») верхний уровень не продаётся.
 FEATURE_MIN_TIER: dict[str, str] = {
     "see_who_liked": TIER_PLUS,
     "incognito": TIER_PLUS,
     "deck_boost": TIER_PLUS,
+    #: Расклады сверх карты дня. Карта дня остаётся бесплатной: она повод
+    #: открыть приложение, а не товар.
+    "tarot_spreads": TIER_PLUS,
     "visitors": TIER_ULTRA,
     #: Написать человеку, который вас не лайкал (см. services/direct_messages.py).
-    #: Аналог «Мимолёта» — платный крючок, поэтому не бесплатно.
-    "direct_messages": TIER_PLUS,
+    #: Самый сильный крючок, поэтому стоит на верхнем уровне — так же, как у
+    #: «Мимолёта», где это функция старшего тарифа.
+    "direct_messages": TIER_AURORA,
+    #: Ссылка на свой канал в анкете — витринная возможность верхнего уровня.
+    "tg_channel": TIER_AURORA,
 }
 
-#: Сколько писем без взаимного лайка можно отправить за сутки. Free — 0
-#: (фича закрыта), у Plus и Ultra разное число — тот же приём, что у
-#: суперлайков и бустов: у старшего уровня лимит выше, а не безлимит,
-#: иначе платная функция превращается в канал для спама.
+#: Сколько писем без взаимного лайка можно отправить за сутки. Ниже Aurora — 0
+#: (фича закрыта совсем). Даже на верхнем уровне это НЕ безлимит: письма
+#: незнакомым без лимита превращают платную функцию в канал для спама, а
+#: получателю дейтинг с потоком писем от незнакомцев быстро надоедает.
 DIRECT_MESSAGES_PER_DAY: dict[str, int] = {
     TIER_FREE: 0,
-    TIER_PLUS: 3,
-    TIER_ULTRA: 10,
+    TIER_PLUS: 0,
+    TIER_ULTRA: 0,
+    TIER_AURORA: 10,
 }
 
 
@@ -161,6 +212,7 @@ BOOSTS_PER_DAY: dict[str, int] = {
     TIER_FREE: 0,
     TIER_PLUS: 1,
     TIER_ULTRA: 3,
+    TIER_AURORA: 5,
 }
 
 #: Сколько минут длится одно включение. Короткий срок намеренно: буст должен

@@ -290,6 +290,9 @@ export interface DirectQuota {
   total: number;
   /** false — тариф вовсе не позволяет, а не только лимит на сегодня. */
   allowed: boolean;
+  /** Имя уровня, с которого фича открывается. Приходит с сервера, чтобы
+      название тарифа не было зашито в двух местах сразу. */
+  required_tier_name: string;
 }
 
 /** Остаток писем без взаимного лайка — для честного гейта на кнопке. */
@@ -527,6 +530,11 @@ export interface TarotSpread {
   cards: TarotCard[];
   interpretation: string;
   disclaimer: string;
+  /** Открыты ли развороты на текущем тарифе. Едет с картой дня, чтобы клиент
+      не выяснял это отдельным запросом к закрытому раскладу. */
+  spreads_open?: boolean;
+  /** Уровень, с которого открываются развороты. */
+  required_tier_name?: string;
 }
 
 export async function getTarotDay(): Promise<TarotSpread> {
@@ -784,6 +792,8 @@ export interface PlanOut {
   months: number;
   price_rub: number;
   price_per_month: number;
+  /** Цена за день — ею продаётся длинный срок. */
+  price_per_day: number;
   appstore_id: string;
 }
 

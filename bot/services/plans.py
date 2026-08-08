@@ -11,13 +11,16 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 TIER_FREE = "free"
 TIER_PLUS = "plus"
 TIER_ULTRA = "ultra"
+#: Верхний уровень — см. api/services/plans.py.
+TIER_AURORA = "aurora"
 
-TIER_ORDER: tuple[str, ...] = (TIER_FREE, TIER_PLUS, TIER_ULTRA)
+TIER_ORDER: tuple[str, ...] = (TIER_FREE, TIER_PLUS, TIER_ULTRA, TIER_AURORA)
 
 
 @dataclass(frozen=True)
@@ -30,7 +33,9 @@ class Plan:
 
     @property
     def title(self) -> str:
-        name = "Ultra" if self.tier == TIER_ULTRA else "Plus"
+        """Имя уровня берём из `TIER_NAMES`, а не из условия: тернарник
+        «Ultra, иначе Plus» назвал бы Aurora в счёте чужим именем."""
+        name = TIER_NAMES.get(self.tier, self.tier)
         if self.months == 1:
             return f"{name} на месяц"
         return f"{name} на {self.months} мес."
@@ -38,6 +43,12 @@ class Plan:
     @property
     def price_per_month(self) -> int:
         return round(self.price_rub / self.months)
+
+    @property
+    def price_per_day(self) -> int:
+        """Цена за день — ею продаётся длинный срок. Вверх, чтобы не обещать
+        цену ниже настоящей."""
+        return math.ceil(self.price_rub / self.days)
 
 
 PLANS: tuple[Plan, ...] = (
@@ -47,35 +58,51 @@ PLANS: tuple[Plan, ...] = (
     Plan("ultra_1m", TIER_ULTRA, 1, 30, 299),
     Plan("ultra_3m", TIER_ULTRA, 3, 90, 749),
     Plan("ultra_12m", TIER_ULTRA, 12, 365, 2590),
+    Plan("aurora_1m", TIER_AURORA, 1, 30, 599),
+    Plan("aurora_3m", TIER_AURORA, 3, 90, 1490),
+    Plan("aurora_12m", TIER_AURORA, 12, 365, 4990),
 )
 
 PLANS_BY_CODE: dict[str, Plan] = {p.code: p for p in PLANS}
 
 #: Копия api/services/plans.py::DIRECT_MESSAGES_PER_DAY — сколько писем без
-#: взаимного лайка можно отправить за сутки. Free — 0 (фича закрыта).
+#: взаимного лайка можно отправить за сутки. Ниже Aurora фича закрыта совсем.
 DIRECT_MESSAGES_PER_DAY: dict[str, int] = {
     TIER_FREE: 0,
-    TIER_PLUS: 3,
-    TIER_ULTRA: 10,
+    TIER_PLUS: 0,
+    TIER_ULTRA: 0,
+    TIER_AURORA: 10,
 }
 
 
 def direct_messages_per_day(tier: str) -> int:
     return DIRECT_MESSAGES_PER_DAY.get(TIER_ORDER[tier_rank(tier)], 0)
 
-#: Что даёт уровень — для витрины в боте.
+#: Что даёт уровень — для витрины в боте. Держим в том же порядке и тем же
+#: смыслом, что `TIERS[...].perks` в API: человек сравнивает уровни в боте, а
+#: покупает в мини-аппе, и расхождение читается как обман.
 TIER_PERKS: dict[str, tuple[str, ...]] = {
     TIER_PLUS: (
         "👀 Видно, кто вас лайкнул",
         "🥷 Режим инкогнито",
-        "⭐ 5 суперлайков в день",
-        "🚀 Приоритет в выдаче",
+        "⭐ 5 суперлайков в день вместо 1",
+        "🚀 Буст анкеты раз в день",
+        "🔮 Все расклады Таро и AI-таролог",
     ),
     TIER_ULTRA: (
         "✨ Всё из Plus",
-        "⭐ 15 суперлайков в день",
         "🚪 Кто заходил в вашу анкету",
-        "🚀 Максимальный приоритет в выдаче",
+        "⭐ 15 суперлайков в день вместо 5",
+        "🚀 3 буста в день вместо одного",
+        "📈 Приоритет в выдаче",
+    ),
+    TIER_AURORA: (
+        "✨ Всё из Ultra",
+        "✉️ Письма без взаимного лайка — 10 в день",
+        "📣 Ссылка на свой канал в анкете",
+        "⭐ 30 суперлайков в день вместо 15",
+        "🚀 5 бустов в день",
+        "📈 Максимальный приоритет в выдаче",
     ),
 }
 
@@ -83,6 +110,7 @@ TIER_NAMES: dict[str, str] = {
     TIER_FREE: "Бесплатно",
     TIER_PLUS: "Plus",
     TIER_ULTRA: "Ultra",
+    TIER_AURORA: "Aurora",
 }
 
 

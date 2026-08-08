@@ -13,9 +13,11 @@
  * от текста, который и есть повод для разговора.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { isAxiosError } from "axios";
+import { Crown, Lock, Sparkles } from "lucide-react";
 import {
   getTarotDay,
   getTarotPair,
@@ -35,6 +37,25 @@ const TABS: { type: TarotSpreadType; label: string }[] = [
   { type: "pair", label: "Он и я" },
 ];
 
+/** Карта дня бесплатна, остальные расклады — по подписке (см. серверный гейт
+ *  `tarot_spreads` в api/routers/tarot.py). */
+const GATED: Record<TarotSpreadType, boolean> = {
+  day: false,
+  three: true,
+  relationship: true,
+  pair: true,
+};
+
+/** Достаёт текст отказа из 403: имя нужного тарифа приходит с сервера, чтобы
+ *  оно не было зашито в клиенте вторым местом. Не 403 — вернём null. */
+function readLock(e: unknown): string | null {
+  if (isAxiosError(e) && e.response?.status === 403) {
+    const detail = (e.response.data as { detail?: string } | undefined)?.detail;
+    return detail || "Развёрнутые расклады доступны по подписке";
+  }
+  return null;
+}
+
 export default function Tarot() {
   useSectionOpen("tarot");
   const [tab, setTab] = useState<TarotSpreadType>("day");
@@ -43,6 +64,17 @@ export default function Tarot() {
   const [spread, setSpread] = useState<TarotSpread | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Про доступ к разворотам узнаём из ответа карты дня (`spreads_open`), а не
+  // отдельной пробой закрытого расклада: проба стоила лишнего запроса и, что
+  // хуже, роняла карту дня — ответ пробы менял состояние, эффект перезапускался
+  // и грузил день второй раз, а карточка успевала мигнуть скелетоном.
+  // Замерено: было 2 запроса `/tarot/day` + 1 `/tarot/three` на одно открытие.
+  const [spreadsOpen, setSpreadsOpen] = useState<boolean | null>(null);
+  const [lockMsg, setLockMsg] = useState("Развёрнутые расклады доступны по подписке");
+
+  // Что уже загрузили: без этой отметки эффект, зависящий от `spreadsOpen`,
+  // повторял запрос сразу после того, как доступ выяснился.
+  const загружено = useRef<TarotSpreadType | null>(null);
 
   // «Он и я» просит два имени, поэтому расклад запрашивается по кнопке, а
   // не сразу при переключении вкладки — иначе на пустых именах прилетела бы
@@ -57,8 +89,20 @@ export default function Tarot() {
       else if (type === "relationship") result = await getTarotRelationship();
       else result = await getTarotPair(nameA, nameB);
       setSpread(result);
-    } catch {
-      setError("Не удалось получить расклад");
+      // Карта дня бесплатна и приходит всем — из неё же узнаём, открыты ли
+      // развороты. У остальных раскладов ответ вообще не придёт, если заперто.
+      if (result.spreads_open !== undefined) setSpreadsOpen(result.spreads_open);
+      if (result.required_tier_name)
+        setLockMsg(`Расклады доступны на ${result.required_tier_name}`);
+    } catch (e) {
+      // 403 — не ошибка, а апселл: показываем замок с именем тарифа с сервера.
+      const lock = readLock(e);
+      if (lock) {
+        setSpreadsOpen(false);
+        setLockMsg(lock);
+      } else {
+        setError("Не удалось получить расклад");
+      }
     } finally {
       setLoading(false);
     }
@@ -66,17 +110,47 @@ export default function Tarot() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const locked = GATED[tab] && spreadsOpen === false;
+
+  // Смена вкладки — единственный повод очистить экран. Раньше очистка жила в
+  // том же эффекте, что и загрузка, а он перезапускался ещё и когда выяснялся
+  // доступ: уже показанная карта дня стиралась.
   useEffect(() => {
     setSpread(null);
     setError("");
-    if (tab !== "pair") load(tab);
-  }, [tab, load]);
+    загружено.current = null;
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab === "pair") return; // ждёт двух имён и кнопки
+    // Заперто — расклад не грузим: покажем апселл
+    if (GATED[tab] && spreadsOpen === false) return;
+    // Про доступ ещё не знаем (карта дня не ответила) — платную вкладку не
+    // дёргаем, иначе получим 403 там, где через миг был бы обычный замок
+    if (GATED[tab] && spreadsOpen === null) return;
+    if (загружено.current === tab) return; // уже грузили — не повторяем
+    загружено.current = tab;
+    load(tab);
+  }, [tab, load, spreadsOpen]);
 
   return (
     <div className="pb-6">
       <ScreenHeader title="Таро" />
 
-      <div className="px-4 pt-2 pb-1 flex gap-2 overflow-x-auto">
+      {/* Полоса прокручивается: на 320px четыре вкладки в ряд не помещаются,
+          а перенос на вторую строку съедал бы экран у всех остальных.
+          `no-scrollbar` убирает системную полосу — в мини-аппе она выглядит
+          как брак вёрстки. Края растворяются маской, чтобы обрезанная вкладка
+          читалась как «дальше есть ещё», а не как ошибка. */}
+      <div
+        className="px-4 pt-2 pb-1 flex gap-2 overflow-x-auto no-scrollbar"
+        style={{
+          maskImage:
+            "linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%)",
+        }}
+      >
         {TABS.map((t) => (
           <button
             key={t.type}
@@ -84,18 +158,28 @@ export default function Tarot() {
               haptic("select");
               setTab(t.type);
             }}
-            className={`shrink-0 px-3.5 py-2 rounded-full text-[13.5px] font-semibold transition-colors ${
+            className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[13.5px] font-semibold transition-colors ${
               tab === t.type
                 ? "bg-accent text-on-accent"
                 : "bg-surface-2 text-text-secondary border border-hairline"
             }`}
           >
             {t.label}
+            {GATED[t.type] && spreadsOpen === false && (
+              <Lock
+                size={12}
+                className={tab === t.type ? "opacity-80" : "text-text-muted"}
+              />
+            )}
           </button>
         ))}
       </div>
 
       <div className="px-4 pt-3">
+        {locked ? (
+          <TarotLock message={lockMsg} />
+        ) : (
+          <>
         {tab === "pair" && (
           <Card className="p-4 mb-3">
             <p className="text-caption text-text-muted mb-2">
@@ -184,7 +268,36 @@ export default function Tarot() {
             </p>
           </motion.div>
         )}
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+/* ── Замок платного раздела ─────────────────────────────────── */
+
+/** Апселл вместо ошибки: имя тарифа в тексте приходит с сервера (см.
+ *  `readLock`), здесь его не дублируем. Ведём на витрину тарифов — там покупка.
+ *  Стиль совпадает с крючком лички (DirectMessageSheet), чтобы платные места
+ *  читались одинаково по всему приложению. */
+function TarotLock({ message }: { message: string }) {
+  return (
+    <Card className="p-5 flex flex-col items-center text-center">
+      <div className="w-11 h-11 rounded-full bg-accent/15 flex items-center justify-center mb-3">
+        <Crown size={20} className="text-accent" />
+      </div>
+      <p className="text-[15px] font-semibold mb-1">Расклады по подписке</p>
+      <p className="text-[13px] text-text-muted mb-4 leading-snug">{message}</p>
+      <Link
+        to="/plans"
+        onClick={() => haptic("light")}
+        className="flex items-center justify-center gap-2 w-full h-12 px-6
+                   rounded-[var(--radius-control)] bg-dawn text-on-accent
+                   text-[15px] font-semibold shadow-[var(--shadow-control)]"
+      >
+        Открыть тарифы
+      </Link>
+    </Card>
   );
 }

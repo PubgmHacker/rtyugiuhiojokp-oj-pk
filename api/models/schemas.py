@@ -193,6 +193,10 @@ class DirectQuotaOut(BaseModel):
     total: int = 0
     #: Тариф вовсе не позволяет — не вопрос лимита, а вопрос подписки.
     allowed: bool = False
+    #: Название уровня, с которого фича открывается («Aurora»). Отдаём с
+    #: сервера, а не пишем в клиенте словом: при переносе фичи на другой
+    #: уровень зашитый текст молча остался бы врать.
+    required_tier_name: str = ""
 
 
 class DeckProfile(BaseModel):
@@ -405,6 +409,14 @@ class TarotSpreadOut(BaseModel):
     cards: list[TarotCardOut]
     interpretation: str
     disclaimer: str
+    #: Открыты ли развёрнутые расклады на текущем тарифе. Едет вместе с картой
+    #: дня, чтобы клиенту не приходилось выяснять это отдельным запросом:
+    #: раньше он «пробовал» закрытый расклад ради 403 и из-за этого грузил
+    #: карту дня дважды.
+    spreads_open: bool = True
+    #: Уровень, с которого расклады открываются. С сервера, а не словом в
+    #: клиенте: фича уже переезжала между уровнями.
+    required_tier_name: str = ""
 
 
 class StickerOut(BaseModel):
@@ -598,6 +610,9 @@ class PlanOut(BaseModel):
     months: int
     price_rub: int
     price_per_month: int
+    #: Цена за день. Ею длинный срок продаётся лучше всего: «4 ₽ в день»
+    #: читается как мелочь, а «1290 ₽» — как крупная трата.
+    price_per_day: int = 0
     appstore_id: str = ""
 
 

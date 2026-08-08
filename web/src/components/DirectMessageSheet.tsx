@@ -41,7 +41,11 @@ export default function DirectMessageSheet({
     setError(null);
     getDirectQuota()
       .then(setQuota)
-      .catch(() => setQuota({ left: 0, total: 0, allowed: false }));
+      // Сеть не ответила — закрываем отправку, но без имени тарифа: врать
+      // про «доступно на Х» при неизвестном ответе хуже, чем промолчать
+      .catch(() =>
+        setQuota({ left: 0, total: 0, allowed: false, required_tier_name: "" })
+      );
   }, [profile]);
 
   const trimmed = text.trim();
@@ -106,7 +110,9 @@ export default function DirectMessageSheet({
                 <Crown size={18} className="text-accent shrink-0" />
                 <span className="flex-1 text-[14px] leading-snug">
                   {quota && !quota.allowed
-                    ? "Личка без взаимного лайка доступна на Plus и выше"
+                    ? quota.required_tier_name
+                      ? `Личка без взаимного лайка доступна на ${quota.required_tier_name}`
+                      : "Личка без взаимного лайка доступна по подписке"
                     : "Письма без взаимности на сегодня закончились — больше на старшем тарифе"}
                 </span>
               </Link>

@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Crown, RotateCcw, Sparkles } from "lucide-react";
+import { Check, Crown, Gem, RotateCcw, Sparkles } from "lucide-react";
 import { getMyProfile, getPlans, type PlanOut, type PlansOut } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { isNative, openExternal } from "../lib/native";
@@ -24,8 +24,11 @@ import { Button, Card, ScreenHeader, Skeleton, Spinner } from "../components/ui"
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
 
-/** Уровни в порядке старшинства; бесплатный в витрине покупать нечего. */
-const PAID_TIERS = ["plus", "ultra"] as const;
+/** Уровни в порядке старшинства; бесплатный в витрине покупать нечего.
+ *
+ *  Порядок и состав должны совпадать с `TIER_ORDER` в api/services/plans.py.
+ *  Сами уровни приходят с сервера — здесь только порядок показа. */
+const PAID_TIERS = ["plus", "ultra", "aurora"] as const;
 
 export default function Plans() {
   const { user, setUser } = useStore();
@@ -153,11 +156,7 @@ export default function Plans() {
           <>
             <Card className="p-4 mb-5">
               <div className="flex items-center gap-2.5 mb-3">
-                {shown.tier === "ultra" ? (
-                  <Crown size={18} className="text-accent" />
-                ) : (
-                  <Sparkles size={18} className="text-accent" />
-                )}
+                <TierIcon tier={shown.tier} />
                 <span className="font-bold text-[16px]">
                   Souldawn {shown.name}
                 </span>
@@ -238,6 +237,17 @@ export default function Plans() {
   );
 }
 
+/* ── Значок уровня ──────────────────────────────────────────── */
+
+/** Раньше значок выбирался условием «Ultra или иначе Plus»: с появлением
+ *  третьего уровня Aurora молча получила бы чужой значок. Незнакомому уровню
+ *  даём нейтральный, а не значок соседа. */
+function TierIcon({ tier }: { tier: string }) {
+  if (tier === "aurora") return <Gem size={18} className="text-accent" />;
+  if (tier === "ultra") return <Crown size={18} className="text-accent" />;
+  return <Sparkles size={18} className="text-accent" />;
+}
+
 /* ── Строка тарифа ──────────────────────────────────────────── */
 
 function PlanRow({
@@ -272,6 +282,10 @@ function PlanRow({
         <p className="font-bold text-[15px]">{plan.title}</p>
         <p className="text-caption text-text-muted">
           {plan.price_per_month} ₽ в месяц
+          {/* Цена за день — на длинных сроках она и продаёт: «4 ₽ в день»
+              читается как мелочь, а «1290 ₽» как крупная трата. У месячного
+              плана не показываем: там это не выгода, а лишний шум */}
+          {plan.months > 1 && ` · ${plan.price_per_day} ₽ в день`}
         </p>
       </div>
 

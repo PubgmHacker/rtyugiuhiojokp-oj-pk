@@ -63,6 +63,7 @@ async def list_plans(
                         months=p.months,
                         price_rub=p.price_rub,
                         price_per_month=p.price_per_month,
+                        price_per_day=p.price_per_day,
                         appstore_id=p.appstore_id,
                     )
                     for p in PLANS
