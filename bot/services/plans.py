@@ -113,6 +113,31 @@ TIER_NAMES: dict[str, str] = {
     TIER_AURORA: "Aurora",
 }
 
+#: Значок уровня для клавиатур бота. Живёт рядом с именами, а не в хендлере:
+#: пока значки были вписаны прямо в кнопки, добавленный уровень остался и без
+#: значка, и без самой кнопки.
+TIER_ICONS: dict[str, str] = {
+    TIER_PLUS: "✨",
+    TIER_ULTRA: "👑",
+    TIER_AURORA: "💎",
+}
+
+
+#: Копия api/services/plans.py::FEATURE_MIN_TIER. Бот спрашивал права
+#: сравнением с литералом (`tier_rank(tier) >= tier_rank(TIER_PLUS)`), и при
+#: переносе возможности на другой уровень API и бот разъезжались молча: в
+#: мини-аппе закрыто, в боте открыто. Совпадение сверяет тест
+#: `test_гейты_фич_совпадают_в_боте_и_api`.
+FEATURE_MIN_TIER: dict[str, str] = {
+    "see_who_liked": TIER_PLUS,
+    "incognito": TIER_PLUS,
+    "deck_boost": TIER_PLUS,
+    "tarot_spreads": TIER_PLUS,
+    "visitors": TIER_ULTRA,
+    "direct_messages": TIER_AURORA,
+    "tg_channel": TIER_AURORA,
+}
+
 
 def tier_rank(tier: str) -> int:
     """Старшинство уровня; неизвестный считаем бесплатным."""
@@ -120,6 +145,24 @@ def tier_rank(tier: str) -> int:
         return TIER_ORDER.index(tier)
     except ValueError:
         return 0
+
+
+def tier_allows(tier: str, feature: str) -> bool:
+    """Доступна ли возможность на этом уровне. Незнакомая — закрыта."""
+    required = FEATURE_MIN_TIER.get(feature)
+    if required is None:
+        return False
+    return tier_rank(tier) >= tier_rank(required)
+
+
+def имя_уровня_для(feature: str) -> str:
+    """Имя уровня, на котором открывается возможность — для текстов бота.
+
+    Тексты писали литералом («видно в Plus»), и перенос возможности на другой
+    уровень оставлял бота рекламировать старый: человек покупал Plus за то,
+    что уже отдали Ultra.
+    """
+    return TIER_NAMES.get(FEATURE_MIN_TIER.get(feature, ""), "Premium")
 
 
 def plans_for(tier: str) -> list[Plan]:
@@ -139,9 +182,12 @@ async def видно_кто_лайкнул(user_id: str) -> bool:
     бота (`handlers/dating.py`) и лайк из мини-аппа, прилетающий через Redis
     (`services/redis_subscriber.py`). Ровно на таких парах в этом проекте и
     разъезжается логика.
+
+    Уровень спрашиваем у таблицы возможностей, а не сравниваем с TIER_PLUS:
+    перенеси API эту фичу выше — бот последует, а не останется раздавать её.
     """
     from database import get_active_subscription
 
     sub = await get_active_subscription(user_id)
     tier = (sub or {}).get("plan") or TIER_FREE
-    return tier_rank(tier) >= tier_rank(TIER_PLUS)
+    return tier_allows(tier, "see_who_liked")

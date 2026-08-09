@@ -9,6 +9,7 @@ from aiogram.types import (
 )
 
 from config import SITE_URL
+from services.plans import имя_уровня_для
 
 
 def main_kb() -> InlineKeyboardMarkup:
@@ -194,15 +195,21 @@ def no_more_profiles_kb() -> InlineKeyboardMarkup:
 
 
 def like_locked_kb() -> InlineKeyboardMarkup:
-    """Пришёл лайк, но кто именно — за Plus.
+    """Пришёл лайк, но кто именно — за платный уровень.
 
     Кнопка ведёт на витрину подписки, а не в мини-апп: там та же карточка
     будет закрыта (api/routers/likes.py отдаёт бесплатному `is_locked`), и
     человек просто прошёл бы круг зря.
+
+    Имя уровня на кнопке — из таблицы возможностей: вписанное словом, оно
+    осталось бы обещать Plus после переноса фичи на другой уровень.
     """
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⭐ Открыть в Plus", callback_data="premium")],
+            [InlineKeyboardButton(
+                text=f"⭐ Открыть в {имя_уровня_для('see_who_liked')}",
+                callback_data="premium",
+            )],
             [InlineKeyboardButton(text="← Меню", callback_data="menu")],
         ]
     )

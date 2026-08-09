@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
@@ -26,10 +27,10 @@ from keyboards import main_kb
 from services import cryptobot
 from services.plans import (
     PLANS_BY_CODE,
+    TIER_ICONS,
     TIER_NAMES,
+    TIER_ORDER,
     TIER_PERKS,
-    TIER_PLUS,
-    TIER_ULTRA,
     Plan,
     plans_for,
     tier_rank,
@@ -37,6 +38,17 @@ from services.plans import (
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+
+def _без_значка(перк: str) -> str:
+    """Перк без ведущего значка — для описания счёта, где эмодзи лишние.
+
+    Раньше значки срезались перечислением (`lstrip("👀🥷⭐🚀✨🚪 ")`), и каждый
+    новый перк приходилось дописывать в этот набор. Перки уровня Aurora (✉️ 📣
+    📈) и «🔮 Все расклады Таро» в него не попали и уезжали в счёт вместе со
+    значком. Срезаем всё, что не буква и не цифра, — набор больше не ведём.
+    """
+    return re.sub(r"^\W+", "", перк, flags=re.UNICODE)
 
 
 def _tier_pitch(tier: str) -> str:
@@ -50,18 +62,26 @@ def _tier_pitch(tier: str) -> str:
 
 
 def tiers_kb() -> InlineKeyboardMarkup:
-    """Выбор уровня — первый шаг покупки."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+    """Выбор уровня — первый шаг покупки.
+
+    Кнопки собираются циклом по линейке, а не перечисляются руками: пока
+    здесь стояли два литеральных блока, добавленный третий уровень (Aurora)
+    остался без кнопки — а веб и мини-апп за оплатой уходят именно сюда, и
+    купить верхний тариф было негде, кроме нативной сборки iOS.
+    """
+    кнопки = [
         [InlineKeyboardButton(
-            text=f"✨ Plus — от {min(p.price_per_month for p in plans_for(TIER_PLUS))} ₽/мес",
-            callback_data=f"tier:{TIER_PLUS}",
-        )],
-        [InlineKeyboardButton(
-            text=f"👑 Ultra — от {min(p.price_per_month for p in plans_for(TIER_ULTRA))} ₽/мес",
-            callback_data=f"tier:{TIER_ULTRA}",
-        )],
-        [InlineKeyboardButton(text="🏠 В меню", callback_data="menu")],
-    ])
+            text=(
+                f"{TIER_ICONS.get(tier, '•')} {TIER_NAMES[tier]} — "
+                f"от {min(p.price_per_month for p in plans_for(tier))} ₽/мес"
+            ),
+            callback_data=f"tier:{tier}",
+        )]
+        # Первый уровень бесплатный — покупать в нём нечего
+        for tier in TIER_ORDER[1:]
+    ]
+    кнопки.append([InlineKeyboardButton(text="🏠 В меню", callback_data="menu")])
+    return InlineKeyboardMarkup(inline_keyboard=кнопки)
 
 
 def periods_kb(tier: str) -> InlineKeyboardMarkup:
@@ -215,7 +235,7 @@ async def pay_stars(callback: CallbackQuery):
     # что именно куплено — сам платёж такой информации не несёт
     await callback.message.answer_invoice(
         title=f"Souldawn {plan.title}",
-        description=", ".join(p.lstrip("👀🥷⭐🚀✨🚪 ") for p in TIER_PERKS[plan.tier]),
+        description=", ".join(_без_значка(p) for p in TIER_PERKS[plan.tier]),
         payload=f"plan:{plan.code}",
         currency="XTR",  # Telegram Stars
         prices=[LabeledPrice(label=plan.title, amount=stars_for(plan))],
