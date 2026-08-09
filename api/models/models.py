@@ -274,6 +274,14 @@ class Match(Base):
     direct_answered: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+    #: Отправил ли инициатор своё письмо в ТЕКУЩЕМ раунде. Раунд — это одна
+    #: пара «письмо → ответ»: строка `Match` у пары одна и переиспользуется
+    #: (`services/direct_messages.start_direct_message`), поэтому «письмо уже
+    #: было» нельзя определить ни по существованию беседы, ни по её сообщениям
+    #: — старая закрытая переписка оставляет и то, и другое.
+    direct_letter_sent: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user1: Mapped["User"] = relationship(back_populates="matches1", foreign_keys=[user1_id])

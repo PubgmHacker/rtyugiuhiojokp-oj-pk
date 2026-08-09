@@ -21,6 +21,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
+from database.connection import async_session_factory
 from models.models import DeviceToken
 
 settings = get_settings()
@@ -124,7 +125,6 @@ async def _send_one(token: str, payload: dict, collapse_id: Optional[str]) -> Op
 
 
 async def send_to_user(
-    session: AsyncSession,
     user_id: str,
     title: str,
     body: str,
@@ -135,15 +135,27 @@ async def send_to_user(
 
     Возвращает число доставленных. Токены, которые Apple объявила мёртвыми,
     удаляются: иначе таблица копит мусор и каждый пуш тратится впустую.
+
+    Сессии здесь свои и короткие — по одной на чтение токенов и на удаление
+    мёртвых, а между ними соединения с БД не занято вовсе. Раньше сессию
+    передавал вызывающий, и она вместе с соединением из пула (10 + 20 на
+    инстанс) висела открытой весь разговор с Apple: до 10 секунд на
+    устройство, а устройств у человека бывает несколько. Тридцати
+    одновременных мэтчей хватало, чтобы выбрать пул и положить остальные
+    ручки API. Держать транзакцию тут и не нужно: пуш уходит после коммита
+    и ничьей транзакции не продолжает.
     """
     if not is_configured():
         return 0
 
-    result = await session.execute(
-        select(DeviceToken).where(DeviceToken.user_id == user_id)
-    )
-    devices = list(result.scalars().all())
-    if not devices:
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(DeviceToken.token).where(DeviceToken.user_id == user_id)
+        )
+        # Берём колонку, а не сущности: объекты, привязанные к закрытой
+        # сессии, дальше только мешают
+        tokens = [строка[0] for строка in result.all()]
+    if not tokens:
         return 0
 
     payload = {
@@ -157,25 +169,26 @@ async def send_to_user(
 
     delivered = 0
     dead: list[str] = []
-    for device in devices:
-        status = await _send_one(device.token, payload, collapse_id)
+    for token in tokens:
+        status = await _send_one(token, payload, collapse_id)
         if status == 200:
             delivered += 1
         elif status in (400, 410):
             # 410 Unregistered, 400 BadDeviceToken — приложение удалено
-            dead.append(device.token)
+            dead.append(token)
 
     if dead:
-        await session.execute(delete(DeviceToken).where(DeviceToken.token.in_(dead)))
+        async with async_session_factory() as session:
+            await session.execute(delete(DeviceToken).where(DeviceToken.token.in_(dead)))
+            await session.commit()
 
     return delivered
 
 
-async def notify_new_match(session: AsyncSession, user_id: str, partner_name: str, match_id: str) -> None:
+async def notify_new_match(user_id: str, partner_name: str, match_id: str) -> None:
     """Пуш о новом мэтче — best-effort, мэтч уже сохранён."""
     try:
         await send_to_user(
-            session,
             user_id,
             title="Взаимная симпатия",
             body=f"{partner_name} тоже вас лайкнул. Напишите первым.".strip()
@@ -189,7 +202,6 @@ async def notify_new_match(session: AsyncSession, user_id: str, partner_name: st
 
 
 async def notify_new_message(
-    session: AsyncSession,
     user_id: str,
     sender_name: str,
     text: str,
@@ -198,7 +210,6 @@ async def notify_new_message(
     """Пуш о новом сообщении — best-effort, сообщение уже сохранено."""
     try:
         await send_to_user(
-            session,
             user_id,
             title=sender_name or "Новое сообщение",
             body=text[:150] if text else "Прислал фото",

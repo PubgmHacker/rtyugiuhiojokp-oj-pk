@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -8,7 +9,7 @@ from sqlalchemy import select, and_, desc, func, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from database.connection import get_session
+from database.connection import async_session_factory, get_session
 from middleware.auth import get_current_user
 from models.models import User, Profile, Like, Match
 from models.schemas import (
@@ -25,11 +26,12 @@ from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
 from services.premium import current_tier
 from services.plans import superlikes_for, tier_allows
-from services.push import notify_new_match
+from services.push import is_configured, notify_new_match
 from utils import as_list
 
 router = APIRouter(prefix="/likes", tags=["likes"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _pair(a: str, b: str) -> tuple[str, str]:
@@ -167,15 +169,25 @@ async def create_like(
     if not target or target.is_banned:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    if data.type == "superlike" and not await _superlikes_left(session, user.id):
-        raise HTTPException(
-            status_code=429,
-            detail="Суперлайки на сегодня закончились",
-        )
-
     u1, u2 = _pair(user.id, data.target_id)
-    # Advisory-lock на пару: без него два встречных лайка в параллельных
+    # Два лока, и всегда в этом порядке: сначала личный, потом парный.
+    #
+    # Личный нужен суперлайкам: квота суточная и считается по всем целям сразу,
+    # поэтому парный лок её не защищает — два одновременных суперлайка РАЗНЫМ
+    # людям берут разные парные ключи, оба читают «использовано 0 из 1» и оба
+    # проходят. Платная вещь раздавалась бы вдвое.
+    #
+    # Парный нужен мэтчу: без него два встречных лайка в параллельных
     # транзакциях не видят друг друга (READ COMMITTED) и мэтч теряется навсегда.
+    #
+    # Порядок фиксирован глобально (личный → парный) и повторён в
+    # `services/direct_messages.start_direct_message`. Разный порядок захвата в
+    # двух путях — это классический дедлок: встречные запросы упёрлись бы друг
+    # в друга насмерть.
+    await session.execute(
+        sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+        {"k": f"dating:likes:{user.id}"},
+    )
     await session.execute(
         sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
         {"k": f"dating:pair:{u1}:{u2}"},
@@ -185,6 +197,20 @@ async def create_like(
         select(Like).where(and_(Like.liker_id == user.id, Like.liked_id == data.target_id))
     )
     existing = result.scalar_one_or_none()
+
+    # Квота суперлайков — уже под локом, и только для НОВОГО суперлайка:
+    # повторный запрос с тем же типом ничего не тратит, а его суперлайк уже
+    # лежит в подсчёте — проверяя и его, мы отказывали бы человеку в том, что
+    # он купил и получил
+    if (
+        data.type == "superlike"
+        and (existing is None or existing.type != "superlike")
+        and not await _superlikes_left(session, user.id)
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Суперлайки на сегодня закончились",
+        )
 
     # Новый лайк или апгрейд с pass — событие «вы понравились»
     notify_new_like = (
@@ -248,7 +274,21 @@ async def create_like(
     # взаимные лайки есть, а мэтча нет.
     match = await _find_match(session, user.id, data.target_id)
     is_new_match = False
-    if match and not match.is_active:
+    if match and match.kind == "direct":
+        # Беседа началась с платного письма, а теперь есть взаимные лайки —
+        # это обычный мэтч, и держать пару под правилом «одно письмо до
+        # ответа» больше нельзя: получатель уже сказал «да» лайком, а
+        # отправитель до этого молчал бы, пока тот не напишет первым.
+        #
+        # Флаги раунда (`direct_answered`, `direct_letter_sent`) НЕ трогаем: они
+        # читаются только у бесед типа "direct" и гасятся там, где раунд
+        # начинается заново, — в `start_direct_message`. Сбрасывать их и здесь
+        # значило бы завести второе место, где живёт то же правило, а такие
+        # пары в этом проекте расходятся.
+        match.kind = "match"
+        is_new_match = not match.is_active
+        match.is_active = True
+    elif match and not match.is_active:
         match.is_active = True
         is_new_match = True
     elif not match:
@@ -271,29 +311,38 @@ async def create_like(
         # Уведомление обоим в Telegram через бота
         await publish_new_match_for_bot(match_id, u1, u2)
         # И пуш в iOS-приложение — тем, кто зарегистрировал устройство
-        await _push_match_notifications(session, user.id, data.target_id, match_id)
+        await _push_match_notifications(user.id, data.target_id, match_id)
 
     return response
 
 
 async def _push_match_notifications(
-    session: AsyncSession,
     user_id: str,
     partner_id: str,
     match_id: str,
 ) -> None:
-    """Пуши обоим участникам мэтча: каждому — имя собеседника."""
-    result = await session.execute(
-        select(Profile.user_id, Profile.display_name).where(
-            Profile.user_id.in_([user_id, partner_id])
-        )
-    )
-    names = {row[0]: row[1] or "" for row in result.all()}
+    """Пуши обоим участникам мэтча: каждому — имя собеседника.
 
-    await notify_new_match(session, user_id, names.get(partner_id, ""), match_id)
-    await notify_new_match(session, partner_id, names.get(user_id, ""), match_id)
-    # Мёртвые токены могли быть вычищены при отправке
-    await session.commit()
+    Сессия своя и закрывается до разговора с Apple: сессия запроса держала бы
+    занятым соединение из пула всё время, пока отвечает APNs, — а мэтч к этому
+    моменту уже закоммичен, и продолжать его транзакцию незачем.
+    """
+    if not is_configured():
+        return
+    try:
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Profile.user_id, Profile.display_name).where(
+                    Profile.user_id.in_([user_id, partner_id])
+                )
+            )
+            names = {row[0]: row[1] or "" for row in result.all()}
+    except Exception as e:
+        logger.error(f"Match push names failed ({match_id}): {e}")
+        return
+
+    await notify_new_match(user_id, names.get(partner_id, ""), match_id)
+    await notify_new_match(partner_id, names.get(user_id, ""), match_id)
 
 
 @router.get("/received", response_model=list[UserProfile])

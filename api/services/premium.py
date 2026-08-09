@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.models import ProcessedPayment, Subscription
-from services.plans import TIER_FREE, TIER_PLUS, tier_rank
+from services.plans import TIER_FREE, TIER_PLUS, tier_from_plan, tier_rank
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +42,14 @@ async def is_premium(session: AsyncSession, user_id: str) -> bool:
 
 
 async def current_tier(session: AsyncSession, user_id: str) -> str:
-    """Действующий уровень подписки: free / plus / ultra.
+    """Действующий уровень подписки: free / plus / ultra / aurora.
 
     Истёкшая подписка — это free, поэтому срок проверяется здесь, а не в
     вызывающем коде: иначе каждое место пришлось бы помнить про expires_at.
 
-    Записи, сделанные до появления линейки, имеют plan="premium" — считаем их
-    Plus: это ровно то, что тогда продавалось.
+    Сам разбор значения (старый `plan="premium"` → Plus, испорченное → free)
+    живёт в `plans.tier_from_plan`: ранжирование деки читает уровни пачкой и
+    обязано понимать их точно так же.
     """
     result = await session.execute(
         select(Subscription.plan).where(and_(
@@ -59,13 +60,7 @@ async def current_tier(session: AsyncSession, user_id: str) -> str:
             ),
         ))
     )
-    plan = result.scalar_one_or_none()
-    if not plan or plan == TIER_FREE:
-        return TIER_FREE
-    if plan == "premium":
-        return TIER_PLUS
-    # Неизвестное значение не должно открывать платное: tier_rank вернёт 0
-    return plan if tier_rank(plan) > 0 else TIER_FREE
+    return tier_from_plan(result.scalar_one_or_none())
 
 
 async def activate_premium(

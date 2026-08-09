@@ -73,12 +73,13 @@ async def клиент(app, живая_база, monkeypatch):
     from models.models import User
     import routers.cases as cases_mod
     import routers.likes as likes_mod
+    import services.chat_delivery as delivery
 
     Session = живая_база["Session"]
 
     # pg_advisory_xact_lock есть только в Postgres. Подменяем ровно его, а не
     # всю работу с БД: сами блокировки проверяются в test_http_behavior.py
-    for мод in (likes_mod, cases_mod):
+    for мод in (likes_mod, cases_mod, delivery):
         настоящий = мод.sa_text
         монк = (lambda н: lambda sql: н("SELECT 1") if "advisory" in sql else н(sql))(настоящий)
         monkeypatch.setattr(мод, "sa_text", монк)
@@ -227,6 +228,14 @@ def ws_окружение(живая_база, monkeypatch):
     # raising=True намеренно: если имя в модуле переименуют, подмена молча
     # перестанет работать и тест начнёт проверять пустоту
     monkeypatch.setattr(delivery, "async_session_factory", Session)
+
+    # Запись сообщения берёт advisory-lock на беседу, а `hashtextextended`
+    # есть только в Postgres
+    настоящий = delivery.sa_text
+    monkeypatch.setattr(
+        delivery, "sa_text",
+        lambda sql: настоящий("SELECT 1") if "advisory" in sql else настоящий(sql),
+    )
 
     разослано: list[dict] = []
     доставлено = __import__("threading").Event()

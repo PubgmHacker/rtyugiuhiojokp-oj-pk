@@ -57,6 +57,13 @@ DENIED_LIMIT = DirectDenied("limit", "Письма без взаимности �
 DENIED_ONE_BEFORE_REPLY = DirectDenied(
     "awaiting_reply", "Вы уже написали — дождитесь ответа"
 )
+#: Письмо было и его закрыли, не ответив. Второй заход — это и есть спам, от
+#: которого защищает «одно письмо до ответа»: без этого отказа правило обходилось
+#: за два запроса — размэтч (его может позвать и сам отправитель) обнулял чат, а
+#: следующее письмо заводилось в ту же строку как новое.
+DENIED_CLOSED = DirectDenied(
+    "closed", "Переписку закрыли — написать снова нельзя"
+)
 
 
 def _pair(a: str, b: str) -> tuple[str, str]:
@@ -64,11 +71,18 @@ def _pair(a: str, b: str) -> tuple[str, str]:
 
 
 async def _direct_sent_today(session: AsyncSession, sender_id: str) -> int:
+    """Сколько писем этот человек отправил за сутки.
+
+    Считает по `initiator_id`, а НЕ по `kind == "direct"`. Разница видна ровно
+    в одном месте, зато дорогом: взаимный лайк поверх беседы-письма переводит
+    её в `kind="match"` (`routers/likes.py`), и фильтр по типу вернул бы
+    отправителю потраченное письмо обратно. Обычные мэтчи в подсчёт не лезут
+    сами собой — у них `initiator_id` пуст.
+    """
     since = datetime.now(timezone.utc) - timedelta(days=1)
     result = await session.execute(
         select(func.count(Match.id)).where(and_(
             Match.initiator_id == sender_id,
-            Match.kind == "direct",
             Match.created_at >= since,
         ))
     )
@@ -143,21 +157,34 @@ async def start_direct_message(
     Возвращает готовый `Match`, ЕЩЁ БЕЗ первого сообщения — его пишет вызывающий
     роутер через `services/chat_delivery.save_message`/`fan_out`, как и обычный
     чат. Здесь только создание переписки и учёт лимита писем — застолблённых
-    под advisory-lock `dating:direct:{sender_id}`, чтобы два параллельных
-    запроса не отправили два письма сверх суточной нормы.
+    под advisory-локами `dating:likes:{sender_id}` и `dating:pair:{u1}:{u2}`,
+    чтобы два параллельных запроса не отправили два письма сверх суточной нормы
+    и не создали строку пары одновременно со встречным лайком.
     """
     denied = await can_start_direct(session, sender_id, recipient_id)
     if denied:
         return denied
 
-    # Advisory-lock на отправителя: лимит суточный и личный, блокировка по
-    # паре здесь не нужна — гонка только между запросами одного и того же
-    # человека
+    # Два лока, в том же порядке, что и в `routers/likes.py`: сначала личный
+    # (суточный лимит писем — личный и считается по всем адресатам сразу),
+    # потом парный.
+    #
+    # Парный обязателен, хотя лимит личный: строку `Match` для этой пары заводит
+    # и встречный лайк. Без общего с ним ключа письмо и лайк создавали бы её
+    # одновременно — второй падал бы на `uq_match_pair` пятисоткой, причём
+    # именно в тот момент, когда пара сошлась.
+    #
+    # Порядок захвата един для обоих путей и менять его нельзя: разный порядок
+    # — это дедлок между письмом и встречным лайком.
     await session.execute(
         sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
-        {"k": f"dating:direct:{sender_id}"},
+        {"k": f"dating:likes:{sender_id}"},
     )
-
+    u1, u2 = _pair(sender_id, recipient_id)
+    await session.execute(
+        sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+        {"k": f"dating:pair:{u1}:{u2}"},
+    )
     # Повторная проверка внутри лока: до захвата лока могла проскочить другая
     # беседа с тем же получателем в параллельном запросе
     existing = await find_match(session, sender_id, recipient_id)
@@ -168,6 +195,18 @@ async def start_direct_message(
         # Лимит второй раз не списываем: это не новое письмо, а продолжение
         # того же самого
         return existing
+    if (
+        existing
+        and not existing.is_active
+        and existing.kind == "direct"
+        and existing.initiator_id == sender_id
+        and not existing.direct_answered
+    ):
+        # Письмо было, ответа не было, беседу закрыли. Реактивировать её как
+        # новое письмо значит обойти «одно письмо до ответа» в два запроса:
+        # `unmatch` доступен обеим сторонам, и отправитель мог позвать его сам.
+        # Закрытая без ответа переписка — это и есть ответ.
+        return DENIED_CLOSED
 
     tier = await current_tier(session, sender_id)
     per_day = direct_messages_per_day(tier)
@@ -175,7 +214,6 @@ async def start_direct_message(
     if used >= per_day:
         return DENIED_LIMIT
 
-    u1, u2 = _pair(sender_id, recipient_id)
     if existing:
         # Была неактивная (например, размэтч) — реактивируем как direct,
         # а не плодим вторую строку: unique constraint на (user1_id, user2_id)
@@ -183,12 +221,20 @@ async def start_direct_message(
         existing.kind = "direct"
         existing.initiator_id = sender_id
         existing.direct_answered = False
+        # Новый раунд — письмо этого раунда ещё не отправлено. Без сброса
+        # старый флаг отказал бы отправителю в первом же письме
+        existing.direct_letter_sent = False
+        # `created_at` — не «когда пара познакомилась», а «когда списано
+        # письмо»: по нему считает `_direct_sent_today`. Со старой датой
+        # реактивированная беседа выпадала из суточного окна, и суточный лимит
+        # обходился размэтчем — тем же приёмом, что и правило одного письма
+        existing.created_at = datetime.now(timezone.utc)
         match = existing
     else:
         match = Match(
             user1_id=u1, user2_id=u2,
             kind="direct", initiator_id=sender_id, direct_answered=False,
-            is_active=True,
+            direct_letter_sent=False, is_active=True,
         )
         session.add(match)
     await session.flush()
@@ -200,28 +246,43 @@ async def can_send_message(
 ) -> Optional[DirectDenied]:
     """Можно ли отправить СЛЕДУЮЩЕЕ сообщение в уже существующей беседе.
 
-    Встраивается в общий путь отправки (WS и HTTP через `save_message`), а не
-    в отдельную ветку: обычный `match` пропускает без проверок, `direct` —
-    только если отвечает получатель или отправитель ещё не писал.
+    Живёт в общем пути отправки (`chat_delivery.save_message`), а не в отдельной
+    ветке чата: обычный `match` пропускает без проверок, `direct` — только если
+    отвечает получатель или отправитель ещё ни разу не писал.
+
+    «Письмо уже было» — это флаг раунда `direct_letter_sent`, а не факт
+    существования беседы и не COUNT по её сообщениям. Оба «очевидных» варианта
+    уже пробовались и оба неверны. «Беседа есть — значит письмо ушло» нельзя
+    поставить на общий путь отправки: правило запретило бы и первое письмо, а
+    `POST /matches/direct` обходил его целиком — `start_direct_message`
+    возвращал существующую беседу, и роутер писал в неё без единой проверки.
+    COUNT по сообщениям ломается на второй итерации: строка `Match` у пары одна
+    и переиспользуется, поэтому сообщения давно закрытой переписки лежат в ней
+    же и отказывают отправителю в первом письме нового раунда.
     """
     if match.kind != "direct":
         return None
     if match.direct_answered:
         return None
-    if sender_id != match.initiator_id:
-        # Получатель отвечает — это и есть тот самый первый ответ
-        return None
-
-    # Инициатор пишет снова, ответа ещё не было: одно письмо уже ушло раньше,
-    # раз beседа создана — второе до ответа запрещено
-    return DENIED_ONE_BEFORE_REPLY
+    if match.direct_letter_sent and sender_id == match.initiator_id:
+        return DENIED_ONE_BEFORE_REPLY
+    return None
 
 
 async def mark_answered_if_needed(match: Match, sender_id: str) -> None:
-    """Пометить, что получатель ответил — вызывается при сохранении сообщения.
+    """Отметить в беседе факт этого сообщения — зовётся при каждом сохранении.
 
-    Не коммитит сама: сообщение и флаг сохраняются одной транзакцией с
-    записью в `save_message`.
+    Два флага одного раунда: письмо инициатора закрывает ему право писать
+    дальше, ответ получателя снимает ограничение совсем. Ставятся здесь, в
+    одном месте и в одной транзакции с записью сообщения (`save_message`), —
+    разъехаться с фактом сообщения они не должны ни на одном из путей
+    отправки, а их четыре.
+
+    Не коммитит сама: коммит делает `save_message` вместе со вставкой.
     """
-    if match.kind == "direct" and not match.direct_answered and sender_id != match.initiator_id:
+    if match.kind != "direct" or match.direct_answered:
+        return
+    if sender_id == match.initiator_id:
+        match.direct_letter_sent = True
+    else:
         match.direct_answered = True

@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid
@@ -29,7 +28,6 @@ from services.token_revocation import is_revoked
 from models.models import Block, User, VoiceCall
 from models.schemas import VoiceIceServers
 from services.ws_manager import manager
-from services.realtime import get_redis
 from services.voice import (
     ICE_SERVERS,
     invite,
@@ -75,50 +73,30 @@ async def websocket_roulette(websocket: WebSocket):
     partner_id: str | None = None
     started_at: datetime | None = None
 
-    async def listen_invites() -> None:
-        """Слушать личный канал приглашений.
+    async def on_invite(событие: dict) -> None:
+        """Приглашение из личного канала.
 
         Тот, кто ждёт в очереди, узнаёт о найденной паре только так: на его
         инстансе комнаты звонка ещё нет, и подписаться на неё заранее нельзя —
         call_id придумывает тот, кто нашёл.
+
+        Раньше здесь висел собственный `r.pubsub()` на КАЖДЫЙ открытый сокет
+        рулетки — то же, что было с комнатами чата: 10 000 ждущих = 10 000
+        подключений к Redis из одного процесса. Теперь подписка едет на общем
+        читателе `RoomManager` (services/ws_manager.py).
         """
         nonlocal call_id, partner_id, started_at
 
-        r = await get_redis()
-        pubsub = r.pubsub()
-        await pubsub.subscribe(personal_channel(user_id))
-        try:
-            async for message in pubsub.listen():
-                if message.get("type") != "message":
-                    continue
-                payload = message.get("data")
-                if isinstance(payload, bytes):
-                    payload = payload.decode()
-                try:
-                    событие = json.loads(payload)
-                except json.JSONDecodeError:
-                    continue
+        if событие.get("type") != "matched":
+            return
 
-                if событие.get("type") != "matched":
-                    continue
+        call_id = событие["call_id"]
+        partner_id = событие.get("partner_id")
+        started_at = datetime.now(timezone.utc)
+        await manager.connect(call_id, websocket, user_id)
+        await websocket.send_json(событие)
 
-                call_id = событие["call_id"]
-                started_at = datetime.now(timezone.utc)
-                await manager.connect(call_id, websocket, user_id)
-                await websocket.send_json(событие)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error(f"Слушатель приглашений упал ({user_id}): {e}")
-        finally:
-            # Без отписки утекает соединение к Redis на каждый открытый сокет
-            try:
-                await pubsub.unsubscribe(personal_channel(user_id))
-                await pubsub.close()
-            except Exception:
-                pass
-
-    invites_task = asyncio.create_task(listen_invites())
+    await manager.subscribe_channel(personal_channel(user_id), on_invite)
 
     async def leave_call() -> None:
         """Разорвать текущий звонок и сообщить собеседнику."""
@@ -238,10 +216,7 @@ async def websocket_roulette(websocket: WebSocket):
         # которого будут соединять живых людей
         await remove_waiting(user_id)
         await leave_call()
-        # Слушатель приглашений держит подписку на Redis — без отмены она
-        # живёт после закрытия сокета и течёт по соединению на каждый заход
-        invites_task.cancel()
-        try:
-            await invites_task
-        except (asyncio.CancelledError, Exception):
-            pass
+        # Подписка на личный канал живёт на общем читателе процесса — без
+        # снятия она переживёт закрытый сокет, и приглашения будут уходить
+        # в обработчик, у которого сокета уже нет
+        await manager.unsubscribe_channel(personal_channel(user_id), on_invite)

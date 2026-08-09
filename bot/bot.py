@@ -17,7 +17,7 @@ from handlers import registration, dating, matches, premium, referral, account
 from keyboards import main_kb
 from middlewares.registration import RegistrationMiddleware
 from middlewares.throttle import ThrottleMiddleware
-from services.redis_subscriber import start_redis_subscriber
+from services.redis_subscriber import close_redis, supervise_redis_subscriber
 import texts as T
 from texts import welcome
 
@@ -223,8 +223,10 @@ async def main():
     # Start health server
     await start_health_server()
 
-    # Start Redis subscriber (для real-time мэтч-уведомлений)
-    redis_task = asyncio.create_task(start_redis_subscriber(bot))
+    # Start Redis subscriber (для real-time мэтч-уведомлений).
+    # Под присмотром: обрыв подписки Redis'ом раньше означал, что уведомления
+    # в Telegram останавливались до перезапуска бота, и молча.
+    redis_task = asyncio.create_task(supervise_redis_subscriber(bot))
 
     # Start polling
     logger.info(f"Souldawn Dating Bot @{BOT_USERNAME} started!")
@@ -236,6 +238,7 @@ async def main():
         )
     finally:
         redis_task.cancel()
+        await close_redis()
         await bot.session.close()
 
 

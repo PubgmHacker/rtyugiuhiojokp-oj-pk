@@ -224,6 +224,45 @@ def boosts_per_day(tier: str) -> int:
     return BOOSTS_PER_DAY[TIER_ORDER[tier_rank(tier)]]
 
 
+#: Прибавка к месту в деке. Продаётся дословно: «Приоритет в выдаче» — только
+#: у Ultra, «Максимальный приоритет» — у Aurora. У Plus приоритета в перках
+#: нет, поэтому и здесь ноль.
+#:
+#: Раньше в `services/matching.py` стояла одна константа на всех, кто вообще
+#: платит (`Subscription.plan != "free"` → `score += 25`): Plus получал то, что
+#: ему не продавали, а Aurora — ровно то же, что Ultra, хотя стоит вдвое
+#: дороже именно за «максимальный». Слово в витрине должно отличаться числом.
+DECK_PRIORITY: dict[str, int] = {
+    TIER_FREE: 0,
+    TIER_PLUS: 0,
+    TIER_ULTRA: 25,
+    TIER_AURORA: 45,
+}
+
+
+def deck_priority(tier: str) -> int:
+    """Сколько очков ранжирования даёт уровень. Незнакомый — ноль."""
+    return DECK_PRIORITY[TIER_ORDER[tier_rank(tier)]]
+
+
+def tier_from_plan(plan: str | None) -> str:
+    """Уровень по значению `Subscription.plan`, без обращения к БД.
+
+    Одно место на весь проект: `current_tier` спрашивает срок и зовёт эту
+    функцию, а ранжирование деки читает уровни пачкой одним запросом и зовёт
+    её же. Пока разбор жил внутри `current_tier`, обойти его (как делала дека)
+    означало молча потерять и совместимость со старым `plan="premium"`, и
+    защиту от испорченного значения.
+    """
+    if not plan or plan == TIER_FREE:
+        return TIER_FREE
+    if plan == "premium":
+        # Записи до появления линейки: тогда продавалось ровно то, что сейчас Plus
+        return TIER_PLUS
+    # Неизвестное значение не должно открывать платное
+    return plan if tier_rank(plan) > 0 else TIER_FREE
+
+
 def superlikes_for(tier: str) -> int:
     return TIERS[TIER_ORDER[tier_rank(tier)]].superlikes
 

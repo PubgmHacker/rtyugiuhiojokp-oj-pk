@@ -12,9 +12,7 @@ from middleware.auth import verify_access_token
 from models.models import Match, Message, User
 from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
-from services.chat_delivery import fan_out, save_message
-from services.direct_messages import can_send_message, mark_answered_if_needed
-from services.public_profile import наша_картинка
+from services.chat_delivery import ДоставкаОтклонена, fan_out, save_message
 from services.token_revocation import is_revoked
 
 logger = logging.getLogger(__name__)
@@ -137,17 +135,6 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             if not text and not image_url:
                 continue
 
-            # Картинка принимается только из нашего хранилища. Пакет собирается
-            # клиентом, и в обход интерфейса (загрузки фото в чат в нём нет)
-            # сюда можно было положить ссылку на что угодно: она показывалась
-            # собеседнику как <img>, не увидев ни AI-модерации, ни санитайзера
-            if not наша_картинка(image_url):
-                await websocket.send_json({
-                    "type": "rejected",
-                    "reason": "Картинку можно отправить только загрузкой",
-                })
-                continue
-
             # Личный чат — самый объёмный канал, и до сих пор единственный
             # немодерируемый: bio, текст лайка и сообщения в комнатах
             # проверяются, а здесь можно было писать что угодно. Заблокировать
@@ -164,24 +151,16 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
                     })
                     continue
 
-            # "Одно письмо до ответа" в direct-беседах: проверяем свежим
-            # состоянием мэтча (перечитанным здесь же, а не значением на
-            # момент коннекта), а не отдельной веткой чата — тот же путь, что
-            # у HTTP-отправки (routers/matches.py:post_message)
-            async with async_session_factory() as check_session:
-                result = await check_session.execute(select(Match).where(Match.id == match_id))
-                fresh_match = result.scalar_one_or_none()
-                if fresh_match is None:
-                    await websocket.close(code=4004, reason="Match not found")
-                    break
-                denied = await can_send_message(check_session, fresh_match, user_id)
-                if denied:
-                    await websocket.send_json({"type": "rejected", "reason": denied.detail})
-                    continue
-                await mark_answered_if_needed(fresh_match, user_id)
-                await check_session.commit()
-
-            payload = await save_message(match_id, user_id, text, image_url)
+            # Правила чата (чужая картинка, «одно письмо до ответа») проверяет
+            # `save_message` — в одной транзакции с записью и под локом на
+            # беседу. Здесь их было не удержать: сокет проверял свежий мэтч
+            # отдельной сессией, и между проверкой и вставкой успевал пройти
+            # второй кадр из того же соединения
+            try:
+                payload = await save_message(match_id, user_id, text, image_url)
+            except ДоставкаОтклонена as отказ:
+                await websocket.send_json({"type": "rejected", "reason": отказ.detail})
+                continue
             if payload is None:
                 await websocket.close(code=4004, reason="Match is no longer active")
                 break

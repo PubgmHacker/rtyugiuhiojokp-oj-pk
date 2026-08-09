@@ -729,7 +729,12 @@ async def test_без_ключей_отправка_не_ходит_в_сеть(
         raise AssertionError("не должны обращаться к APNs без ключей")
 
     monkeypatch.setattr(push, "_send_one", _fail)
-    assert await push.send_to_user(None, "user-1", "t", "b") == 0
+
+    async def _нет_сессий(*_а, **_к):
+        raise AssertionError("без ключей незачем ходить и в БД")
+
+    monkeypatch.setattr(push, "async_session_factory", _нет_сессий)
+    assert await push.send_to_user("user-1", "t", "b") == 0
 
 
 async def test_мёртвые_токены_удаляются(monkeypatch):
@@ -743,27 +748,43 @@ async def test_мёртвые_токены_удаляются(monkeypatch):
     ):
         monkeypatch.setattr(push.settings, name, value)
 
-    устройства = [
-        type("D", (), {"token": "живой", "user_id": "user-1"})(),
-        type("D", (), {"token": "мёртвый", "user_id": "user-1"})(),
-    ]
+    токены = ["живой", "мёртвый"]
 
     удалено: list = []
+    открыто = 0
+    закрыто = 0
 
     class _FakeSession:
         async def execute(self, stmt):
             if stmt.__class__.__name__ == "Delete":
                 удалено.append(stmt)
                 return None
-            return type("R", (), {"scalars": lambda _s: type(
-                "S", (), {"all": lambda _x: устройства})()})()
+            return type("R", (), {"all": lambda _s: [(т,) for т in токены]})()
+
+        async def commit(self):
+            return None
+
+    class _Фабрика:
+        async def __aenter__(self):
+            nonlocal открыто
+            открыто += 1
+            return _FakeSession()
+
+        async def __aexit__(self, *_а):
+            nonlocal закрыто
+            закрыто += 1
+            return False
 
     async def _send(token, payload, collapse_id):
+        # Сессия обязана быть закрыта к моменту разговора с Apple: соединение
+        # из пула, занятое на 10 с ожидания APNs, — это тот самый баг
+        assert открыто == закрыто, "сессия открыта во время отправки в APNs"
         return 200 if token == "живой" else 410
 
     monkeypatch.setattr(push, "_send_one", _send)
+    monkeypatch.setattr(push, "async_session_factory", lambda: _Фабрика())
 
-    доставлено = await push.send_to_user(_FakeSession(), "user-1", "Мэтч", "текст")
+    доставлено = await push.send_to_user("user-1", "Мэтч", "текст")
 
     assert доставлено == 1
     assert len(удалено) == 1, "мёртвый токен должен быть удалён"
@@ -779,8 +800,8 @@ async def test_сбой_apns_не_ломает_мэтч(monkeypatch):
     monkeypatch.setattr(push, "send_to_user", _boom)
 
     # Не должно бросить
-    await push.notify_new_match(None, "user-1", "Аня", "match-1")
-    await push.notify_new_message(None, "user-1", "Аня", "привет", "match-1")
+    await push.notify_new_match("user-1", "Аня", "match-1")
+    await push.notify_new_message("user-1", "Аня", "привет", "match-1")
 
 
 def test_клиент_регистрирует_устройство_после_входа():
@@ -3383,7 +3404,14 @@ def test_индекс_деки_совпадает_с_условием_выбор
 def test_приглашение_доходит_между_инстансами():
     """Приглашение публиковалось «в комнату» звонка, но на другом инстансе
     комнаты ещё нет и подписчиков у неё тоже — событие уходило в пустоту, и
-    пара не собиралась. Теперь у каждого свой канал, и ждущий слушает его."""
+    пара не собиралась. Теперь у каждого свой канал, и ждущий слушает его.
+
+    Раньше каждый сокет рулетки поднимал свой `r.pubsub()` — 10 000 ждущих
+    держали 10 000 подключений к Redis из одного процесса. В audit #8
+    подписка перенесена на общего читателя `RoomManager`: `subscribe_channel`
+    вместо `invites_task = asyncio.create_task(listen_invites())`. Суть та же,
+    форма — другая.
+    """
     import inspect
 
     from routers import voice
@@ -3394,22 +3422,27 @@ def test_приглашение_доходит_между_инстансами()
 
     сокет = inspect.getsource(voice.websocket_roulette)
     # Ждущий подписан заранее — иначе он не узнает о найденной паре
-    assert "listen_invites" in сокет
-    assert "pubsub.subscribe" in сокет
+    assert "subscribe_channel" in сокет
+    assert "personal_channel(user_id)" in сокет
     # Мёртвого события "invite", которое никто не слушал, больше нет
     assert '"invite"' not in сокет
 
 
 def test_подписка_на_приглашения_отменяется():
     """Слушатель держит соединение к Redis: без отмены оно живёт после
-    закрытия сокета и течёт по одному на каждый заход в рулетку."""
+    закрытия сокета и течёт по одному на каждый заход в рулетку.
+
+    Раньше отменялась задача `invites_task.cancel()`. Теперь слушатель общий,
+    задачи нет, но снятие подписки обязано быть: `unsubscribe_channel` в
+    `finally`.
+    """
     import inspect
 
     from routers import voice
 
     сокет = inspect.getsource(voice.websocket_roulette)
-    assert "invites_task.cancel()" in сокет
-    assert "pubsub.unsubscribe" in сокет
+    assert "unsubscribe_channel" in сокет
+    assert "personal_channel(user_id)" in сокет
 
 
 def test_собеседник_известен_и_на_него_можно_пожаловаться():

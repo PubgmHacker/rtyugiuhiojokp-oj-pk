@@ -46,8 +46,12 @@ export default function Plans() {
         const plans = await getPlans();
         if (cancelled) return;
         setData(plans);
-        // Уже подписанному показываем его уровень, а не младший
-        if (plans.current_tier === "ultra") setTier("ultra");
+        // Уже подписанному показываем его уровень, а не младший. Проверяем по
+        // списку, а не сравнением с "ultra": пока здесь стояло одно имя, Aurora
+        // открывалась на вкладке Plus — верхний тариф выглядел как «не куплен».
+        if ((PAID_TIERS as readonly string[]).includes(plans.current_tier)) {
+          setTier(plans.current_tier);
+        }
       } catch {
         if (!cancelled) setMessage("Не удалось загрузить тарифы");
       }

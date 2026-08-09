@@ -1,75 +1,222 @@
 {
-  "identifier" : "8A5F2C10",
-  "nonRenewingSubscriptions" : [ ],
-  "products" : [ ],
-  "settings" : {
-    "_applicationInternalID" : "1234567890",
-    "_developerTeamID" : "TEAMID0000",
-    "_failTransactionsEnabled" : false,
-    "_lastSynchronizedDate" : 776000000,
-    "_locale" : "ru_RU",
-    "_storefront" : "RUS",
-    "_storeKitErrors" : [ ]
+  "identifier": "8A5F2C10",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_applicationInternalID": "1234567890",
+    "_developerTeamID": "TEAMID0000",
+    "_failTransactionsEnabled": false,
+    "_lastSynchronizedDate": 776000000,
+    "_locale": "ru_RU",
+    "_storeKitErrors": [],
+    "_storefront": "RUS"
   },
-  "subscriptionGroups" : [
+  "subscriptionGroups": [
     {
-      "id" : "21390971",
-      "localizations" : [
+      "id": "21390971",
+      "localizations": [
         {
-          "description" : "",
-          "displayName" : "Souldawn Premium",
-          "locale" : "ru_RU"
+          "description": "",
+          "displayName": "Souldawn",
+          "locale": "ru_RU"
         }
       ],
-      "name" : "Premium",
-      "subscriptions" : [
+      "name": "Souldawn",
+      "subscriptions": [
         {
-          "adHocOffers" : [ ],
-          "codeOffers" : [ ],
-          "displayPrice" : "299",
-          "familyShareable" : false,
-          "groupNumber" : 1,
-          "internalID" : "6F3A1B22",
-          "introductoryOffer" : null,
-          "localizations" : [
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "599",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "79B46597",
+          "introductoryOffer": null,
+          "localizations": [
             {
-              "description" : "Инкогнито, приоритет в выдаче и 5 суперлайков в день",
-              "displayName" : "Premium на месяц",
-              "locale" : "ru_RU"
+              "description": "Всё из Ultra, Письма без взаимного лайка — 10 в день",
+              "displayName": "Aurora на месяц",
+              "locale": "ru_RU"
             }
           ],
-          "productID" : "com.souldawn.dating.premium.monthly",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Premium Monthly",
-          "subscriptionGroupID" : "21390971",
-          "type" : "RecurringSubscription"
+          "productID": "com.souldawn.dating.aurora.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Aurora P1M",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
         },
         {
-          "adHocOffers" : [ ],
-          "codeOffers" : [ ],
-          "displayPrice" : "2390",
-          "familyShareable" : false,
-          "groupNumber" : 1,
-          "internalID" : "9C4D7E15",
-          "introductoryOffer" : null,
-          "localizations" : [
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "1490",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "F009BF90",
+          "introductoryOffer": null,
+          "localizations": [
             {
-              "description" : "Год Premium со скидкой относительно месячной подписки",
-              "displayName" : "Premium на год",
-              "locale" : "ru_RU"
+              "description": "Всё из Ultra, Письма без взаимного лайка — 10 в день",
+              "displayName": "Aurora на 3 мес.",
+              "locale": "ru_RU"
             }
           ],
-          "productID" : "com.souldawn.dating.premium.yearly",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Premium Yearly",
-          "subscriptionGroupID" : "21390971",
-          "type" : "RecurringSubscription"
+          "productID": "com.souldawn.dating.aurora.quarterly",
+          "recurringSubscriptionPeriod": "P3M",
+          "referenceName": "Aurora P3M",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "4990",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "098DBC16",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Всё из Ultra, Письма без взаимного лайка — 10 в день",
+              "displayName": "Aurora на 12 мес.",
+              "locale": "ru_RU"
+            }
+          ],
+          "productID": "com.souldawn.dating.aurora.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Aurora P1Y",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "299",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "7FC6AA15",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Всё из Plus, Кто заходил в вашу анкету",
+              "displayName": "Ultra на месяц",
+              "locale": "ru_RU"
+            }
+          ],
+          "productID": "com.souldawn.dating.ultra.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Ultra P1M",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "749",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "9A4736AD",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Всё из Plus, Кто заходил в вашу анкету",
+              "displayName": "Ultra на 3 мес.",
+              "locale": "ru_RU"
+            }
+          ],
+          "productID": "com.souldawn.dating.ultra.quarterly",
+          "recurringSubscriptionPeriod": "P3M",
+          "referenceName": "Ultra P3M",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "2590",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "1B51083B",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Всё из Plus, Кто заходил в вашу анкету",
+              "displayName": "Ultra на 12 мес.",
+              "locale": "ru_RU"
+            }
+          ],
+          "productID": "com.souldawn.dating.ultra.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Ultra P1Y",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "149",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "67C9F4C4",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Видно, кто вас лайкнул, Режим инкогнито",
+              "displayName": "Plus на месяц",
+              "locale": "ru_RU"
+            }
+          ],
+          "productID": "com.souldawn.dating.plus.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Plus P1M",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "379",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "7DD56253",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Видно, кто вас лайкнул, Режим инкогнито",
+              "displayName": "Plus на 3 мес.",
+              "locale": "ru_RU"
+            }
+          ],
+          "productID": "com.souldawn.dating.plus.quarterly",
+          "recurringSubscriptionPeriod": "P3M",
+          "referenceName": "Plus P3M",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "1290",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "EF41E379",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Видно, кто вас лайкнул, Режим инкогнито",
+              "displayName": "Plus на 12 мес.",
+              "locale": "ru_RU"
+            }
+          ],
+          "productID": "com.souldawn.dating.plus.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Plus P1Y",
+          "subscriptionGroupID": "21390971",
+          "type": "RecurringSubscription"
         }
       ]
     }
   ],
-  "version" : {
-    "major" : 4,
-    "minor" : 0
+  "version": {
+    "major": 4,
+    "minor": 0
   }
 }

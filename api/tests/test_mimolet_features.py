@@ -61,11 +61,12 @@ async def клиент(app, живая_база, monkeypatch):
     from models.models import User
     import routers.cases as cases_mod
     import routers.likes as likes_mod
+    import services.chat_delivery as delivery
     import services.realtime as realtime_mod
 
     Session = живая_база["Session"]
 
-    for мод in (likes_mod, cases_mod):
+    for мод in (likes_mod, cases_mod, delivery):
         настоящий = мод.sa_text
         монк = (lambda н: lambda sql: н("SELECT 1") if "advisory" in sql else н(sql))(настоящий)
         monkeypatch.setattr(мод, "sa_text", монк)

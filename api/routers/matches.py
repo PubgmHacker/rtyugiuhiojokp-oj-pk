@@ -14,10 +14,10 @@ from models.schemas import (
 )
 from services.ai_matchmaker import generate_icebreakers
 from services.ai_moderation import log_moderation, moderate_text
-from services.chat_delivery import fan_out, reel_preview, save_message
-from services.direct_messages import (
-    can_send_message, direct_quota_left, start_direct_message,
+from services.chat_delivery import (
+    ДоставкаОтклонена, fan_out, reel_preview, save_message,
 )
+from services.direct_messages import direct_quota_left, start_direct_message
 from services.plans import (
     FEATURE_MIN_TIER,
     TIERS,
@@ -226,16 +226,12 @@ async def post_message(
     и сокет: раньше в этом проекте парные пути расходились именно так — второй
     источник сообщения не повторял фан-аут и собеседник ничего не получал.
 
-    Проверка "одно письмо до ответа" (`can_send_message`) стоит здесь же, до
-    вызова `save_message`, и одинаково действует что для обычного мэтча
-    (пропускает всегда), что для direct-переписки.
+    Правила отправки («одно письмо до ответа», чужая картинка) роутер не
+    проверяет сам — они внутри `save_message`, в одной транзакции с записью.
+    Здесь только перевод отказа в HTTP-код.
     """
     match = await _get_own_match(session, match_id, user.id)
     partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
-
-    denied = await can_send_message(session, match, user.id)
-    if denied:
-        raise HTTPException(status_code=403, detail=denied.detail)
 
     text = str(data.get("text", "")).strip()[:2000]
     image_url = data.get("image_url")
@@ -248,15 +244,18 @@ async def post_message(
         if verdict["blocked"]:
             raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
 
-    # Ответ получателя снимает ограничение "одно письмо до ответа" — фиксируем
-    # ДО save_message, чтобы попасть в ту же транзакцию, что и само сообщение
-    from services.direct_messages import mark_answered_if_needed
-    await mark_answered_if_needed(match, user.id)
+    # Мэтч читался этой сессией, а `save_message` пишет своей: без коммита её
+    # транзакция не увидит незакоммиченных изменений (например, флага ответа)
+    await session.commit()
 
-    payload = await save_message(match_id, user.id, text, image_url)
+    try:
+        payload = await save_message(match_id, user.id, text, image_url)
+    except ДоставкаОтклонена as отказ:
+        # Чужая ссылка — ошибка запроса, остальное — запрет по правилам чата
+        код = 400 if отказ.code == "foreign_image" else 403
+        raise HTTPException(status_code=код, detail=отказ.detail)
     if payload is None:
         raise HTTPException(status_code=404, detail="Чат не найден")
-    await session.commit()
 
     await fan_out(payload, match_id, user.id, partner_id, text)
     return payload
@@ -311,7 +310,13 @@ async def send_direct_message(
     # через async_session_factory, а не через эту Depends-сессию) — если не
     # закоммитить здесь, только что созданный Match в ней не виден
     await session.commit()
-    payload = await save_message(match_id, user.id, text)
+    try:
+        payload = await save_message(match_id, user.id, text)
+    except ДоставкаОтклонена as отказ:
+        # Тут ловится второе письмо в уже заведённую беседу: `start_direct_message`
+        # переиспользует её и лимит не списывает, так что без этой проверки путь
+        # давал верхнему тарифу безлимитный канал к молчащему человеку
+        raise HTTPException(status_code=403, detail=отказ.detail)
     if payload is None:
         raise HTTPException(status_code=404, detail="Чат не найден")
 

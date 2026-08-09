@@ -103,6 +103,13 @@ async def lifespan(app: FastAPI):
     logger.info("SOULDAWN DATING API shutting down...")
     from services.push import close as close_push
     from services.realtime import _redis
+
+    # Читатель комнат живёт на том же соединении с Redis. Гасим его ДО
+    # закрытия соединения: иначе задача проснётся на мёртвом сокете и
+    # уйдёт в цикл переподключения уже во время остановки процесса.
+    from services.ws_manager import manager as room_manager
+    await room_manager.aclose()
+
     if _redis:
         await _redis.close()
     await close_push()

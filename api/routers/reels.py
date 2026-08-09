@@ -44,7 +44,9 @@ from models.schemas import (
 )
 from routers.rooms import check_flood
 from services.ai_moderation import log_moderation, moderate_image, moderate_text
-from services.chat_delivery import REEL_FALLBACK_TEXT, fan_out, save_message
+from services.chat_delivery import (
+    REEL_FALLBACK_TEXT, ДоставкаОтклонена, fan_out, save_message,
+)
 from services.image_sanitizer import ImageRejected, sanitize_image
 from services.public_profile import публичный_возраст
 from services.r2_storage import delete_photo_from_r2, upload_photo_to_r2
@@ -684,10 +686,15 @@ async def forward_reel(
         partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
 
         # Через общий сервис, а не своим session.add: иначе собеседник с
-        # открытым чатом не получит события, а офлайн — ни пуша, ни Telegram
-        payload = await save_message(
-            data.match_id, user.id, caption, reel_id=reel_id,
-        )
+        # открытым чатом не получит события, а офлайн — ни пуша, ни Telegram.
+        # Он же проверяет правила: пересылка ролика — такое же сообщение, и
+        # обходить ею лимит «одно письмо до ответа» нельзя
+        try:
+            payload = await save_message(
+                data.match_id, user.id, caption, reel_id=reel_id,
+            )
+        except ДоставкаОтклонена as отказ:
+            raise HTTPException(status_code=403, detail=отказ.detail)
         if payload is None:
             raise HTTPException(status_code=404, detail="Чат не найден")
         await fan_out(

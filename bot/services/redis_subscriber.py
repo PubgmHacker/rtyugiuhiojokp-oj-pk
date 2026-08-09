@@ -10,9 +10,28 @@ from config import REDIS_URL
 
 logger = logging.getLogger(__name__)
 
+#: Один клиент на процесс — как в `api/services/realtime.py`. Раньше здесь
+#: стоял `redis.from_url` прямо в функции, и каждая публикация заводила НОВЫЙ
+#: клиент с новым пулом соединений, который никто не закрывал. Публикация
+#: происходит на каждое сообщение в чате (`handlers/matches.py`), так что бот
+#: съедал по TCP-соединению на сообщение и упирался в `maxclients` Redis —
+#: после чего переставали ходить вообще все события, включая мэтчи.
+_redis: redis.Redis | None = None
+
 
 async def _get_redis() -> redis.Redis:
-    return redis.from_url(REDIS_URL, decode_responses=True)
+    global _redis
+    if _redis is None:
+        _redis = redis.from_url(REDIS_URL, decode_responses=True)
+    return _redis
+
+
+async def close_redis() -> None:
+    """Закрыть общий клиент — зовётся при остановке бота."""
+    global _redis
+    if _redis is not None:
+        await _redis.aclose()
+        _redis = None
 
 
 async def publish_match_event(match_id: str, user1_id: str, user2_id: str):
@@ -94,7 +113,35 @@ async def start_redis_subscriber(bot):
     finally:
         await pubsub.unsubscribe()
         await pubsub.aclose()
-        await r.aclose()
+        # Сам клиент здесь не закрываем: он общий на процесс (_get_redis),
+        # и его закрытие из finally остановило бы все публикации и сделало бы
+        # невозможным рестарт подписки.
+
+
+async def supervise_redis_subscriber(bot, первая_пауза: float = 1.0) -> None:
+    """Держать подписку живой, переподключаясь с ростом паузы.
+
+    Без присмотра подписка — единственная точка отказа для ВСЕХ уведомлений в
+    Telegram. У Redis pubsub нет ни персистентности, ни backpressure: когда
+    исходящий буфер подписчика переполняется, Redis сам обрывает соединение,
+    `async for` завершается, задача тихо умирает — и мэтчи, сообщения и лайки
+    перестают доходить до людей насовсем, без единой строчки в логе.
+
+    Пауза растёт до минуты, чтобы при лежащем Redis не молотить переподключения
+    в пустоту. `CancelledError` пропускаем наружу: это штатная остановка бота.
+    """
+    пауза = первая_пауза
+    while True:
+        try:
+            await start_redis_subscriber(bot)
+            # Штатного выхода из подписки нет — значит соединение оборвали
+            logger.warning("Redis subscriber exited, reconnecting in %.0fs", пауза)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("Redis subscriber crashed (%s), reconnecting in %.0fs", e, пауза)
+        await asyncio.sleep(пауза)
+        пауза = min(пауза * 2, 60.0)
 
 
 async def _notify_user_about_match(bot, user_id: str, match_id: str):

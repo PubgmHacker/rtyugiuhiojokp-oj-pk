@@ -120,22 +120,39 @@ xcrun simctl io booted screenshot shot1.png
 работает на продакшене (задан `ZHIPU_API_KEY`, иначе останется только
 фильтр по ключевым словам).
 
-**Guideline 3.1.1 — In-App Purchase.** Закрыто: Premium в iOS продаётся
-через StoreKit 2, сервер проверяет подпись Apple и начисляет подписку.
+**Guideline 3.1.1 — In-App Purchase.** Закрыто: подписка в iOS продаётся
+через StoreKit 2, сервер проверяет подпись Apple и начисляет уровень.
 Внешняя оплата (Telegram Stars, CryptoBot) остаётся только в вебе и в боте.
 
 Что нужно сделать в App Store Connect перед релизом:
-1. Создайте группу подписок и два продукта с идентификаторами
-   `com.souldawn.dating.premium.monthly` и `...premium.yearly` — они
-   заданы в `api/config.py` (`APPSTORE_PRODUCT_*`) и должны совпадать.
-2. Заполните `APPSTORE_APP_APPLE_ID` в `.env` — числовой Apple ID
+1. Создайте одну группу подписок и **девять** продуктов — по три срока на
+   каждый платный уровень:
+
+   | Уровень | Месяц | 3 месяца | Год |
+   |---|---|---|---|
+   | Plus | `com.souldawn.dating.plus.monthly` | `...plus.quarterly` | `...plus.yearly` |
+   | Ultra | `com.souldawn.dating.ultra.monthly` | `...ultra.quarterly` | `...ultra.yearly` |
+   | Aurora | `com.souldawn.dating.aurora.monthly` | `...aurora.quarterly` | `...aurora.yearly` |
+
+   Идентификаторы заданы в `api/services/plans.py` (`Plan.appstore_id`), а не
+   переменными окружения: продукт — это уровень плюс срок, одной парой
+   «месяц/год» линейка не описывается. Сервер сопоставляет чек с тарифом
+   через `plan_for_appstore_id`, поэтому незнакомый идентификатор просто не
+   зачтётся.
+2. В группе задайте порядок уровней: Aurora выше Ultra, Ultra выше Plus.
+   По нему Apple решает, применять смену подписки сразу (повышение) или в
+   конце оплаченного периода (понижение). Перепутанный порядок задержал бы
+   покупку верхнего уровня, хотя деньги уже списаны.
+3. Заполните `APPSTORE_APP_APPLE_ID` в `.env` — числовой Apple ID
    приложения. Без него проверка чеков не включится, и кнопка покупки не
    появится (это защита: иначе оплата прошла бы, а подписка нет).
-3. Для TestFlight и App Review поставьте `APPSTORE_USE_SANDBOX=true` —
+4. Для TestFlight и App Review поставьте `APPSTORE_USE_SANDBOX=true` —
    их покупки живут в песочнице.
-4. Локально покупки тестируются без App Store Connect: в Xcode откройте
+5. Локально покупки тестируются без App Store Connect: в Xcode откройте
    Product → Scheme → Edit Scheme → Options → StoreKit Configuration и
-   выберите `web/ios/App/Souldawn.storekit`.
+   выберите `web/ios/App/Souldawn.storekit`. Этот файл собран из линейки, и
+   его совпадение с ней стережёт `api/tests/test_appstore.py` — правьте
+   тарифы в `plans.py`, а не в нём.
 
 Восстановление покупок есть на экране профиля — ревьюер проверяет этот
 пункт отдельно.

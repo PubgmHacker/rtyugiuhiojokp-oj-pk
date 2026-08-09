@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from models.models import User, Profile, Like, Block, Subscription, Referral
 from models.schemas import DeckProfile
+from services.plans import deck_priority, tier_from_plan
 from services.public_profile import буст_активен, возраст_из_даты, публичный_возраст
 from services.stickers import картинка_наклейки
 from utils import as_list
@@ -142,9 +143,66 @@ def _compatibility(
     return int(round(score)), reason
 
 
+def _уже_показывали(user_id: str) -> list:
+    """Условия «этого кандидата показывать не надо» — как анти-джойны в SQL.
+
+    Раньше все четыре списка вычитывались в Python и уезжали обратно в запрос
+    одним `NOT IN (...)`. У активного свайпера это десятки тысяч id: Postgres
+    получал `NOT IN` с 50 000 плейсхолдеров, план не кэшировался (набор
+    параметров каждый раз новый), а анти-джойн вырождался в Seq Scan по
+    `dating_profiles`. Одно только планирование уходило в секунды.
+
+    `NOT EXISTS` оставляет решение Postgres: он берёт `ix_like_liker`,
+    `ix_block_blocker`, `ix_block_blocked`, `ix_like_liked` и делает
+    anti-join по индексу, ничего не пересылая через Python.
+    """
+    return [
+        # Кому я уже поставил лайк или «пропустить»
+        not_(
+            select(Like.id)
+            .where(and_(Like.liker_id == user_id, Like.liked_id == Profile.user_id))
+            .exists()
+        ),
+        # Блокировки действуют в обе стороны: и тот, кого я заблокировал, и тот,
+        # кто заблокировал меня, не должны попадать в деку. Иначе жертва
+        # харассмента снова увидит обидчика, а он — её.
+        not_(
+            select(Block.id)
+            .where(
+                or_(
+                    and_(
+                        Block.blocker_id == user_id,
+                        Block.blocked_id == Profile.user_id,
+                    ),
+                    and_(
+                        Block.blocked_id == user_id,
+                        Block.blocker_id == Profile.user_id,
+                    ),
+                )
+            )
+            .exists()
+        ),
+        # Кто поставил мне «пропустить» — взаимности с ними уже не будет,
+        # показывать их анкеты повторно означает тратить деку впустую
+        not_(
+            select(Like.id)
+            .where(
+                and_(
+                    Like.liked_id == user_id,
+                    Like.liker_id == Profile.user_id,
+                    Like.type == "pass",
+                )
+            )
+            .exists()
+        ),
+        # Сам себя в деке видеть не должен
+        Profile.user_id != user_id,
+    ]
+
+
 async def _sample_candidates(
     session: AsyncSession,
-    exclude_ids: set[str],
+    user_id: Optional[str],
     limit: int,
     extra_filters: Optional[list] = None,
 ) -> list[Profile]:
@@ -168,8 +226,8 @@ async def _sample_candidates(
         Profile.display_name != "",
         *(extra_filters or []),
     ]
-    if exclude_ids:
-        base_filters.append(not_(Profile.user_id.in_(exclude_ids)))
+    if user_id:
+        base_filters += _уже_показывали(user_id)
 
     async def _scan(*extra) -> list[Profile]:
         result = await session.execute(
@@ -199,42 +257,18 @@ async def get_deck_profiles(
     result = await session.execute(select(Profile).where(Profile.user_id == user_id))
     my_profile = result.scalar_one_or_none()
 
-    # Get already liked/passed IDs
-    result = await session.execute(
-        select(Like.liked_id).where(Like.liker_id == user_id)
-    )
-    liked_ids = {row[0] for row in result.all()}
-
-    # Блокировки действуют в обе стороны: и тот, кого я заблокировал, и тот,
-    # кто заблокировал меня, не должны попадать в деку. Иначе жертва
-    # харассмента снова увидит обидчика, а он — её.
-    result = await session.execute(
-        select(Block.blocked_id).where(Block.blocker_id == user_id)
-    )
-    blocked_ids = {row[0] for row in result.all()}
-    result = await session.execute(
-        select(Block.blocker_id).where(Block.blocked_id == user_id)
-    )
-    blocked_ids |= {row[0] for row in result.all()}
-
-    # Кто поставил мне «пропустить» — взаимности с ними уже не будет,
-    # показывать их анкеты повторно означает тратить деку впустую
-    result = await session.execute(
-        select(Like.liker_id).where(
-            and_(Like.liked_id == user_id, Like.type == "pass")
-        )
-    )
-    passed_me_ids = {row[0] for row in result.all()}
-
-    # Exclude: self, liked/passed, banned, incognito users.
+    # Кого не показывать (свои лайки и пропуски, блокировки в обе стороны, те,
+    # кто пропустил меня, сам пользователь) — решается внутри запроса,
+    # анти-джойнами по индексам. Вычитывать эти id в Python нельзя: у активного
+    # свайпера их десятки тысяч, и `NOT IN` с таким списком убивает план.
     # Не отмечаем анкеты «просмотренными» при загрузке — иначе повторный
     # запрос деки (перезагрузка страницы) сжигает непросмотренные анкеты.
-    exclude_ids = liked_ids | blocked_ids | passed_me_ids | {user_id}
+    profiles = await _sample_candidates(session, user_id, limit * 3)
 
-    profiles = await _sample_candidates(session, exclude_ids, limit * 3)
-
-    # Активные премиумы среди кандидатов — буст в выдаче
-    premium_ids: set[str] = set()
+    # Сколько очков ранжирования даёт уровень подписки каждого кандидата.
+    # Пусто — приоритета нет ни у кого (бесплатные и без подписки сюда не
+    # попадают вовсе)
+    приоритет_по_id: dict[str, int] = {}
     referral_boost_ids: set[str] = set()
     # Кто прямо сейчас под платным бустом. Считаем по времени, а не по флагу:
     # прошедшая дата сама означает «буста нет»
@@ -249,17 +283,24 @@ async def get_deck_profiles(
     candidate_ids = [p.user_id for p in profiles]
 
     if profiles:
+        # Читаем именно УРОВЕНЬ, а не факт подписки: приоритет в выдаче
+        # продаётся с Ultra, а «максимальный» — только на Aurora (см.
+        # plans.DECK_PRIORITY). Пока здесь стояло `plan != "free"`, все
+        # платные получали одинаковую прибавку: Plus — незаслуженно, Aurora —
+        # ровно столько же, сколько вдвое более дешёвый Ultra.
         result = await session.execute(
-            select(Subscription.user_id).where(and_(
+            select(Subscription.user_id, Subscription.plan).where(and_(
                 Subscription.user_id.in_(candidate_ids),
-                Subscription.plan != "free",
                 or_(
                     Subscription.expires_at.is_(None),
                     Subscription.expires_at > datetime.now(timezone.utc),
                 ),
             ))
         )
-        premium_ids = {row[0] for row in result.all()}
+        приоритет_по_id = {
+            user_id: deck_priority(tier_from_plan(plan))
+            for user_id, plan in result.all()
+        }
 
         # Реферальный буст: пригласил >= N друзей → анкета выше в выдаче
         result = await session.execute(
@@ -390,8 +431,7 @@ async def get_deck_profiles(
             score += 5
         if p.distance is not None:
             score += max(0.0, 20 - p.distance / 5)
-        if p.id in premium_ids:
-            score += 25
+        score += приоритет_по_id.get(p.id, 0)
         if p.id in referral_boost_ids:
             score *= referral_mult  # пригласил друзей — анкета выше
         if p.id in boosted_ids:

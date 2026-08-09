@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import select, text, func, and_, or_
+from sqlalchemy import select, text, func, and_, not_, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
@@ -628,6 +628,27 @@ async def like_and_match(
             }
 
 
+def _возраст_из_даты(birth_date: datetime | None) -> int | None:
+    """Полных лет по дате рождения. Копия `возраст_из_даты` из API.
+
+    Считаем в UTC: дата рождения приходит и naive (из формы), и aware (из
+    базы), а сравнивать их напрямую нельзя — падает на TypeError.
+    Дублируется, потому что бот и API живут в разных venv и импортировать
+    код друг друга не могут (см. api/services/public_profile.py).
+    """
+    if not birth_date:
+        return None
+
+    now = datetime.now(timezone.utc)
+    if birth_date.tzinfo is None:
+        birth_date = birth_date.replace(tzinfo=timezone.utc)
+
+    возраст = now.year - birth_date.year
+    if (now.month, now.day) < (birth_date.month, birth_date.day):
+        возраст -= 1
+    return возраст
+
+
 def _дата_рождения_для(лет: int) -> datetime:
     """Дата, когда родился человек, которому сегодня исполняется `лет`.
 
@@ -652,38 +673,55 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         )
         my = result.scalar_one_or_none()
 
-        # Get already liked
-        result = await session.execute(
-            select(Like.liked_id).where(Like.liker_id == user_id)
-        )
-        exclude_ids = {row[0] for row in result.all()} | {user_id}
-
-        # Блокировки — в обе стороны, иначе жертва снова увидит обидчика
-        result = await session.execute(
-            select(Block.blocked_id).where(Block.blocker_id == user_id)
-        )
-        exclude_ids |= {row[0] for row in result.all()}
-        result = await session.execute(
-            select(Block.blocker_id).where(Block.blocked_id == user_id)
-        )
-        exclude_ids |= {row[0] for row in result.all()}
-
-        # Кто поставил мне «пропустить» — взаимности уже не будет,
-        # показывать их анкеты значит тратить деку впустую
-        result = await session.execute(
-            select(Like.liker_id).where(
-                Like.liked_id == user_id, Like.type == "pass"
-            )
-        )
-        exclude_ids |= {row[0] for row in result.all()}
-
+        # Кого не показывать — анти-джойнами внутри запроса, а не списком id.
+        # Раньше здесь вычитывались все лайки, все блокировки в обе стороны и
+        # все чужие «пропустить», после чего уезжали обратно одним NOT IN. У
+        # активного свайпера это десятки тысяч плейсхолдеров: план не
+        # кэшируется, анти-джойн вырождается в Seq Scan по анкетам. Условия
+        # дословно те же, что в api/services/matching.py.
         filters = [
             User.is_banned == False,
             # Инкогнито и пауза убирают из деки одинаково — см. api/models
             Profile.is_incognito == False,
             Profile.is_paused == False,
             Profile.display_name != "",  # пустые анкеты не показываем
-            Profile.user_id.notin_(exclude_ids) if exclude_ids else True,
+            # Кому я уже поставил лайк или «пропустить»
+            not_(
+                select(Like.id)
+                .where(and_(Like.liker_id == user_id, Like.liked_id == Profile.user_id))
+                .exists()
+            ),
+            # Блокировки — в обе стороны, иначе жертва снова увидит обидчика
+            not_(
+                select(Block.id)
+                .where(
+                    or_(
+                        and_(
+                            Block.blocker_id == user_id,
+                            Block.blocked_id == Profile.user_id,
+                        ),
+                        and_(
+                            Block.blocked_id == user_id,
+                            Block.blocker_id == Profile.user_id,
+                        ),
+                    )
+                )
+                .exists()
+            ),
+            # Кто поставил мне «пропустить» — взаимности уже не будет,
+            # показывать их анкеты значит тратить деку впустую
+            not_(
+                select(Like.id)
+                .where(
+                    and_(
+                        Like.liked_id == user_id,
+                        Like.liker_id == Profile.user_id,
+                        Like.type == "pass",
+                    )
+                )
+                .exists()
+            ),
+            Profile.user_id != user_id,
         ]
         if my and my.looking_for and my.looking_for != "any":
             filters.append(Profile.gender.in_([my.looking_for, "other"]))
@@ -692,12 +730,33 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         # в мини-аппе. Без него человек выставил «25-30» в приложении, а бот
         # показывал всех подряд. Считаем по дате рождения: границы окна —
         # это «сегодня минус N лет».
+        #
+        # Анкеты без даты рождения НЕ отсеиваем. Сравнение в SQL с NULL даёт
+        # NULL, то есть строка выпадала целиком — а `age_min`/`age_max` имеют
+        # значения по умолчанию (18/99) и всегда истинны, так что фильтр
+        # применялся ко всем. Человек без указанной даты просто исчезал из
+        # деки бота, оставаясь видимым в мини-аппе (api/services/matching.py
+        # фильтрует возраст в Python и такие анкеты сохраняет).
         if my and (my.age_min or my.age_max):
             if my.age_max:
                 # Кто старше верхней границы — родился раньше этой даты
-                filters.append(Profile.birth_date >= _дата_рождения_для(my.age_max + 1))
+                filters.append(or_(
+                    Profile.birth_date.is_(None),
+                    Profile.birth_date >= _дата_рождения_для(my.age_max + 1),
+                ))
             if my.age_min:
-                filters.append(Profile.birth_date <= _дата_рождения_для(my.age_min))
+                filters.append(or_(
+                    Profile.birth_date.is_(None),
+                    Profile.birth_date <= _дата_рождения_для(my.age_min),
+                ))
+
+        # Обратная сторона того же фильтра: подхожу ли Я под ИХ диапазон.
+        # В API это отдельная проверка (`my_age < profile.age_min`), и без
+        # неё бот показывал бы 40-летнему анкеты тех, кто ищет 18-25.
+        мой_возраст = _возраст_из_даты(my.birth_date) if my else None
+        if мой_возраст:
+            filters.append(Profile.age_min <= мой_возраст)
+            filters.append(Profile.age_max >= мой_возраст)
 
         # Нишевые фильтры задаются в мини-аппе, а действовать должны и здесь:
         # иначе человек выставил «гот» в приложении, а бот показывает всех.
@@ -781,25 +840,55 @@ async def get_match_partner(match_id: str, user_id: str) -> dict | None:
 
 
 async def get_user_matches(user_id: str) -> list[dict]:
-    """Get all matches for a user."""
+    """Мэтчи пользователя вместе с именами собеседников — одним запросом.
+
+    Имя партнёра приходит джойном, а не отдельным `get_profile` на каждый
+    мэтч. Раньше именно так и было в `handlers/matches.py`: список открывался
+    циклом по мэтчам, и каждая итерация БРАЛА СВОЮ СЕССИЮ из пула бота (5
+    постоянных плюс 10 сверх). У человека с полусотней мэтчей одно нажатие
+    «Мои мэтчи» — это полсотни последовательных round-trip'ов к базе, и всё
+    это время бот занят: aiogram обрабатывает апдейты в общем цикле.
+
+    Кто из пары собеседник, решает CASE на стороне Postgres — иначе джойн
+    пришлось бы делать по обоим столбцам и разбирать результат в Python.
+
+    LEFT JOIN, а не INNER: анкета партнёра может быть не создана (регистрацию
+    бросили на полпути), и такой мэтч всё равно должен остаться в списке —
+    иначе чат просто исчезает из интерфейса, хотя он существует.
+    """
+    партнёр = case(
+        (Match.user1_id == user_id, Match.user2_id), else_=Match.user1_id
+    )
     cls = _session_cls()
     async with cls() as session:
         result = await session.execute(
-            select(Match).where(
+            select(
+                Match.id,
+                партнёр.label("partner_id"),
+                Match.match_score,
+                Match.ai_reason,
+                Match.created_at,
+                Profile.display_name,
+            )
+            .outerjoin(Profile, Profile.user_id == партнёр)
+            .where(
                 (Match.user1_id == user_id) | (Match.user2_id == user_id),
-                Match.is_active == True,
-            ).order_by(Match.created_at.desc())
+                Match.is_active == True,  # noqa: E712
+            )
+            .order_by(Match.created_at.desc())
         )
-        matches = result.scalars().all()
         return [
             {
-                "id": m.id,
-                "partner_id": m.user2_id if m.user1_id == user_id else m.user1_id,
-                "match_score": m.match_score,
-                "ai_reason": m.ai_reason,
-                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "id": строка.id,
+                "partner_id": строка.partner_id,
+                "match_score": строка.match_score,
+                "ai_reason": строка.ai_reason,
+                "created_at": (
+                    строка.created_at.isoformat() if строка.created_at else None
+                ),
+                "partner_name": строка.display_name or "Аноним",
             }
-            for m in matches
+            for строка in result.all()
         ]
 
 

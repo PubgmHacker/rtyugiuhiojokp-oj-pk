@@ -13,7 +13,12 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
-from database import get_or_create_user, get_user_matches, get_match_partner, get_profile
+from database import (
+    get_or_create_user,
+    get_profile,
+    get_user_matches,
+    get_match_partner,
+)
 from keyboards import matches_list_kb, chat_kb, main_kb
 from services.moderation import moderate_text, humanize
 from states import ChatStates
@@ -43,11 +48,8 @@ async def list_matches(callback: CallbackQuery):
         )
         return
 
-    # Подписываем мэтчи именами партнёров, а не ID
-    for m in matches:
-        partner = await get_profile(m["partner_id"])
-        m["partner_name"] = (partner or {}).get("display_name") or "Аноним"
-
+    # Имена собеседников приходят вместе с мэтчами: раньше здесь стоял цикл
+    # с `get_profile` на каждый, и каждый вызов брал свою сессию из пула
     await safe_edit_text(
         callback.message,
         f"💕 <b>Ваши мэтчи ({len(matches)}):</b>\n\nВыберите мэтч для начала чата:",

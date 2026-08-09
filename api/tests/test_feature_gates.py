@@ -392,3 +392,265 @@ print(json.dumps({
         for перк in перки:
             assert перк, f"{уровень}: перк срезан целиком"
             assert перк[0].isalnum(), f"{уровень}: значок уехал в счёт — {перк!r}"
+
+
+# ════════════════════════════════════════════════════════════════
+#  Приоритет в выдаче: словам в витрине должны отвечать числа
+# ════════════════════════════════════════════════════════════════
+
+async def test_приоритет_в_деке_растёт_с_уровнем(tmp_path, monkeypatch):
+    """«Приоритет в выдаче» (Ultra) и «Максимальный» (Aurora) — разные числа.
+
+    Раньше дека спрашивала `Subscription.plan != "free"` и давала всем платным
+    одинаковые +25: Plus получал приоритет, которого в его перках нет, а
+    Aurora — ровно столько же, сколько вдвое более дешёвый Ultra, хотя
+    продаётся именно «максимальным».
+
+    Проверяем через настоящую сортировку, а не через таблицу констант: таблицу
+    можно завести и не подключить — так и было.
+    """
+    import services.matching as m
+    from models.models import Base, Profile, Subscription, User
+
+    файл = tmp_path / "prio.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{файл}")
+    async with engine.begin() as c:
+        await c.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    # Шум сортировки убираем: он существует, чтобы дека не была
+    # детерминированной, но здесь проверяется именно вклад уровня
+    monkeypatch.setattr(m.random, "uniform", lambda a, b: 0.0)
+
+    смотрящий = str(uuid.uuid4())
+    уровни = {"free": None, "plus": "plus", "ultra": "ultra", "aurora": "aurora"}
+    ids: dict[str, str] = {}
+
+    async with Session() as s:
+        s.add(User(id=смотрящий, telegram_id=100, role="user"))
+        s.add(Profile(
+            user_id=смотрящий, display_name="Смотрящий", gender="male",
+            birth_date=datetime(1995, 1, 1, tzinfo=timezone.utc),
+            city="Москва", photos=["https://x/0.jpg"], interests=[],
+            looking_for="any",
+        ))
+        for i, (метка, plan) in enumerate(уровни.items(), start=1):
+            uid = str(uuid.uuid4())
+            ids[метка] = uid
+            s.add(User(id=uid, telegram_id=200 + i, role="user"))
+            # Анкеты одинаковые во всём, кроме подписки: иначе разницу в
+            # порядке могли бы дать интересы, город или расстояние
+            s.add(Profile(
+                user_id=uid, display_name=f"Кандидат {метка}", gender="female",
+                birth_date=datetime(1996, 1, 1, tzinfo=timezone.utc),
+                city="Тверь", photos=[f"https://x/{i}.jpg"], interests=[],
+                looking_for="any",
+            ))
+            if plan:
+                s.add(Subscription(
+                    user_id=uid, plan=plan,
+                    expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+                ))
+        await s.commit()
+
+    async with Session() as s:
+        дека = await m.get_deck_profiles(s, смотрящий, limit=10)
+
+    порядок = [p.id for p in дека]
+    место = {метка: порядок.index(uid) for метка, uid in ids.items()}
+
+    assert место["aurora"] < место["ultra"], (
+        "Aurora продаёт «максимальный приоритет», а стоит не выше Ultra"
+    )
+    assert место["ultra"] < место["plus"], (
+        "«Приоритет в выдаче» продаётся с Ultra — Plus не должен его обгонять"
+    )
+    # У Plus приоритета в перках нет: с бесплатным его равенство и ожидается,
+    # поэтому сравниваем не порядок (он при равных очках произволен), а вклад
+    assert m.deck_priority("plus") == m.deck_priority("free") == 0, (
+        "Plus получает приоритет, которого нет в его перках"
+    )
+
+    await engine.dispose()
+
+
+def test_старая_запись_premium_считается_plus_и_в_деке():
+    """Записи до линейки (`plan="premium"`) разбираются одинаково везде.
+
+    Дека читала уровни своим запросом и про `"premium"` не знала вовсе, а
+    гейты фич знали: один и тот же человек считался платным для одних мест и
+    бесплатным для других.
+    """
+    from services.plans import TIER_PLUS, deck_priority, tier_from_plan
+
+    assert tier_from_plan("premium") == TIER_PLUS
+    assert tier_from_plan("совсем не уровень") == "free"
+    assert tier_from_plan(None) == "free"
+    # Испорченное значение не должно давать приоритет
+    assert deck_priority(tier_from_plan("мусор")) == 0
+
+
+# ════════════════════════════════════════════════════════════════
+#  Витрина и лимиты: число в тексте — это обещание, за него платят
+# ════════════════════════════════════════════════════════════════
+
+def _таблица_бота(имя: str) -> dict[str, object]:
+    """Словарь-константу из `bot/services/plans.py` — разбором, а не импортом.
+
+    Бот живёт в отдельном venv и не может импортировать код API (и наоборот),
+    поэтому таблицы у него — копии, набитые руками. Читаем их AST-разбором:
+    так копия сверяется с оригиналом, не поднимая процесс бота.
+    """
+    import ast
+    from pathlib import Path
+
+    файл = Path(__file__).resolve().parents[2] / "bot" / "services" / "plans.py"
+    дерево = ast.parse(файл.read_text(encoding="utf-8"))
+
+    for узел in ast.walk(дерево):
+        if not isinstance(узел, ast.AnnAssign):
+            continue
+        if getattr(узел.target, "id", "") != имя:
+            continue
+        assert isinstance(узел.value, ast.Dict), f"{имя} в боте — не словарь"
+        # Ключи — константы уровней (TIER_PLUS), значения — числа или кортежи
+        return {
+            ключ.id.removeprefix("TIER_").lower(): ast.literal_eval(значение)
+            for ключ, значение in zip(узел.value.keys, узел.value.values)
+        }
+    raise AssertionError(f"в bot/services/plans.py нет {имя}")
+
+
+def test_суточный_лимит_писем_совпадает_в_боте_и_api():
+    """Копия `DIRECT_MESSAGES_PER_DAY` в боте равна оригиналу.
+
+    Цены и гейты фич уже сверяются (`test_тарифы_совпадают_в_боте_и_api`,
+    `test_гейты_фич_совпадают_в_боте_и_api`), а этот лимит — нет, хотя он
+    ровно того же сорта: число, за которое заплачено. Разойдись копии, бот
+    обещал бы одно количество писем, а API отдавал другое — и отказ пришёл бы
+    уже после оплаты.
+    """
+    from services.plans import DIRECT_MESSAGES_PER_DAY
+
+    у_бота = _таблица_бота("DIRECT_MESSAGES_PER_DAY")
+    assert у_бота == DIRECT_MESSAGES_PER_DAY, (
+        f"расходятся: {set(у_бота.items()) ^ set(DIRECT_MESSAGES_PER_DAY.items())}"
+    )
+
+
+def test_перки_в_витрине_бота_дословно_равны_перкам_api():
+    """Список возможностей уровня в боте — тот же, что в мини-аппе.
+
+    Человек сравнивает уровни в боте, а покупает в мини-аппе: расхождение
+    читается как обман, даже если это просто забытая строка. Значок в начале
+    перка — единственное допустимое отличие, его бот рисует сам.
+    """
+    import re
+
+    from services.plans import TIERS
+
+    у_бота = _таблица_бота("TIER_PERKS")
+    assert у_бота, "в боте нет TIER_PERKS — витрина разъедется"
+
+    for уровень, перки in у_бота.items():
+        assert уровень in TIERS, f"уровня {уровень} нет в линейке API"
+        без_значков = tuple(re.sub(r"^\W+", "", п) for п in перки)
+        assert без_значков == TIERS[уровень].perks, (
+            f"{уровень}: витрина бота разошлась с API\n"
+            f"  бот: {без_значков}\n"
+            f"  api: {TIERS[уровень].perks}"
+        )
+
+
+def test_числа_в_витрине_отвечают_настоящим_лимитам():
+    """«5 суперлайков в день» в тексте — это ровно то, что отдаёт код.
+
+    Числа живут в двух местах: в таблицах (`TIERS[...].superlikes`,
+    `BOOSTS_PER_DAY`, `DIRECT_MESSAGES_PER_DAY`) и словами в перках, которые
+    человек читает перед оплатой. Правка таблицы текст не трогает — и наоборот.
+    Молчаливое расхождение здесь дороже любого падения: обещание в витрине
+    остаётся, а купленного количества уже нет.
+
+    Проверяются перки API; бот привязан к ним `test_перки_в_витрине_бота_...`.
+    """
+    import re
+
+    from services.plans import (
+        TIER_ORDER,
+        TIERS,
+        boosts_per_day,
+        direct_messages_per_day,
+        superlikes_for,
+        tier_allows,
+        tier_rank,
+    )
+
+    неразобранные: list[tuple[str, str]] = []
+
+    for уровень, инфо in TIERS.items():
+        for перк in инфо.perks:
+            числа = [int(н) for н in re.findall(r"\d+", перк)]
+
+            if "суперлайк" in перк:
+                assert числа, f"{уровень}: перк про суперлайки без числа — {перк!r}"
+                assert числа[0] == superlikes_for(уровень), (
+                    f"{уровень}: витрина обещает {числа[0]} суперлайков, "
+                    f"код даёт {superlikes_for(уровень)} — {перк!r}"
+                )
+                if len(числа) > 1:
+                    # «…вместо N» — сравнение с предыдущим уровнем линейки
+                    предыдущий = TIER_ORDER[tier_rank(уровень) - 1]
+                    assert числа[1] == superlikes_for(предыдущий), (
+                        f"{уровень}: «вместо {числа[1]}» — но у {предыдущий} "
+                        f"их {superlikes_for(предыдущий)}"
+                    )
+
+            elif "буст" in перк.lower():
+                # «Буст анкеты раз в день» — цифры нет, «раз» значит один
+                обещано = числа[0] if числа else 1
+                assert обещано == boosts_per_day(уровень), (
+                    f"{уровень}: витрина обещает {обещано} бустов, "
+                    f"код даёт {boosts_per_day(уровень)} — {перк!r}"
+                )
+
+            elif "исьма без взаимного" in перк:
+                assert tier_allows(уровень, "direct_messages"), (
+                    f"{уровень}: письма в витрине есть, а гейт их не пускает"
+                )
+                assert числа, f"{уровень}: перк про письма без числа — {перк!r}"
+                assert числа[0] == direct_messages_per_day(уровень), (
+                    f"{уровень}: витрина обещает {числа[0]} писем, "
+                    f"код даёт {direct_messages_per_day(уровень)} — {перк!r}"
+                )
+
+            elif числа:
+                неразобранные.append((уровень, перк))
+
+    assert not неразобранные, (
+        "в витрине появилось число, которое ни с чем не сверяется — допишите "
+        f"правило рядом с остальными: {неразобранные}"
+    )
+
+
+def test_письма_не_обещаны_там_где_их_не_дают():
+    """Уровень без права на письма про них и не пишет.
+
+    Обратная сторона предыдущей проверки: там сверялось число у того, кто
+    письма продаёт, здесь — молчание у тех, кто не продаёт. Фича уже
+    переезжала между уровнями (Plus → Aurora), и перк легко остался бы у
+    старого — тот продавал бы отказ.
+    """
+    from services.plans import TIERS, direct_messages_per_day, tier_allows
+
+    for уровень, инфо in TIERS.items():
+        обещаны = any("исьма без взаимного" in п for п in инфо.perks)
+        разрешены = tier_allows(уровень, "direct_messages")
+        assert обещаны == разрешены, (
+            f"{уровень}: в витрине письма {'есть' if обещаны else 'нет'}, "
+            f"а гейт их {'пускает' if разрешены else 'не пускает'}"
+        )
+        if not разрешены:
+            assert direct_messages_per_day(уровень) == 0, (
+                f"{уровень}: фича закрыта гейтом, но суточный лимит не ноль — "
+                "он вернёт письма тому, кому их не продавали"
+            )
