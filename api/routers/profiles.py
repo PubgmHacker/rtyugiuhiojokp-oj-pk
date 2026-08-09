@@ -37,7 +37,13 @@ from models.schemas import (
 )
 from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text
-from services.plans import BOOST_MINUTES, boosts_per_day, tier_allows
+from services.plans import (
+    BOOST_MINUTES,
+    FEATURE_MIN_TIER,
+    TIERS,
+    boosts_per_day,
+    tier_allows,
+)
 from services.premium import current_tier, is_premium as _is_premium
 from services.public_profile import в_utc, возраст_из_даты, наша_картинка, публичный_возраст
 from services.stickers import картинка_наклейки
@@ -100,6 +106,43 @@ async def get_deck(
     return profiles
 
 
+def _имя_уровня(feature: str) -> str:
+    """Имя уровня, который открывает возможность — из тарифной линейки.
+
+    Писать его словом в тексте отказа нельзя: гейт живёт в `FEATURE_MIN_TIER`,
+    и после переноса возможности на другой уровень зашитое имя молча соврёт —
+    человек купит не то, что ему предложили.
+    """
+    return TIERS[FEATURE_MIN_TIER[feature]].name
+
+
+async def _требовать(session: AsyncSession, user_id: str, feature: str, что: str) -> None:
+    """403, если уровень не открывает возможность.
+
+    Тот же вопрос, что задаёт `_require_spreads` в routers/tarot.py, — но
+    отдельной функцией: инкогнито проверяется внутри PATCH /me по содержимому
+    тела запроса, а зависимость FastAPI про тело ничего не знает.
+    """
+    if not tier_allows(await current_tier(session, user_id), feature):
+        raise HTTPException(status_code=403, detail=f"{что} доступен на {_имя_уровня(feature)}")
+
+
+async def _require_boost(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> User:
+    """Пускает к бусту только с подходящим тарифом.
+
+    Раньше право на буст выводилось из числа включений (`per_day == 0` — значит
+    нельзя), то есть из `BOOSTS_PER_DAY`, а не из таблицы возможностей. Гейт
+    работал лишь пока две таблицы случайно согласны: поставь бесплатному один
+    пробный буст — и `deck_boost` открылся бы всем, хотя в `FEATURE_MIN_TIER`
+    он платный.
+    """
+    await _требовать(session, user.id, "deck_boost", "Буст")
+    return user
+
+
 async def _boost_state(session: AsyncSession, user_id: str, profile: Optional[Profile]) -> BoostOut:
     tier = await current_tier(session, user_id)
     per_day = boosts_per_day(tier)
@@ -121,6 +164,7 @@ async def _boost_state(session: AsyncSession, user_id: str, profile: Optional[Pr
         minutes=BOOST_MINUTES,
         left_today=max(0, per_day - used),
         per_day=per_day,
+        required_tier_name=_имя_уровня("deck_boost"),
     )
 
 
@@ -137,9 +181,13 @@ async def get_boost(
 @router.post("/me/boost", response_model=BoostOut)
 async def activate_boost(
     session: AsyncSession = Depends(get_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(_require_boost),
 ):
     """Поднять анкету в выдаче на ограниченное время.
+
+    Тариф проверяет `_require_boost` до входа сюда — здесь остаётся только
+    суточный лимит. `Depends(get_session)` в обоих местах отдаёт одну и ту же
+    сессию: FastAPI кеширует подзависимости в пределах запроса.
 
     Повторное включение поверх активного буста продлевает его от текущего
     окончания, а не с нуля: иначе оплаченные минуты сгорали бы.
@@ -158,8 +206,6 @@ async def activate_boost(
     )
 
     state = await _boost_state(session, user.id, profile)
-    if not state.per_day:
-        raise HTTPException(status_code=403, detail="Буст доступен в Plus")
     if not state.left_today:
         raise HTTPException(status_code=429, detail="Бусты на сегодня закончились")
 
@@ -399,9 +445,14 @@ async def update_my_profile(
 
     update_fields = data.model_dump(exclude_unset=True)
 
-    # Инкогнито-режим — премиум-фича (выключить может любой)
-    if update_fields.get("is_incognito") is True and not await _is_premium(session, user.id):
-        raise HTTPException(status_code=403, detail="Инкогнито-режим доступен в Premium")
+    # Инкогнито-режим — платная фича (выключить может любой). Спрашиваем
+    # таблицу возможностей, а не «есть ли вообще подписка»: `is_premium` — это
+    # `plan != "free"`, и запись с чужим или испорченным значением уровня
+    # открывала инкогнито, хотя `current_tier` считает такой уровень
+    # бесплатным. Тот же разъезд включил бы фичу для всех платных, останься
+    # она в FEATURE_MIN_TIER на верхнем уровне.
+    if update_fields.get("is_incognito") is True:
+        await _требовать(session, user.id, "incognito", "Инкогнито-режим")
 
     if update_fields.get("photos") is not None:
         update_fields["photos"] = _проверить_фото(

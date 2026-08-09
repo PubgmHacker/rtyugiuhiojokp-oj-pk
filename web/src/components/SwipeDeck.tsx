@@ -320,7 +320,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
                       ? `Поднять анкету на ${boost.minutes} минут (и в деке, и в оценке фото)`
                       : boost.per_day
                         ? "Бусты на сегодня закончились"
-                        : "Буст доступен в Plus"
+                        // Имя уровня — с сервера: гейт живёт в FEATURE_MIN_TIER,
+                        // и вписанное здесь словом соврало бы после переноса
+                        : `Буст доступен на ${boost.required_tier_name}`
                 }
                 onClick={handleBoost}
                 disabled={boostBusy || boost.active}

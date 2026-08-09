@@ -963,6 +963,13 @@ async def test_кейс_берёт_блокировку_до_подсчёта_п
 
 async def test_буст_берёт_блокировку_до_подсчёта(app, monkeypatch):
     """Тот же лимит и та же гонка, что у кейсов: второй путь из пары."""
+    from routers import profiles
+
+    # Уровень подменяем, как и в тесте кейсов: тариф здесь не проверяется —
+    # без подписки запрос отсекла бы зависимость `_require_boost`, и до
+    # блокировки дело бы не дошло
+    monkeypatch.setattr(profiles, "current_tier", _async_return("plus"))
+
     session = _SessionСЖурналом([
         _Result(scalar=_profile("u-me")),   # анкета
         _Result(scalar=None),               # advisory-lock

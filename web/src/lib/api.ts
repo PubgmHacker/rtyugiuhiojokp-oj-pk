@@ -736,6 +736,9 @@ export interface BoostState {
   minutes: number;
   left_today: number;
   per_day: number;
+  /** Уровень, который открывает буст — приходит с сервера, чтобы не писать
+   *  имя тарифа словом: гейт живёт в FEATURE_MIN_TIER. */
+  required_tier_name: string;
 }
 
 export async function getBoost(): Promise<BoostState> {
