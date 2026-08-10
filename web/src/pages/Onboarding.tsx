@@ -44,6 +44,7 @@ type StepId =
   | "interests"
   | "about"
   | "bio"
+  | "terms"
   | "done";
 
 const STEPS: StepId[] = [
@@ -56,6 +57,9 @@ const STEPS: StepId[] = [
   "interests",
   "about",
   "bio",
+  // Явное согласие: магазины кладут приложение, если согласие спрятано
+  // в ссылку под «Войти». Отдельный шаг — иначе его пропускают.
+  "terms",
   "done",
 ];
 
@@ -603,6 +607,41 @@ export default function Onboarding() {
               </StepShell>
             )}
 
+            {step === "terms" && (
+              <StepShell
+                title="Правила и безопасность"
+                hint="Прочтите перед тем, как начать знакомиться"
+              >
+                <div className="space-y-3 text-[14px] text-text-muted">
+                  <p>
+                    Нажимая «Принимаю», вы подтверждаете, что вам 18 лет или
+                    больше, и принимаете{" "}
+                    <a
+                      href="https://souldawn.app/terms.html"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-text underline underline-offset-2"
+                    >
+                      условия
+                    </a>{" "}
+                    и{" "}
+                    <a
+                      href="https://souldawn.app/privacy.html"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-text underline underline-offset-2"
+                    >
+                      политику
+                    </a>
+                    .
+                  </p>
+                  <p>
+                    Мы не мониторим и не продаём ваши переписки.
+                  </p>
+                </div>
+              </StepShell>
+            )}
+
             {step === "done" && (
               <StepShell title="Всё готово!" hint="Проверьте, что всё верно">
                 <Summary
@@ -635,6 +674,15 @@ export default function Onboarding() {
             hapticKind="success"
           >
             {saving ? <Spinner size={20} /> : "Начать знакомиться"}
+          </Button>
+        ) : step === "terms" ? (
+          <Button
+            size="lg"
+            fullWidth
+            onClick={() => go(1)}
+            hapticKind="success"
+          >
+            Принимаю
           </Button>
         ) : (
           <div className="flex flex-col gap-2">
@@ -765,7 +813,49 @@ function PhotoTile({
       disabled={disabled}
       onChange={(e) => {
         const f = e.target.files?.[0];
-        if (f) onPick(f);
+        if (!f) return;
+
+        // HEIC/HEIF с iPhone: Pillow в API без libheif их не открывает,
+        // а <input accept="image/*"> их отдаёт как есть. Конвертируем в JPEG
+        // прямо в браузере через canvas — иначе загрузка обязательно упадёт
+        // с "Файл не является изображением".
+        const isHeic =
+          /image\/(heic|heif)/i.test(f.type) ||
+          /\.(heic|heif)$/i.test(f.name);
+
+        if (isHeic) {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.getContext("2d")?.drawImage(img, 0, 0);
+            canvas.toBlob(
+              (blob) => {
+                URL.revokeObjectURL(img.src);
+                if (!blob) {
+                  console.error("HEIC→JPEG: toBlob вернул null");
+                  return;
+                }
+                onPick(new File([blob], f.name.replace(/\.(heic|heif)$/i, ".jpg"), {
+                  type: "image/jpeg",
+                }));
+              },
+              "image/jpeg",
+              0.92,
+            );
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(img.src);
+            console.error("HEIC не удалось прочитать в браузере");
+          };
+          img.src = URL.createObjectURL(f);
+          // Сбрасываем значение, иначе повторный выбор того же файла не сработает
+          e.target.value = "";
+          return;
+        }
+
+        onPick(f);
         // Сбрасываем значение, иначе повторный выбор того же файла не сработает
         e.target.value = "";
       }}

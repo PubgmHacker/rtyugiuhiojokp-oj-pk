@@ -117,6 +117,11 @@ async def _to_out(
         is_mine=reel.user_id == viewer_id,
         is_hidden=reel.is_hidden,
         created_at=reel.created_at,
+        published_today=(
+            await _published_today(session, reel.user_id)
+            if reel.user_id == viewer_id else 0
+        ),
+        daily_limit=DAILY_LIMIT if reel.user_id == viewer_id else 0,
     )
 
 

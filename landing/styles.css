@@ -7,26 +7,26 @@
 
 /* ── Design tokens ─────────────────────────────────────────────── */
 :root {
-  /* Фон и поверхности — тёплый сливовый подтон (345°), как в мини-аппе.
+  /* Фон и поверхности — холодная нейтральная база, как в мини-аппе.
      Значения повторяют web/src/styles/globals.css вручную: лендинг
      собирается без тулчейна, поэтому токены надо менять в двух местах. */
-  --color-bg: #100e0e;
-  --color-bg-elevated: #191516;
-  --color-surface: #201b1c;
-  --color-surface-2: #292224;
-  --color-surface-3: #362c2f;
-  --color-hairline: #372c2f;
+  --color-bg: #0a0b0f;
+  --color-bg-elevated: #13141a;
+  --color-surface: #16181f;
+  --color-surface-2: #1c1f28;
+  --color-surface-3: #252935;
+  --color-hairline: #272a35;
 
   /* Акцент: один цвет на все главные действия */
-  --color-accent: #e14a35;
-  --color-accent-soft: #f26a52;
-  --color-accent-deep: #c23a27;
+  --color-accent: #ff2d6f;
+  --color-accent-soft: #ff5c8a;
+  --color-accent-deep: #d61e5a;
 
   /* Текст */
-  --color-text: #fbf6f7;
-  --color-text-secondary: #d6c4c8;
-  --color-text-muted: #a8979b;
-  --color-text-faint: #918286;
+  --color-text: #fafbfc;
+  --color-text-secondary: #c8cdd4;
+  --color-text-muted: #9ba1ab;
+  --color-text-faint: #868d96;
   --color-on-accent: #ffffff;
 
   /* Семантика */
@@ -34,7 +34,7 @@
   /* Отодвинут от акцента по тону, как в мини-аппе: прежний #f4525f
      расходился с тёплым акцентом всего на 12°, и «ошибка» читалась
      как главное действие */
-  --color-danger: #ff5c8a;
+  --color-danger: #ff7a1a;
   --color-warn: #f0b429;
   --color-info: #58a6ff;
   --color-verified: #58a6ff;

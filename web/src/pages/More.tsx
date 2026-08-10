@@ -21,6 +21,7 @@ import {
   Star,
   Trophy,
   Users,
+  Lock,
 } from "lucide-react";
 import { haptic } from "../lib/haptics";
 import { ScreenHeader } from "../components/ui";
@@ -30,8 +31,12 @@ interface Item {
   icon: typeof Film;
   title: string;
   hint: string;
-  /** Метка «за подписку» — чтобы не вести человека в тупик. */
+  /** Платная фича: помечаем замком — это честно, а не «премиум-шильдик»,
+      который звучит как реклама и который человек не попросил. */
   paid?: boolean;
+  /** Премиум-класс: звезда рядом с иконкой, как в референсе — мягкий тизер
+      подписки, а не стена, залитая акцентом целиком. */
+  premium?: boolean;
 }
 
 /** Знакомства — то, что приводит к мэтчу. */
@@ -63,6 +68,7 @@ const FUN: Item[] = [
     icon: Star,
     title: "Оценка фото",
     hint: "Оцените чужие и узнайте оценку своего",
+    premium: true,
   },
   {
     path: "/likes",
@@ -80,8 +86,16 @@ const FUN: Item[] = [
   {
     path: "/tarot",
     icon: Moon,
-    title: "Таро",
+    title: "Карта дня",
     hint: "Карта дня и расклады — повод начать разговор",
+    premium: true,
+  },
+  {
+    path: "/voice",
+    icon: Mic,
+    title: "Голосовая рулетка",
+    hint: "Случайный голосовой звонок",
+    premium: true,
   },
 ];
 
@@ -134,8 +148,8 @@ function Section({ title, items }: { title: string; items: Item[] }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <p className="font-semibold text-[15px]">{item.title}</p>
-                {item.paid && (
-                  <Sparkles size={12} className="text-accent shrink-0" />
+                {item.premium && (
+                  <Sparkles size={12} className="text-warn shrink-0" />
                 )}
               </div>
               <p className="text-caption text-text-muted">{item.hint}</p>

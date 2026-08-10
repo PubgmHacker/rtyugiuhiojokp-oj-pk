@@ -80,7 +80,7 @@ interface IconButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
   children: ReactNode;
   label: string;
   size?: number;
-  tone?: "primary" | "neutral" | "danger" | "success" | "warn" | "info";
+  tone?: "primary" | "neutral" | "danger" | "success" | "warn" | "info" | "premium";
 }
 
 const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
@@ -93,6 +93,11 @@ const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
   success: "text-success",
   warn: "text-warn",
   info: "text-info",
+  // Премиум-действия (буст, подарок, рулетка) продаются не ценой, а видом:
+  // мягкое золото, против акцентного фиолетово-малинового. С 06 до 20 % по
+  // WCAG не выигрываем, но читаемость достаточная: это второстепенное, а
+  // не главное, действие — и оттенок в 60° от акцента.
+  premium: "text-warn",
 };
 
 export function IconButton({

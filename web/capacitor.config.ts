@@ -13,9 +13,12 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
     iosScheme: "https",
-    // Для live-reload при разработке на устройстве раскомментируйте
-    // и подставьте адрес машины в локальной сети:
-    // url: "http://192.168.1.100:5173",
+    // Live-reload из Vite: в симуляторе «localhost» — это и есть хост-машина,
+    // поэтому просто туннелируемся на него.
+    url: "http://localhost:5173",
+    cleartext: true,
+    // Для запуска на реальном устройстве подставьте адрес машины
+    // в локальной сети: // url: "http://192.168.1.100:5173",
     // cleartext: true,
   },
 

@@ -21,6 +21,7 @@ import {
   Star,
   Ban,
   Send,
+  X,
 } from "lucide-react";
 import {
   getMyProfile,
@@ -63,6 +64,14 @@ export default function Profile() {
   // Какой тумблер приватности сейчас сохраняется — блокируем только его,
   // а не всю секцию: остальные переключать можно
   const [privacyBusy, setPrivacyBusy] = useState<string | null>(null);
+  // Что открываем после входа: лента или видео (как у референса)
+  const [mainScreen, setMainScreen] = useState<"feed" | "reels">(
+    () => (localStorage.getItem("sd_main_screen") as "feed" | "reels" | null) ?? "feed",
+  );
+
+  useEffect(() => {
+    localStorage.setItem("sd_main_screen", mainScreen);
+  }, [mainScreen]);
 
   const togglePrivacy = useCallback(
     async (field: "hide_age" | "hide_distance" | "hide_from_visitors", value: boolean) => {
@@ -271,6 +280,12 @@ export default function Profile() {
 
       {/* ── Заполненность анкеты ──────────────────────────────── */}
       <ProfileCompleteness profile={profile} onEdit={() => navigate("/onboarding")} />
+      {/* Точечный nudge: подталкивает закрыть одно дешёвое поле, а не весь %
+          прогресса сразу — конверсия выше */}
+      <NudgeBanner
+        profile={profile}
+        onJump={() => navigate("/onboarding")}
+      />
 
       {/* ── О себе ────────────────────────────────────────────── */}
       {profile?.bio && (
@@ -598,8 +613,30 @@ export default function Profile() {
         ))}
       </div>
 
+      {/* ── Кастомизация: какой экран открывать после входа ───────
+          У Мимолёта это даётся, и сказывается на возврате: кто-то живёт в
+          ленте, кто-то — в видеороликах */}
+      <Card className="p-4 mb-4">
+        <h2 className="text-caption text-text-muted mb-3">Главный экран</h2>
+        <div className="flex gap-2.5">
+          <ScreenChoice
+            label="Лента"
+            hint="Свайп анкет"
+            active={mainScreen === "feed"}
+            onPick={() => setMainScreen("feed")}
+          />
+          <ScreenChoice
+            label="Видео"
+            hint="Reels-лента"
+            active={mainScreen === "reels"}
+            onPick={() => setMainScreen("reels")}
+          />
+        </div>
+      </Card>
+
       {/* ── Аккаунт ───────────────────────────────────────────── */}
       <div className="flex flex-col gap-2.5">
+
         <Button
           variant="secondary"
           size="md"
@@ -1140,9 +1177,113 @@ function ProfileCompleteness({
   );
 }
 
-/* ── Мои ролики ─────────────────────────────────────────────── */
+/** Точечный баннер, который просит заполнить одно конкретное поле.
+ *
+ * Общий «дозаполните анкету» работает слабо: читается как чужая просьба.
+ * «У вас есть субкультура? Укажите её» — тёплый приём, потому что
+ * упирается в одно поле, у которого есть короткая обратная связь (увидят
+ * на анкете), а не в целый список на 8 пунктов. Рисуем баннером, а не
+ * тостом: тост бы мигнул и исчез, а тут он ждёт решения.
+ */
+function ScreenChoice({
+  label,
+  hint,
+  active,
+  onPick,
+}: {
+  label: string;
+  hint: string;
+  active: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      aria-pressed={active}
+      className={`flex-1 rounded-[var(--radius-tile)] border p-3.5 text-left
+                 transition-colors ${
+                   active
+                     ? "border-accent bg-accent/10"
+                     : "border-hairline bg-surface"
+                 }`}
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-semibold text-[15px]">{label}</span>
+        {active && <Check size={16} className="text-accent" />}
+      </div>
+      <p className="text-caption text-text-muted">{hint}</p>
+    </button>
+  );
+}
 
-/**
+function NudgeBanner({
+  profile,
+  onJump,
+}: {
+  profile: UserProfile | null;
+  onJump: (field: string) => void;
+}) {
+  const [closedKey, setClosedKey] = useState<string | null>(
+    localStorage.getItem("nudge_closed_key"),
+  );
+
+  // Порядок важен: «у вас есть субкультура» звучит интереснее, чем «заполните
+  // рост», поэтому даже при равном весе его стоит ставить выше.
+  const PRIORITY: {
+    key: string;
+    text: string;
+    cta: string;
+    done: (p: UserProfile) => boolean;
+  }[] = [
+    { key: "subculture", text: "У вас есть субкультура? Укажите свою, и другие увидят её в анкете", cta: "Указать субкультуру", done: (p) => !!p.subculture },
+    { key: "mbti", text: "Есть результат MBTI? Его видно прямо на карточке", cta: "Указать MBTI", done: (p) => !!p.mbti },
+    { key: "height", text: "Рост поднимает анкету в фильтрах у людей с ним", cta: "Указать рост", done: (p) => p.height_cm != null },
+  ];
+
+  const missing = PRIORITY.filter((i) => !i.done(profile!));
+
+  // Полностью заполненный профиль не нуждается в баннере
+  if (!profile || !missing.length) return null;
+  if (closedKey === missing[0].key) return null;
+
+  const current = missing[0];
+
+  return (
+    <Card className="p-4 mb-4 border-accent/25 bg-accent/8 relative">
+      <button
+        aria-label="Закрыть"
+        onClick={() => {
+          localStorage.setItem("nudge_closed_key", current.key);
+          setClosedKey(current.key);
+        }}
+        className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full
+                   flex items-center justify-center text-text-muted
+                   hover:bg-surface-2"
+      >
+        <X size={13} />
+      </button>
+      <div className="flex items-start gap-3 pr-6">
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-[15px] mb-1">{current.text}</p>
+          <p className="text-caption text-text-muted">
+            Это бесплатно и займёт 30 секунд
+          </p>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => onJump(current.key)}
+        className="mt-3"
+      >
+        {current.cta}
+      </Button>
+    </Card>
+  );
+}
+
+/* ── Мои ролики ─────────────────────────────────────────────── *//**
  * Свои ролики с пометкой о скрытых. Именно здесь автор узнаёт, что видео сняли
  * с показа: в общей ленте такого ролика нет, и без этого блока он решил бы,
  * что загрузка не сработала.

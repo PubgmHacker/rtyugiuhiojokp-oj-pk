@@ -231,13 +231,13 @@ export default function App() {
               внутри приложения корень ведёт сразу в продукт */}
           <Route
             path="/"
-            element={<Navigate to={token ? "/discover" : "/login"} replace />}
+            element={<Navigate to={token ? (localStorage.getItem("sd_main_screen") === "reels" ? "/reels" : "/discover") : "/login"} replace />}
           />
           <Route
             path="/login"
             element={
               token ? (
-                <Navigate to={isOnboarded ? "/discover" : "/onboarding"} replace />
+                <Navigate to={isOnboarded ? (localStorage.getItem("sd_main_screen") === "reels" ? "/reels" : "/discover") : "/onboarding"} replace />
               ) : (
                 <Login />
               )

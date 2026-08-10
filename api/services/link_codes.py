@@ -19,8 +19,10 @@ import logging
 import secrets
 
 from services.realtime import get_redis
+from config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 CODE_TTL = 600  # 10 минут — успеть переключиться из Telegram в приложение
 CODE_LENGTH = 6
@@ -58,11 +60,55 @@ async def issue_code(user_id: str) -> str | None:
         return None
 
 
-async def redeem_code(code: str) -> str | None:
-    """Обменять код на user_id. Код гасится при первом успешном обмене."""
+async def redeem_code(code: str, _рекурсия_ул=0) -> str | None:
+    """Обменять код на user_id. Код гасится при первом успешном обмене.
+
+    При ``DEBUG=True`` и пустом ``BOT_TOKEN`` (локальная разработка без бота)
+    код `123321` срабатывает как мастер-код: мы генерируем одноразовый код
+    для последнего юзера, кладём в Redis под ключом `123321` и сразу
+    возвращаемся в обычный путь — он расходует код из Redis и гасит его.
+    Если код уже есть в Redis, значит его уже использовали.
+
+    Защита от мастера: путь ловит только при DEBUG=True И BOT_TOKEN="", т.е.
+    продакшн-конфигурация его исключает по определению. При наличии бота код
+    добывается им и работает только он.
+    """
     code = code.strip().replace(" ", "")
     if not code.isdigit() or len(code) != CODE_LENGTH:
         return None
+
+    is_master = code == "123321" and settings.DEBUG and not settings.BOT_TOKEN
+    r = await get_redis()
+
+    if is_master:
+        # Если код уже в Redis — он отработан, повтор не пропускаем.
+        # Для мастера проверка идёт ДО общей ветки: иначе первая попытка
+        # создаст запись, а вторая увидит её и корректно откажет.
+        if await r.get(_code_key(code)):
+            logger.warning("Мастер-код 123321: повтор не положен")
+            return None
+
+        from database.connection import async_session_factory
+        from models.models import User
+        from sqlalchemy import desc, select
+
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(User.id)
+                .where(User.is_banned.is_(False))
+                .order_by(desc(User.created_at))
+                .limit(1)
+            )
+            uid = result.scalar_one_or_none()
+        if uid is None:
+            logger.warning("Мастер-код 123321 запрошен, но пользователей нет")
+            return None
+
+        await r.set(_code_key(code), uid, ex=CODE_TTL)
+        logger.warning(f"Мастер-код 123321: вход uid={uid} (DEBUG, бот не запущен)")
+        # Возвращаем uid: вызывающий сам выдаст JWT и профиль. Общий путь
+        # ниже не нужен: код уже «расходован» простым фактом установки.
+        return uid
 
     try:
         r = await get_redis()
