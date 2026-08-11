@@ -86,6 +86,12 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    purchased_gifts: Mapped[List["GiftSubscription"]] = relationship(
+        back_populates="buyer", foreign_keys="[GiftSubscription.buyer_user_id]"
+    )
+    received_gifts: Mapped[List["GiftSubscription"]] = relationship(
+        back_populates="recipient", foreign_keys="[GiftSubscription.recipient_user_id]"
+    )
 
 
 class Profile(Base):
@@ -289,6 +295,7 @@ class Match(Base):
     messages: Mapped[List["Message"]] = relationship(back_populates="match", cascade="all, delete-orphan")
 
 
+
 class Message(Base):
     __tablename__ = "dating_messages"
     # История переписки грузится по match_id с сортировкой по времени —
@@ -352,6 +359,34 @@ class Subscription(Base):
     user: Mapped["User"] = relationship(back_populates="subscription")
 
 
+class GiftSubscription(Base):
+    """Подарок подписки: как в Telegram, но с точной привязкой к платежу.
+
+    Создаётся до покупки, активируется после 3DS/подтверждения. Код одноразовый,
+    показывается только создателю — иначе письмо превратится в раздачу.
+    """
+    __tablename__ = "dating_gift_subscriptions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    buyer_user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    recipient_user_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=True)
+    plan: Mapped[str] = mapped_column(String)  # plus | ultra | aurora
+    months: Mapped[int] = mapped_column(Integer, default=1)
+    # Код показываем создателю один раз и не пишем plaintext: шифруем до
+    # того, как дойдёт до лог-записи продюсера
+    code_hash: Mapped[str] = mapped_column(String)
+    # Заплатили? Код активируется только после оплаты — иначе print-ссылка
+    # станет бесплатным подарочным кодом
+    paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Использован? Отработанный код уже нельзя ввести повторно
+    redeemed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    buyer: Mapped["User"] = relationship(back_populates="purchased_gifts", foreign_keys="GiftSubscription.buyer_user_id")
+    recipient: Mapped[Optional["User"]] = relationship(back_populates="received_gifts", foreign_keys="GiftSubscription.recipient_user_id")
+
+
 class Referral(Base):
     """Приглашение по реферальной ссылке t.me/bot?start=ref_<user_id>."""
     __tablename__ = "dating_referrals"
@@ -382,16 +417,61 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class BannedIdentity(Base):
-    """Забаненные Telegram-аккаунты — список, который переживает удаление.
+# ── Темы чата в паре ─────────────────────────────────────────────────
+# Тема влияет на цвет своих пузырей, цвет чужих и фон чата для ОБОИХ участников.
+# Может настраиваться одинаково у них обоих, как в Telegram — иначе подпись
+# «у Ани красные, у Бори синие» потребовала бы поддержки дважды.
+class ChatThemeSettings(Base):
+    __tablename__ = "dating_chat_themes"
+    __table_args__ = (
+        # Тема одна: паре не нужен выбор из двух наборов одновременно,
+        # иначе каждая правка превращалась бы в окно опций, а не в краску.
+        UniqueConstraint("match_id", name="uq_chat_theme_match"),
+    )
 
-    Удаление аккаунта каскадом стирает и баны, и жалобы: забаненный удалял
-    себя, регистрировался тем же Telegram-аккаунтом и приходил чистым.
-    App Store требует настоящего удаления данных (5.1.1(v)), поэтому
-    сохраняем не профиль, а только `telegram_id` и причину — этого хватает,
-    чтобы не пустить обратно, и не хватает, чтобы считаться хранением
-    персональных данных удалённого человека.
-    """
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
+    # Произвольный цвет пузыря своих сообщений (hex). По умолчанию null —
+    # чтобы пустая тема не затирала переменные оформления приложения.
+    bubble_mine_color: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    bubble_theirs_color: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Фон на весь чат. Полõhex или ссылка на предзаполненный шаблон.
+    background_color: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Метка эмодзи-темы, какие показываем в пикере (day/night/rainbow/...).
+    # Нужна статистика, а не понятия — одинаковыми картинками набора не совместимы.
+    pattern_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ── Задачи и привычки ──────────────────────────────────────────────
+# Собираем простую to-do ленту прямо в профиле: важен не список, а что он
+# виден там, где уже ищут внимание. Способствует возврату ежедневно — и это
+# работает на паритет с дейтингом, потому что общая привычка формирует
+# повод для диалога.
+class UserHabit(Base):
+    __tablename__ = "dating_habits"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String)
+    # Количество целей в день (обычно 1). В карточке это шаг прогресса
+    # полоски («0/3»), а не абстраktный коричневый понт..
+    target_per_day: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
+    # Сколько сегодня сделано. На весь период не длится — хватает push в полночь.
+    today_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # За какой календарным днём показываем полоску: чтобы после 00:00 начать заново.
+    counted_for_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class BannedIdentity(Base):
+    """Забаненные Telegram-аккаунты — список, который переживает удаление."""
 
     __tablename__ = "dating_banned_identities"
     __table_args__ = (
@@ -752,6 +832,34 @@ class DeviceToken(Base):
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     token: Mapped[str] = mapped_column(String)
     platform: Mapped[str] = mapped_column(String, default="ios")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ── Стрик общения в паре ───────────────────────────────────────────
+# Виден в чате и в списке чатов как огонёк. Считается по паре, а не по
+# пользователю: стрик — про двоих, и если он прогорел, обидно обоим.
+class ChatStreak(Base):
+    __tablename__ = "dating_chat_streaks"
+    __table_args__ = (
+        UniqueConstraint("match_id", name="uq_chat_streak_match"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
+    # Сколько дней подряд уже общаются. Не меньше 1: «старт» — первый день.
+    streak_days: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # За какую календарную дату считали последний раз: чтобы в полночь ГТО
+    # заёк 00:00 мы не задвоили серию, проверяя «не писали ли вчера»
+    last_counted_for: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Остаток revive'ов в текущем окне (обычно месяц). Стрик 100+ дней
+    # жалко потерять, и цена ошибки выше — поэтому продажа востребована.
+    revives_left: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # Когда обновляли окно revives. Сбрасывается на 1-е число следующего
+    # месяца, чтобы игрок не голосовал сам и не перетаскивал счётчик.
+    revives_refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

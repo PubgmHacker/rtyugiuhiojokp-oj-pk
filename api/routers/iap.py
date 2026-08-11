@@ -28,6 +28,7 @@ from models.schemas import (
 from services.appstore import (
     ReceiptInvalid, is_configured, verify_transaction, разобрать_уведомление,
 )
+from services.gifting import activate_gift, purchase_gift
 from services.premium import activate_premium, current_tier, отозвать_покупку
 from services.plans import PLANS, TIER_ORDER, TIERS, plan_for_appstore_id
 
@@ -140,6 +141,45 @@ async def verify_purchase(
         plan=result["plan"],
         expires_at=result["expires_at"],
         already_processed=result["already_processed"],
+        gift_code=result.get("gift_code"),
+    )
+
+
+@router.post("/verify-gift", response_model=IAPVerifyResponse)
+async def verify_gift_purchase(
+    data: IAPVerifyRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Проверить покупку, но начислить не себе, а как подарок.
+
+    В витрине уже сделан выбор тарифа на предыдущем шаге, и здесь клиент
+    присылает тот же payload. Мы создаем запись подарка и активируем её
+    платежом, а не связываем покупателя с текущей подпиской — иначе при
+    подарке самому себе получилось бы двойное списание за один чек."""
+    if not is_configured():
+        raise HTTPException(status_code=503, detail="Покупки недоступны")
+
+    try:
+        purchase = verify_transaction(data.jws, expected_account_token=user.id)
+    except ReceiptInvalid as e:
+        logger.warning(f"gift IAP rejected (user={user.id}): {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    plan = plan_for_appstore_id(purchase.product_id)
+    if plan is None:
+        raise HTTPException(status_code=400, detail="Неизвестный продукт")
+
+    gift = await purchase_gift(session, buyer=user, plan_code=plan.code)
+    await activate_gift(session, gift)
+    await session.commit()
+
+    return IAPVerifyResponse(
+        success=True,
+        plan=plan.code,
+        expires_at="",
+        already_processed=False,
+        gift_code=gift_code,
     )
 
 

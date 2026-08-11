@@ -77,8 +77,8 @@ describe("Chat — гонка загрузки истории при смене 
       matchId === "match-a" ? (matchA.promise as any) : (matchB.promise as any)
     );
     vi.spyOn(api, "getMatches").mockResolvedValue([
-      { id: "match-a", partner: partner("Аня") } as api.MatchResponse,
-      { id: "match-b", partner: partner("Боря") } as api.MatchResponse,
+      { id: "match-a", partner: partner("Аня") } as unknown as api.MatchResponse,
+      { id: "match-b", partner: partner("Боря") } as unknown as api.MatchResponse,
     ]);
 
     // Один и тот же роутер на весь тест: навигация должна перерендерить Chat
@@ -104,6 +104,7 @@ describe("Chat — гонка загрузки истории при смене 
       matchB.resolve([
         {
           id: "msg-b1",
+          match_id: "match-b",
           sender_id: "partner-Боря",
           text: "привет из B",
           created_at: new Date().toISOString(),
@@ -120,6 +121,7 @@ describe("Chat — гонка загрузки истории при смене 
       matchA.resolve([
         {
           id: "msg-a1",
+          match_id: "match-a",
           sender_id: "partner-Аня",
           text: "привет из A",
           created_at: new Date().toISOString(),
@@ -140,6 +142,8 @@ describe("Chat — сбой загрузки истории", () => {
     // Сеть недоступна: раньше это молча показывало приглашение написать
     // первым, и человек думал, что собеседник ничего не писал
     vi.spyOn(api, "getMessages").mockRejectedValue(new Error("сеть недоступна"));
+    // В список мэтчей при этом всё равно ничего не приходит: UI без него
+    // не собирает себя, а ждёт. Поэтому и не зовём.
     vi.spyOn(api, "getMatches").mockRejectedValue(new Error("сеть недоступна"));
 
     const router = createMemoryRouter(

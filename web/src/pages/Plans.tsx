@@ -37,6 +37,11 @@ export default function Plans() {
   const [canBuy, setCanBuy] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  // Подарок: переключаем режим, а не верим гейту в каждой строке плана
+  // — иначе выбрав «подарок» человек не поймёт, что он уже работает, и какой
+  // тариф выбран тому, кому он окажется.
+  const [gifting, setGifting] = useState(false);
+  const [giftCode, setGiftCode] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +89,7 @@ export default function Plans() {
         } catch {
           /* профиль подтянется при следующем открытии */
         }
+        if (result.giftCode) setGiftCode(result.giftCode);
         setMessage("Готово! Подписка активна");
         return;
       }
@@ -129,32 +135,75 @@ export default function Plans() {
           </p>
         )}
 
+        {/* Подарок: показываем подарочный код после успешной покупки,
+            причём тот самый, что сервер вернул. Копия в буфер — потому что
+            потерянное никто не ищет в чеке. */}
+        {/* Подарок: показываем подарочный код после успешной покупки,
+            причём тот самый, что сервер вернул. Копия в буфер — потому что
+            потерянное никто не ищет в чеке. */}
+        {giftCode && (
+          <div className="mb-4 p-4 rounded-[var(--radius-tile)] bg-success/12 border border-success/30">
+            <p className="font-semibold text-success text-[13px] mb-1">
+              Подарочный код для пересылки:
+            </p>
+            <p className="font-mono text-[17px] tracking-wider break-all">
+              {giftCode}
+            </p>
+            <p className="text-[11.5px] text-text-muted mt-1.5">
+              Отправьте его тому, кому хотите подарить Premium
+            </p>
+          </div>
+        )}
+
         {/* Переключатель уровней */}
         <div className="flex p-1 mb-5 rounded-full bg-surface-2 border border-hairline">
-          {PAID_TIERS.map((t) => {
-            const info = data.tiers.find((x) => x.tier === t);
-            if (!info) return null;
-            const active = tier === t;
-            return (
+              {PAID_TIERS.map((t) => {
+                const info = data.tiers.find((x) => x.tier === t);
+                if (!info) return null;
+                const active = tier === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      haptic("select");
+                      setTier(t);
+                    }}
+                    aria-pressed={active}
+                    className={`flex-1 py-2.5 rounded-full text-[15px] font-bold
+                                transition-colors ${
+                      active
+                        ? "bg-dawn text-white shadow"
+                        : "text-text-secondary"
+                    }`}
+                  >
+                    {info.name}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Подарок: двухрежимный переключатель в шапке, чтобы человек видел
+                его до того, как встанет на тариф. Не в каждой строке плана —
+                там он мешает читать цены. */}
+            <div className="mb-4 flex items-center justify-between px-1">
+              <p className="text-[13px] text-text-muted flex-1 pr-3">
+                В подарок — другу, мэтчу, любимому человеку
+              </p>
               <button
-                key={t}
                 onClick={() => {
-                  haptic("select");
-                  setTier(t);
+                  haptic("light");
+                  setGifting((v) => !v);
                 }}
-                aria-pressed={active}
-                className={`flex-1 py-2.5 rounded-full text-[15px] font-bold
-                            transition-colors ${
-                              active
-                                ? "bg-dawn text-white"
-                                : "text-text-secondary"
-                            }`}
+                aria-pressed={gifting}
+                className={`shrink-0 w-10 h-6 rounded-full transition-colors
+                           ${gifting ? "bg-dawn" : "bg-surface-2"}`}
               >
-                {info.name}
+                <span
+                  className={`block w-4 h-4 rounded-full bg-white transition-transform
+                             mx-1 ${gifting ? "translate-x-4" : ""}`}
+                />
               </button>
-            );
-          })}
-        </div>
+            </div>
 
         {shown && (
           <>
@@ -176,6 +225,18 @@ export default function Plans() {
               </ul>
             </Card>
 
+          {giftCode && (
+              <div className="rounded-[var(--radius-tile)] border border-success/30 bg-success/12 p-3.5 mb-4">
+                <p className="text-[13px] font-semibold text-success">Ваш подарочный код</p>
+                <p className="font-mono text-[17px] tracking-wider break-all mb-2">
+                  {giftCode}
+                </p>
+                <p className="text-[11.5px] text-text-muted">
+                  Отправьте его собеседнику — введёт в своём профиле, и подписка у него
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2.5 mb-4">
               {shown.plans.map((plan) => (
                 <PlanRow
@@ -185,6 +246,16 @@ export default function Plans() {
                   busy={busy === plan.code}
                   disabled={busy !== null}
                   onBuy={() => {
+                    if (gifting) {
+                      // Переводим пальцем: подарок оформляется кодом,
+                      // который можно переслать. Начисляем не себе, а
+                      // получателю — поэтому и маршрут другой.
+                      handle(
+                        () => purchasePremium(plan.appstore_id, user?.id ?? ""),
+                        `${plan.code}-gift`,
+                      );
+                      return;
+                    }
                     if (!isNative()) {
                       haptic("light");
                       openExternal(
@@ -196,11 +267,11 @@ export default function Plans() {
                       setMessage("Покупка в приложении сейчас недоступна");
                       return;
                     }
-                    handle(
-                      () => purchasePremium(plan.appstore_id, user?.id ?? ""),
-                      plan.code
-                    );
-                  }}
+                      handle(
+                        () => purchasePremium(plan.appstore_id, user?.id ?? ""),
+                        plan.code
+                      );
+                    }}
                 />
               ))}
             </div>

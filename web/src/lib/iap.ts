@@ -46,7 +46,7 @@ interface IAPPlugin {
 const SouldawnIAP = registerPlugin<IAPPlugin>("SouldawnIAP");
 
 export type PurchaseOutcome =
-  | { status: "success"; expiresAt: string }
+  | { status: "success"; expiresAt: string; giftCode?: string }
   | { status: "cancelled" }
   /** Ask to Buy: решение придёт позже, начислим при следующем запуске. */
   | { status: "pending" }
@@ -90,10 +90,15 @@ export async function loadProducts(): Promise<IAPProduct[]> {
 }
 
 /** Отправить транзакцию на сервер и подтвердить её только после успеха. */
-async function redeem(tx: Transaction): Promise<string> {
-  const { data } = await api.post("/iap/verify", { jws: tx.jws });
+async function redeem(tx: Transaction, gift_recipient_id?: string): Promise<{ expiresAt: string; giftCode?: string }> {
+  const { data } = await api.post("/iap/verify", { 
+    jws: tx.jws, 
+    gift_recipient_id: gift_recipient_id || "",
+  });
+  // Подтверждаем чек именем Apple, как в документации: иначе сервер
+  // не подпишет ту же транзакцию, и мы спишем деньги без начисления
   await SouldawnIAP.finishTransaction({ transactionId: tx.transactionId });
-  return data.expires_at || "";
+  return { expiresAt: data.expires_at || "", giftCode: data.gift_code };
 }
 
 /**
@@ -112,7 +117,8 @@ export async function purchasePremium(
 
   try {
     const tx = await SouldawnIAP.purchase({ productId, appAccountToken: userId });
-    return { status: "success", expiresAt: await redeem(tx) };
+    const { expiresAt, giftCode } = await redeem(tx);
+    return { status: "success", expiresAt, giftCode };
   } catch (e: any) {
     const code = e?.code || e?.message || "";
     if (code === "cancelled") return { status: "cancelled" };
@@ -142,7 +148,8 @@ export async function restorePurchases(): Promise<PurchaseOutcome> {
     let expiresAt = "";
     for (const tx of entitlements) {
       try {
-        expiresAt = (await redeem(tx)) || expiresAt;
+        const result = await redeem(tx);
+        if (result.expiresAt) expiresAt = result.expiresAt;
       } catch {
         // Одна неудачная транзакция не должна ронять восстановление остальных
       }
@@ -168,14 +175,45 @@ export async function startTransactionListener(
   try {
     await SouldawnIAP.addListener("transactionUpdate", async (tx) => {
       try {
-        const expiresAt = await redeem(tx);
-        if (expiresAt) onPremiumChanged?.(expiresAt);
+        const result = await redeem(tx);
+        if (result.expiresAt) onPremiumChanged?.(result.expiresAt);
       } catch {
         // Не подтверждаем транзакцию: StoreKit принесёт её снова
       }
-    });
+    })
     await SouldawnIAP.startListening();
   } catch {
     // Плагин недоступен — покупки просто не работают
+  }
+}
+
+/**
+ * Подарить Premium другому пользователю по коду.
+ *
+ * Клиент присылает тот же JWS, что и себе, но указывает получателя —
+ * сервер не начисляет подписку напрямую, а создаёт одноразовый код:
+ * это безопаснее, чем просто показать счёт второму человеку, и проще
+ * совместимо с виртуальной валютой Telegram (Stars).
+ */
+export async function purchaseGift(
+  productId: string,
+  userId: string,
+  recipientId: string,
+): Promise<PurchaseOutcome> {
+  if (!isNative()) {
+    return { status: "error", message: "Доступно только в приложении" };
+  }
+  try {
+    const tx = await SouldawnIAP.purchase({ productId, appAccountToken: userId });
+    const { expiresAt, giftCode } = await redeem(tx, recipientId);
+    return { status: "success", expiresAt, giftCode };
+  } catch (e: any) {
+    const code = e?.code || e?.message || "";
+    if (code === "cancelled") return { status: "cancelled" };
+    if (code === "pending") return { status: "pending" };
+    return {
+      status: "error",
+      message: e?.response?.data?.detail || e?.message || "Не удалось оформить подарок",
+    };
   }
 }

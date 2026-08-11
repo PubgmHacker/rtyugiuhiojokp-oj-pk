@@ -218,6 +218,18 @@ export default function Matches() {
                           {formatTime(m.last_message_at)}
                         </span>
                       )}
+                      {/* Стрик: серия общения — эмбиент-индикатор. Рядом с
+                           именем, а не на карточке: выбранный эмоджи изменяется
+                           от длины серии, и это читается лучше номера. */}
+                      {!!m.streak_days && (
+                        <span
+                          className="flex items-center gap-1 text-[12px]
+                                     text-warning font-semibold shrink-0"
+                          aria-label={`Серия общения: ${m.streak_days} дн.`}
+                        >
+                          {m.streak_emoji} {m.streak_days}
+                        </span>
+                      )}
                     </div>
                     <p
                       className={`text-[13.5px] truncate ${

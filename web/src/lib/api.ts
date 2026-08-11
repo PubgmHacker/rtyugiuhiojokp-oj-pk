@@ -127,6 +127,13 @@ export interface MatchResponse {
   initiator_id?: string | null;
   /** Ответил ли получатель на "direct"-письмо. */
   direct_answered?: boolean;
+
+  // Серия общения (огонёк): приходит с пакетом в списке чатов, поэтому
+  // рядом храним и emoji — клиенту нечего вычислять по дням самому.
+  streak_days?: number;
+  streak_emoji?: string;
+  streak_revives_left?: number;
+  streak_can_revive?: boolean;
 }
 
 /** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
@@ -137,15 +144,50 @@ export interface ReelPreview {
   caption: string;
 }
 
+/** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
+export interface MatchResponse {
+  id: string;
+  match_score?: number | null;
+  ai_reason?: string | null;
+  created_at?: string | null;
+  partner: UserProfile;
+  /** Превью для списка чатов — приходит вместе со списком мэтчей. */
+  last_message?: string | null;
+  last_message_at?: string | null;
+  unread_count?: number;
+  /** "match" — взаимный лайк, "direct" — платное письмо без взаимности. */
+  kind?: "match" | "direct";
+  /** Кто написал первым в "direct"-беседе. */
+  initiator_id?: string | null;
+  /** Ответил ли получатель на "direct"-письмо. */
+  direct_answered?: boolean;
+
+  // Серия общения (огонёк): приходит с пакетом в списке чатов, поэтому
+  // рядом храним и emoji — клиенту нечего вычислять по дням самому.
+  streak_days?: number;
+  streak_emoji?: string;
+  streak_revives_left?: number;
+  streak_can_revive?: boolean;
+}
+
+/** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
+export interface ReelPreview {
+  id: string;
+  video_url: string;
+  cover_url: string;
+  caption: string;
+}
+
+/** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
 export interface ChatMessage {
   id: string;
+  match_id: string;
   sender_id: string;
   text: string;
   image_url?: string | null;
-  /** Пусто у обычных сообщений и у роликов, снятых модерацией после пересыла. */
   reel?: ReelPreview | null;
   read_at?: string | null;
-  created_at?: string | null;
+  created_at: string;
 }
 
 // ── API Functions ──────────────────────────────────────────────
@@ -208,6 +250,11 @@ export async function resetDeck(): Promise<void> {
   await api.post("/profiles/deck/reset");
 }
 
+export async function getMatches(signal?: AbortSignal): Promise<MatchResponse[]> {
+  const { data } = await api.get("/matches");
+  return data;
+}
+
 export async function likeProfile(
   targetId: string,
   type: "like" | "superlike" | "pass" = "like",
@@ -221,9 +268,14 @@ export async function likeProfile(
   const { data } = await api.post("/likes", { target_id: targetId, type, message });
   return data;
 }
-
-export async function getMatches(signal?: AbortSignal): Promise<MatchResponse[]> {
-  const { data } = await api.get("/matches", { signal });
+/** Проверить покупку. Если gift_recipient_id задан — код не активируется
+ * у покупателя, а становится подарочным кодом к другому. */
+export async function verifyPurchase(
+  jws: string, gift_recipient_id?: string,
+): Promise<IAPVerifyResponse> {
+  const body: Record<string, unknown> = { jws };
+  if (gift_recipient_id) body.gift_recipient_id = gift_recipient_id;
+  const { data } = await api.post("/iap/verify", body);
   return data;
 }
 
@@ -813,6 +865,16 @@ export interface PlansOut {
   tiers: TierOut[];
 }
 
+/** Транзакция и подтверждённая подписка. `gift_code` выдаётся только при
+ *  продаже подарка — иначе его бы видно в логе. */
+export interface IAPVerifyResponse {
+  success: boolean;
+  plan: string;
+  expires_at: string;
+  already_processed: boolean;
+  gift_code?: string;
+}
+
 /**
  * Витрина тарифов. Цены приходят с сервера, а не хранятся в клиенте: иначе
  * бот и мини-апп разошлись бы в ценнике после первой же правки.
@@ -847,4 +909,16 @@ export async function logoutServerSide(): Promise<void> {
  */
 export async function logoutEverywhere(): Promise<void> {
   await api.post("/auth/logout-all");
+}
+
+/** Восстановить прогаревшую серию общения — после одного дня тишины.
+ * Серия платная: лимит на пару в месяц зависит от её длины (1/2/3). */
+export async function reviveStreak(matchId: string): Promise<{
+  success: boolean;
+  streak_days: number;
+  streak_emoji: string;
+  streak_revives_left: number;
+}> {
+  const { data } = await api.post(`/matches/${matchId}/revive-streak`);
+  return data;
 }

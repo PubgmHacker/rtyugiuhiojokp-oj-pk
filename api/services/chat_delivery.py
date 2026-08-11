@@ -38,6 +38,7 @@ from services.direct_messages import (
 from services.public_profile import наша_картинка
 from services.push import is_configured, notify_new_message
 from services.realtime import publish_bot_event
+from services.streaks import touch_streak_for_message
 from services.ws_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,11 @@ async def save_message(
             # Флаг «ответили» ставится тут же: он снимает лимит с отправителя,
             # и разъехаться с фактом сообщения не должен ни на одном пути
             await mark_answered_if_needed(match, sender_id)
+
+            # Стрик: +1 день, если это первое сообщение сегодня. Читаем эту
+            # ветку до флага answer-статуса: иначе при повторном открытии
+            # окна неизвестно, какой из флагов должен победить.
+            await touch_streak_for_message(session, match)
 
             message = Message(
                 match_id=match_id,

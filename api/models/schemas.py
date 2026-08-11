@@ -90,7 +90,7 @@ class ProfileUpdate(BaseModel):
     birth_date: Optional[str] = None  # ISO format "YYYY-MM-DD"
     # Клиенту удобнее прислать возраст, чем дату рождения: точный день
     # мы всё равно не спрашиваем. Пересчитывается в birth_date на сервере.
-    age: Optional[int] = Field(None, ge=18, le=99)
+    age: Optional[int] = Field(None, ge=16, le=99)
     city: Optional[str] = Field(None, max_length=100)
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -101,8 +101,8 @@ class ProfileUpdate(BaseModel):
     hide_distance: Optional[bool] = None
     hide_from_visitors: Optional[bool] = None
     looking_for: Optional[str] = Field(None, pattern="^(male|female|other|any)$")
-    age_min: Optional[int] = Field(None, ge=18, le=99)
-    age_max: Optional[int] = Field(None, ge=18, le=99)
+    age_min: Optional[int] = Field(None, ge=16, le=99)
+    age_max: Optional[int] = Field(None, ge=16, le=99)
     distance_max: Optional[int] = Field(None, ge=1, le=500)
     # Пустая строка — осознанное «сбросить», поэтому min_length не ставим.
     goal: Optional[str] = Field(None, max_length=32)
@@ -173,6 +173,23 @@ class MatchResponse(BaseModel):
     #: Ответил ли получатель на "direct"-письмо: пока False, инициатор не
     #: может отправить второе сообщение.
     direct_answered: bool = False
+
+    # ── Огонёк общения ─────────────────────────────────────────────
+    #: Сколько дней подряд уже общаются. Число получено из стрика на сервере,
+    #: а не вычисляется клиентом — иначе часы и сетившие dev расходились бы.
+    #: 0 — серии нет (общаемся только первым днём).
+    streak_days: int = 0
+    #: Эмодзи-уровень огонька: 🔥 (3+), ⚡ (10+), 💥 (30+), 🌟 (100+),
+    #: 🏆 (200+). Клиент просто рисует — логика на сервере одна.
+    streak_emoji: str = ""
+    #: Сколько восстановлений осталось в текущем месяце у этой пары.
+    streak_revives_left: int = 0
+    #: Можно ли сейчас восстановить прогаревшую серию (после дня тишины):
+    #: общее поле и для текста, и для видимости кнопки.
+    streak_can_revive: bool = False
+    #: Код последнего подарка, если этот платёж инициировал именно подарок.
+    #: null — не показываем блок в UI, и не выводим в списке чатов напоминание.
+    gift_code: Optional[str] = None
 
 
 class DirectMessageRequest(BaseModel):
@@ -658,6 +675,9 @@ class IAPVerifyRequest(BaseModel):
     """
 
     jws: str = Field(min_length=100, max_length=20000)
+    #: Для подарка: ничего не отправляем — тогда обычная покупка себе.
+    #: Если передан — это подарок, и создаётся код вместо начисления Premium.
+    gift_recipient_id: Optional[str] = None
 
 
 class IAPVerifyResponse(BaseModel):
@@ -666,3 +686,6 @@ class IAPVerifyResponse(BaseModel):
     expires_at: str = ""
     # Транзакция уже была зачтена ранее — повторное начисление не произошло
     already_processed: bool = False
+    #: Секрет подарочного кода, одноразовый. Не None только при
+    # покупке-подарке: мы его не сохраняем plaintext, храним только хеш.
+    gift_code: Optional[str] = None

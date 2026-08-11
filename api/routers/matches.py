@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, and_, or_, desc, func
-from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+from datetime import datetime, timedelta, timezone
 
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.auth import get_current_user
@@ -16,6 +17,9 @@ from services.ai_matchmaker import generate_icebreakers
 from services.ai_moderation import log_moderation, moderate_text
 from services.chat_delivery import (
     ДоставкаОтклонена, fan_out, reel_preview, save_message,
+)
+from services.streaks import (
+    revive_streak, streak_emoji, get_streak,
 )
 from services.direct_messages import direct_quota_left, start_direct_message
 from services.plans import (
@@ -156,6 +160,22 @@ async def get_matches(
         if last:
             preview = last.text or ("Фотография" if last.image_url else None)
 
+        # Стрик: сознательно делается одну копию на пару, а не по каждому
+        # чату — иначе список на 100 чатов потребует 100 запросов.
+        # Стрик сгорает при полном дне тишины и из окна revive тоже виден.
+        streak = await get_streak(session, m.id)
+        days = streak.streak_days if streak else 0
+        emoji = streak_emoji(days) if days else ""
+        # Пропусти revive только если ещё есть сегодня и серия погашена не сегодня
+        can_revive = False
+        revives_left = streak.revives_left if streak else 0
+        if streak and streak.streak_days == 0 and streak.last_counted_for:
+            yesterday = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            ) - timedelta(days=1)
+            if streak.last_counted_for == yesterday:
+                can_revive = revives_left > 0
+
         responses.append(
             MatchResponse(
                 id=m.id,
@@ -169,6 +189,10 @@ async def get_matches(
                 kind=m.kind,
                 initiator_id=m.initiator_id,
                 direct_answered=m.direct_answered,
+                streak_days=days,
+                streak_emoji=emoji,
+                streak_can_revive=can_revive,
+                streak_revives_left=revives_left,
             )
         )
 
@@ -361,3 +385,30 @@ async def get_icebreakers(
     partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
     icebreakers = await generate_icebreakers(session, user.id, partner_id)
     return {"icebreakers": icebreakers}
+
+
+@router.post("/{match_id}/revive-streak")
+async def revive_streak_route(
+    match_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Восстановить серию общения после дня тишины.
+
+    Не путать с покупкой стрика: возвращение к тому, что было вчера,
+    имеет смысл только когда серия действительно прогорела из-за
+    пропущенного дня. Если прогаревшая серия уже была на пике 300+
+    (3 revive/месяц), а её не взяли — это осознанный отказ, а не баг.
+    """
+    match = await _get_own_match(session, match_id, user.id)
+    try:
+        streak = await revive_streak(session, match)
+    except ValueError as err:
+        raise HTTPException(status_code=429, detail=str(err))
+    await session.commit()
+    return {
+        "success": True,
+        "streak_days": streak.streak_days,
+        "revives_left": streak.revives_left,
+        "streak_emoji": streak_emoji(streak.streak_days),
+    }
