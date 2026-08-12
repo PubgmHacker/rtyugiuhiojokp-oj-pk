@@ -1,12 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { SlidersHorizontal, X, Flame, MapPin } from "lucide-react";
+import { SlidersHorizontal, X, Flame, MapPin, Zap } from "lucide-react";
 import SwipeDeck from "../components/SwipeDeck";
 import DailyCardBanner from "../components/DailyCard";
 import { useStore } from "../lib/store";
-import { updateMyProfile, getMyProfile, type UserProfile } from "../lib/api";
+import {
+  updateMyProfile,
+  getMyProfile,
+  getBoost,
+  activateBoost,
+  type BoostState,
+  type UserProfile,
+} from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { useIsMounted } from "../hooks/useSafeAsync";
 import { Button, Chip, Spinner } from "../components/ui";
 import {
   GOALS,
@@ -58,23 +66,30 @@ export default function Discover() {
             Анкеты
           </span>
 
-          <button
-            aria-label="Настройки поиска"
-            onClick={() => {
-              haptic("light");
-              setFiltersOpen(true);
-            }}
-            className={`inline-flex items-center gap-2 pl-3.5 pr-4 py-2 rounded-full
-                        text-[14.5px] font-semibold glass-strong
-                        active:scale-95 transition-transform
-                        ${filtersActive ? "text-accent" : "text-text-secondary"}`}
-          >
-            <SlidersHorizontal size={17} />
-            Фильтры
-            {filtersActive && (
-              <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent" />
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Буст живёт в шапке, а не на карточке: он поднимает СВОЮ
+                анкету, и среди кнопок, действующих на человека с фото,
+                читался как действие про него */}
+            <BoostButton />
+
+            <button
+              aria-label="Настройки поиска"
+              onClick={() => {
+                haptic("light");
+                setFiltersOpen(true);
+              }}
+              className={`inline-flex items-center gap-2 pl-3.5 pr-4 py-2 rounded-full
+                          text-[14.5px] font-semibold glass-strong
+                          active:scale-95 transition-transform
+                          ${filtersActive ? "text-accent" : "text-text-secondary"}`}
+            >
+              <SlidersHorizontal size={17} />
+              Фильтры
+              {filtersActive && (
+                <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent" />
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -89,6 +104,96 @@ export default function Discover() {
         setUser={setUser}
       />
     </div>
+  );
+}
+
+/* ── Буст своей анкеты ──────────────────────────────────────── */
+
+function BoostButton() {
+  const isMounted = useIsMounted();
+  const [boost, setBoost] = useState<BoostState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getBoost()
+      .then((b) => isMounted() && setBoost(b))
+      // Кнопки нет вовсе, если сервер не ответил: показывать то, что
+      // заведомо не сработает, нельзя
+      .catch(() => isMounted() && setBoost(null));
+  }, [isMounted]);
+
+  if (!boost) return null;
+
+  const label = boost.active
+    // Буст поднимает не только выдачу в деке, но и очередь «Оценка фото» —
+    // уточняем это здесь, а не заводим для этого отдельный контрол
+    ? "Буст активен: анкета выше и в деке, и в очереди на оценку фото"
+    : boost.left_today
+      ? `Поднять анкету на ${boost.minutes} минут (и в деке, и в оценке фото)`
+      : boost.per_day
+        ? "Бусты на сегодня закончились"
+        // Имя уровня — с сервера: гейт живёт в FEATURE_MIN_TIER, и
+        // вписанное здесь словом соврало бы после переноса
+        : `Буст доступен на ${boost.required_tier_name}`;
+
+  const activate = async () => {
+    if (busy || boost.active) return;
+    setBusy(true);
+    haptic("light");
+    try {
+      const next = await activateBoost();
+      if (isMounted()) setBoost(next);
+      haptic("success");
+    } catch (e: any) {
+      haptic("error");
+      // 403 — уровень не позволяет, 429 — на сегодня всё. И то и другое
+      // человек должен прочитать, а не додумывать
+      if (isMounted())
+        setError(e?.response?.data?.detail ?? "Не удалось включить буст");
+    } finally {
+      if (isMounted()) setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        aria-label={label}
+        title={label}
+        onClick={activate}
+        disabled={busy || boost.active}
+        className={`relative tap-target inline-flex items-center justify-center w-11 h-11
+                    rounded-full glass-strong active:scale-95 transition-transform
+                    ${boost.active ? "text-success" : "text-text-secondary"}`}
+      >
+        <Zap size={18} fill={boost.active ? "currentColor" : "none"} />
+        {boost.active && (
+          <span
+            aria-hidden
+            className="absolute top-1 right-1 w-2 h-2 rounded-full bg-success
+                       ring-2 ring-bg"
+          />
+        )}
+      </button>
+
+      {/* Отказ сервера — тем же пузырём, что ошибки деки: причина словами */}
+      <AnimatePresence>
+        {error && (
+          <motion.button
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            onClick={() => setError(null)}
+            className="fixed bottom-24 inset-x-4 z-40 mx-auto max-w-[420px]
+                       px-4 py-3 rounded-[var(--radius-tile)] bg-surface-3
+                       text-[13.5px] text-text float-shadow"
+          >
+            {error} · закрыть
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

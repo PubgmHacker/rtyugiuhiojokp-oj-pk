@@ -17,21 +17,27 @@ import {
 
 export default function Matches() {
   const navigate = useNavigate();
-  const { matches, setMatches } = useStore();
+  const { matches, setMatches, setUnreadMessages } = useStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   const load = useCallback(async () => {
     setError(false);
     try {
-      setMatches(await getMatches());
+      const свежие = await getMatches();
+      setMatches(свежие);
+      // Бейдж «Чаты» пересчитываем по свежему списку: человек читает
+      // переписки, и цифра с момента входа в приложение успевает соврать
+      setUnreadMessages(
+        свежие.reduce((sum, m) => sum + (m.unread_count ?? 0), 0)
+      );
       clearNotificationBadge();
     } catch {
       setError(true);
     } finally {
       setLoading(false);
     }
-  }, [setMatches]);
+  }, [setMatches, setUnreadMessages]);
 
   useEffect(() => {
     load();

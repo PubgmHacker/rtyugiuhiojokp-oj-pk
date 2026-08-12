@@ -50,6 +50,9 @@ redis_data/
 *.tar.gz
 *.zip
 
+# ── Демо-данные (генерирует tools/seed_demo.py) ────────────────
+web/public/demo-photos/
+
 # ── iOS / Xcode ────────────────────────────────────────────────
 build/
 *.xcarchive

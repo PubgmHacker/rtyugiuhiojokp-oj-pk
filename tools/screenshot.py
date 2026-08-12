@@ -14,11 +14,21 @@
     cd web && npm run build && npx vite preview --port 4180 &
     python3 tools/screenshot.py /login /discover /profile
 
+По умолчанию сессия фиктивная: API не отвечает, зато видна вёрстка,
+скелетоны и пустые состояния. Для осмотра с живыми данными:
+
+    python3 tools/seed_demo.py                       # база должна жить
+    python3 tools/screenshot.py --dev-login audit-jax /discover /matches
+
+--dev-login берёт настоящий токен через /auth/dev (работает только при
+DEBUG=true) — экраны наполняются тем, что реально отдаёт API.
+
 Результат: PNG в /tmp/souldawn-shots/ + список элементов, выходящих за вьюпорт.
 """
 
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 import subprocess
@@ -39,9 +49,20 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ЗАМЕР = """
 JSON.stringify((() => {
   const d = document.documentElement;
+  // Внутри горизонтально прокручиваемого предка выход за вьюпорт легален:
+  // это карусель (чипы, истории), а не сломанная вёрстка. Без этой поправки
+  // каждый скроллируемый ряд поднимал ложную тревогу.
+  const вКарусели = (e) => {
+    for (let p = e.parentElement; p; p = p.parentElement) {
+      const o = getComputedStyle(p).overflowX;
+      if ((o === 'auto' || o === 'scroll') && p.scrollWidth > p.clientWidth) return true;
+    }
+    return false;
+  };
   const вылезли = [...document.querySelectorAll('*')]
     .map(e => ({ e, r: e.getBoundingClientRect() }))
     .filter(x => x.r.width > 0 && (x.r.right > d.clientWidth + 1 || x.r.left < -1))
+    .filter(x => !вКарусели(x.e))
     .slice(0, 8)
     .map(x => ({
       тег: x.e.tagName,
@@ -94,23 +115,35 @@ class Браузер:
             if ответ.get("id") == мой:
                 return ответ.get("result", {})
 
-    def войти(self) -> None:
-        """Положить фиктивную сессию, чтобы дойти до защищённых экранов.
+    def войти(self, api: str = "", device: str = "") -> None:
+        """Положить сессию, чтобы дойти до защищённых экранов.
 
         Без неё всё, кроме /login, редиректит на вход, и посмотреть на дека,
-        профиль или коллекцию нельзя. Токен фиктивный: API в этом режиме не
-        отвечает, зато видна сама вёрстка, скелетоны и пустые состояния —
-        то, что и надо проверять глазами.
+        профиль или коллекцию нельзя.
+
+        Без --dev-login токен фиктивный: API в этом режиме не отвечает, зато
+        видна сама вёрстка, скелетоны и пустые состояния. С --dev-login токен
+        настоящий (гостевой /auth/dev, только при DEBUG=true) — экраны
+        показывают живые данные, обычно из tools/seed_demo.py.
         """
+        токен, пользователь = "снимок-экрана", {
+            "id": "снимок", "display_name": "Аня", "photos": [], "interests": [],
+            "bio": "", "gender": "female", "city": "Москва", "looking_for": "any",
+            "is_incognito": False,
+        }
+        if device:
+            ответ = json.load(urllib.request.urlopen(urllib.request.Request(
+                f"{api}/api/auth/dev",
+                data=json.dumps({"device_id": device, "name": "Осмотр"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )))
+            токен, пользователь = ответ["token"], ответ["user"]
+
         self.зов("Page.navigate", {"url": f"{БАЗА}/login"})
         time.sleep(2)
-        self.зов("Runtime.evaluate", {"expression": """
-            localStorage.setItem('sd_token', 'снимок-экрана');
-            localStorage.setItem('sd_user', JSON.stringify({
-              id: 'снимок', display_name: 'Аня', photos: [], interests: [],
-              bio: '', gender: 'female', city: 'Москва', looking_for: 'any',
-              is_incognito: false
-            }));
+        self.зов("Runtime.evaluate", {"expression": f"""
+            localStorage.setItem('sd_token', {json.dumps(токен)});
+            localStorage.setItem('sd_user', JSON.stringify({json.dumps(пользователь)}));
         """})
 
     def снять(self, путь: str, ширина: int) -> dict:
@@ -139,15 +172,26 @@ class Браузер:
 
 
 def main() -> int:
-    пути = sys.argv[1:] or ["/login"]
+    p = argparse.ArgumentParser(description="Снимки экранов в мобильном вьюпорте")
+    p.add_argument("пути", nargs="*", default=["/login"], help="маршруты SPA")
+    p.add_argument("--dev-login", metavar="DEVICE", default="",
+                   help="настоящий вход через /auth/dev с этим device_id")
+    p.add_argument("--api", default="http://localhost:8000",
+                   help="адрес API для --dev-login (default: %(default)s)")
+    p.add_argument("--widths", default="",
+                   help="ширины через запятую вместо стандартных 320,390,430")
+    а = p.parse_args()
+
+    пути = а.пути or ["/login"]
+    ширины = tuple(int(w) for w in а.widths.split(",") if w) or ШИРИНЫ
     ВЫХОД.mkdir(parents=True, exist_ok=True)
 
     браузер = Браузер()
     плохо = 0
     try:
-        браузер.войти()
+        браузер.войти(api=а.api, device=а.dev_login)
         for путь in пути:
-            for ширина in ШИРИНЫ:
+            for ширина in ширины:
                 з = браузер.снять(путь, ширина)
                 метка = "ок  "
                 if з["вылезли"] or з["ширина_прокрутки"] > з["вьюпорт"] + 1:

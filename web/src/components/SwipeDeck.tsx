@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, SlidersHorizontal, Mail, MessageCircleHeart, Zap, Gift } from "lucide-react";
+import { X, Heart, Star, SlidersHorizontal, Mail, MessageCircleHeart } from "lucide-react";
 import type { DeckProfile, MatchResponse } from "../lib/api";
 import {
   likeProfile,
@@ -8,9 +8,6 @@ import {
   resetDeck,
   getSuperlikeQuota,
   recordVisit,
-  getBoost,
-  activateBoost,
-  type BoostState,
 } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
@@ -46,9 +43,8 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   // Лайк с сообщением: пишем до отправки, потому что текст уходит вместе
   // с лайком и увидят его ещё до взаимности
   const [noteFor, setNoteFor] = useState<DeckProfile | null>(null);
+  // Платное письмо без взаимного лайка — вход прямо с карточки
   const [directFor, setDirectFor] = useState<DeckProfile | null>(null);
-  const [boost, setBoost] = useState<BoostState | null>(null);
-  const [boostBusy, setBoostBusy] = useState(false);
 
   const loadingRef = useRef(false);
   // Блокируем повторный свайп, пока текущий не обработан — иначе
@@ -102,16 +98,6 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   }, [deck.length, loadDeck]);
 
   useEffect(() => {
-    getBoost()
-      .then((b) => {
-        if (isMounted()) setBoost(b);
-      })
-      .catch(() => {
-        if (isMounted()) setBoost(null); // кнопку тогда не показываем
-      });
-  }, [isMounted]);
-
-  useEffect(() => {
     getSuperlikeQuota()
       .then((q) => {
         if (isMounted()) setSuperlikesLeft(q.left);
@@ -130,23 +116,6 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
     visitedRef.current.add(top.id);
     recordVisit(top.id);
   }, [deck]);
-
-  const handleBoost = useCallback(async () => {
-    if (boostBusy) return;
-    setBoostBusy(true);
-    haptic("light");
-    try {
-      setBoost(await activateBoost());
-      haptic("success");
-    } catch (e: any) {
-      haptic("error");
-      // 403 — уровень не позволяет, 429 — на сегодня всё. И то и другое
-      // человек должен прочитать, а не додумывать
-      setError(e?.response?.data?.detail ?? "Не удалось включить буст");
-    } finally {
-      setBoostBusy(false);
-    }
-  }, [boostBusy]);
 
   const handleSwipe = useCallback(
     async (direction: SwipeDirection, profile: DeckProfile, note = "") => {
@@ -206,12 +175,17 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   /* ── Первая загрузка ───────────────────────────────────────── */
   if (isLoading && deck.length === 0) {
     return (
-      <div className="flex-1 flex flex-col px-4 pt-2 pb-4 max-w-[440px] mx-auto w-full">
-        <Skeleton className="flex-1 rounded-[var(--radius-card)]" />
-        <div className="flex items-center justify-center gap-4 mt-5">
-          {[44, 60, 44, 60, 44].map((s, i) => (
-            <Skeleton key={i} className="rounded-full" style={{ width: s, height: s }} />
-          ))}
+      <div className="flex-1 flex flex-col px-4 pt-2 pb-3 max-w-[440px] mx-auto w-full min-h-0">
+        {/* Скелетон повторяет реальную раскладку: карточка во всю высоту и
+            столбец кнопок справа. Прежний ряд кружков снизу обещал другой
+            экран, и интерфейс «прыгал» после загрузки */}
+        <div className="relative flex-1 min-h-0">
+          <Skeleton className="absolute inset-0 rounded-[var(--radius-card)]" />
+          <div className="absolute right-3 bottom-24 flex flex-col items-center gap-3">
+            {[48, 64, 48, 48, 48].map((s, i) => (
+              <Skeleton key={i} className="rounded-full" style={{ width: s, height: s }} />
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -224,7 +198,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         // Разбитое сердце тут читалось как отказ, хотя ничего плохого не
         // произошло: анкеты просто кончились. И везде в продукте «вы» —
         // «ты» осталось только здесь
-        emoji="🌅"
+        emoji="✨"
         title={isExhausted ? "На сегодня всё" : "Анкеты закончились"}
         description={
           isExhausted
@@ -281,42 +255,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
           className="absolute right-3 bottom-24 z-30 flex flex-col items-center gap-3
                      pointer-events-none"
         >
-          {/* Буст — молния, как в референсе. Кнопки нет вовсе, если сервер
-              не ответил: показывать то, что заведомо не сработает, нельзя */}
-          {boost && (
-            <div className="relative pointer-events-auto">
-              <IconButton
-                label={
-                  boost.active
-                    // Буст поднимает не только выдачу в деке, но и очередь
-                    // «Оценка фото» — уточняем это здесь, а не заводим для
-                    // этого отдельный контрол
-                    ? "Буст активен: анкета выше и в деке, и в очереди на оценку фото"
-                    : boost.left_today
-                      ? `Поднять анкету на ${boost.minutes} минут (и в деке, и в оценке фото)`
-                      : boost.per_day
-                        ? "Бусты на сегодня закончились"
-                        // Имя уровня — с сервера: гейт живёт в FEATURE_MIN_TIER,
-                        // и вписанное здесь словом соврало бы после переноса
-                        : `Буст доступен на ${boost.required_tier_name}`
-                }
-                onClick={handleBoost}
-                disabled={boostBusy || boost.active}
-                size={48}
-                tone={boost.active ? "success" : "neutral"}
-              >
-                <Zap size={20} fill={boost.active ? "currentColor" : "none"} />
-              </IconButton>
-              {boost.active && (
-                <span
-                  aria-hidden
-                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full
-                             bg-success ring-2 ring-bg"
-                />
-              )}
-            </div>
-          )}
-
+          {/* Буста здесь больше нет: он действует на СВОЮ анкету, а не на
+              человека с карточки, поэтому живёт в шапке рядом с фильтрами —
+              все кнопки рейла действуют на того, кто сейчас на фото */}
           <div className="relative pointer-events-auto">
             <IconButton
               label={
@@ -372,26 +313,22 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
             </IconButton>
           </div>
 
-          {/* Подарок: платный крючок на самом частом экране (Мимолёт тоже
-              ставит его прямо на карточку — и у них, и у нас это продажа).
-              Иконка сознательно золотая: раз премиум заметен тонким
-              штрихом по всему приложению («звёздочка» в «Ещё» читается),
-              здесь он должен быть виден как цвет, а не шильдик */}
+          {/* Письмо без взаимного лайка — платный крючок на самом частом
+              экране (фирменная механика референса). Гейт по тарифу и лимиту
+              показывает сама шторка, честно и с объяснением */}
           <div className="pointer-events-auto">
             <IconButton
-              label="Отправить подарок (премиум)"
+              label="Написать без мэтча"
               onClick={() => {
                 const top = deck[0];
                 if (!top) return;
                 haptic("light");
-                setDirectFor(top); // откроем покупку подарка по нажатию
+                setDirectFor(top);
               }}
               disabled={!deck.length}
               size={48}
-              tone="neutral"
-              className="text-warn"
             >
-              <Gift size={19} />
+              <MessageCircleHeart size={20} />
             </IconButton>
           </div>
 
@@ -435,59 +372,13 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
 
       <MatchModal data={matchData} onClose={() => setMatchData(null)} />
 
-      {/* Покупка подарка из-под деки: шторка с быстрым выбором пакета, чтобы
-          не навигировать на /plans (там длинная воронка, а здесь импульс) */}
-      {
-        directFor && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-            onClick={() => setDirectFor(null)}
-          />
-        )
-      }
-      {
-        directFor && (
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 380, damping: 36 }}
-            className="fixed bottom-0 inset-x-0 z-50 bg-bg-elevated
-                       rounded-t-[var(--radius-sheet)] border-t border-hairline
-                       p-5 safe-bottom"
-          >
-            <div className="w-10 h-1 rounded-full bg-surface-3 mx-auto mb-4" />
-            <h2 className="text-heading font-bold mb-1.5">
-              Подарок для {directFor.display_name}
-            </h2>
-            <p className="text-caption text-text-muted mb-4">
-              Маленький знак внимания ломает лёд лучше лайка
-            </p>
-            <div className="flex flex-col gap-2">
-              <Button
-                size="lg"
-                fullWidth
-                onClick={() => {
-                  setDirectFor(null);
-                  setNoteFor(directFor);
-                }}
-              >
-                Отправить с сообщением
-              </Button>
-              <Button
-                variant="secondary"
-                size="md"
-                fullWidth
-                onClick={() => setDirectFor(null)}
-              >
-                Позже
-              </Button>
-            </div>
-          </motion.div>
-        )
-      }
+      {/* Письмо без мэтча. Успешная отправка открывает беседу на сервере,
+          но карточку из деки не убираем: письмо — не решение о симпатии,
+          человек ещё может лайкнуть или пропустить */}
+      <DirectMessageSheet
+        profile={directFor}
+        onClose={() => setDirectFor(null)}
+      />
     </div>
   );
 }

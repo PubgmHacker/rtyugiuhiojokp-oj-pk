@@ -256,6 +256,17 @@ export async function resetDeck(): Promise<void> {
   await api.post("/profiles/deck/reset");
 }
 
+/** Счётчики для бейджей таббара. Лёгкий: два числа вместо списка чатов. */
+export interface BadgeCounts {
+  messages: number;
+  likes: number;
+}
+
+export async function getBadges(): Promise<BadgeCounts> {
+  const { data } = await api.get("/badges");
+  return data;
+}
+
 export async function getMatches(signal?: AbortSignal): Promise<MatchResponse[]> {
   const { data } = await api.get("/matches");
   return data;

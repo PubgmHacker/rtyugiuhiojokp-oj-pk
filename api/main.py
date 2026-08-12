@@ -14,7 +14,7 @@ from middleware.rate_limit import RateLimitMiddleware
 from routers import (
     auth, profiles, likes, matches, chat, upload, report, admin, blocks, iap, reels,
     leaderboard, photo_ratings, rooms, cases, daily, voice, sections, tarot, habits,
-    chat_themes, stories,
+    chat_themes, stories, badges,
 )
 
 settings = get_settings()
@@ -247,6 +247,7 @@ app.include_router(sections.router, prefix="/api")
 app.include_router(habits.router, prefix="/api")
 app.include_router(chat_themes.router, prefix="/api")
 app.include_router(stories.router, prefix="/api")
+app.include_router(badges.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
 

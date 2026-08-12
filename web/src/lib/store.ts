@@ -11,6 +11,8 @@ interface AppState {
   isOnboarded: boolean;
   /** Счётчик для бейджа на вкладке «Лайки». */
   unreadLikes: number;
+  /** Счётчик для бейджа на вкладке «Чаты» — непрочитанные сообщения. */
+  unreadMessages: number;
 
   setUser: (user: UserProfile | null) => void;
   setToken: (token: string | null) => void;
@@ -22,6 +24,7 @@ interface AppState {
   setLoading: (loading: boolean) => void;
   setOnboarded: (onboarded: boolean) => void;
   setUnreadLikes: (count: number) => void;
+  setUnreadMessages: (count: number) => void;
   logout: () => void;
 }
 
@@ -33,6 +36,7 @@ export const useStore = create<AppState>((set) => ({
   isLoading: false,
   isOnboarded: false,
   unreadLikes: 0,
+  unreadMessages: 0,
 
   setUser: (user) => {
     if (user) localStorage.setItem("sd_user", JSON.stringify(user));
@@ -52,6 +56,7 @@ export const useStore = create<AppState>((set) => ({
   setLoading: (isLoading) => set({ isLoading }),
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
   setUnreadLikes: (unreadLikes) => set({ unreadLikes }),
+  setUnreadMessages: (unreadMessages) => set({ unreadMessages }),
   logout: () => {
     // Сервер должен погасить токен, пока он ещё в localStorage: без этого
     // он остаётся годным до конца срока, даже если выйти на чужом устройстве
@@ -65,6 +70,7 @@ export const useStore = create<AppState>((set) => ({
       matches: [],
       isOnboarded: false,
       unreadLikes: 0,
+      unreadMessages: 0,
     });
   },
 }));

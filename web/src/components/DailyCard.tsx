@@ -57,7 +57,9 @@ export default function DailyCardBanner() {
             className="flex-1 text-left min-w-0"
           >
             <span className="text-[13.5px] font-semibold">
-              {card.name} — {card.meaning}
+              {/* С префиксом: «Жрица — Слушать важнее» без него читается
+                  как случайная фраза, а не как карта дня */}
+              Карта дня: {card.name} — {card.meaning}
             </span>
           </button>
           <button

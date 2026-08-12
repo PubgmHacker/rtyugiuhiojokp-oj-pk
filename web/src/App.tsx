@@ -15,7 +15,7 @@ import { applyAppearance, isAppearance, loadAppearance } from "./lib/appearance"
 import { initTelegram } from "./lib/telegram";
 import { initNative, registerPushNotifications } from "./lib/native";
 import { startTransactionListener } from "./lib/iap";
-import { registerDevice } from "./lib/api";
+import { getBadges, registerDevice } from "./lib/api";
 import { haptic } from "./lib/haptics";
 import { Spinner } from "./components/ui";
 
@@ -54,6 +54,7 @@ const NAV_ITEMS = [
 function BottomNav() {
   const { pathname } = useLocation();
   const unreadLikes = useStore((s) => s.unreadLikes);
+  const unreadMessages = useStore((s) => s.unreadMessages);
 
   return (
     <nav
@@ -64,7 +65,12 @@ function BottomNav() {
       <div className="flex items-stretch justify-around max-w-[520px] mx-auto">
         {NAV_ITEMS.map((item) => {
           const isActive = pathname.startsWith(item.path);
-          const badge = item.path === "/likes" ? unreadLikes : 0;
+          const badge =
+            item.path === "/likes"
+              ? unreadLikes
+              : item.path === "/matches"
+                ? unreadMessages
+                : 0;
 
           return (
             <Link
@@ -228,6 +234,33 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     startTransactionListener();
+  }, [token]);
+
+  // Бейджи таббара — при входе и каждом возвращении в приложение. До этого
+  // цифры появлялись только после захода на сам экран, и вкладка с новым
+  // сообщением выглядела пустой. Экраны Лайков и Чатов дальше уточняют
+  // счётчики сами по мере чтения.
+  useEffect(() => {
+    if (!token) return;
+    const тянуть = () => {
+      getBadges()
+        .then((b) => {
+          const s = useStore.getState();
+          s.setUnreadMessages(b.messages);
+          s.setUnreadLikes(b.likes);
+        })
+        .catch(() => {
+          // Бейдж — украшение: без сети он просто не обновится
+        });
+    };
+    тянуть();
+    const onFocus = () => document.visibilityState === "visible" && тянуть();
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [token]);
 
   return (
