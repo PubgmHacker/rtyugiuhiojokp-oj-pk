@@ -462,14 +462,13 @@ function Logo({ animated }: { animated?: boolean }) {
     >
       <div
         aria-hidden
-        className="absolute inset-[6%] rounded-full opacity-65"
+        className="absolute inset-[4%] rounded-[28%] opacity-55"
         style={{
           background:
-            "radial-gradient(circle at 40% 60%, rgb(255 45 111 / 0.2), transparent 62%)," +
-            "radial-gradient(circle at 62% 38%, rgb(139 92 246 / 0.18), transparent 60%)",
+            "radial-gradient(circle at 50% 50%, rgb(255 45 111 / 0.22), rgb(139 92 246 / 0.12) 55%, transparent 70%)",
         }}
       />
-      <BrandMark size={44} animated={animated} className="relative" />
+      <BrandMark size={44} className="relative" />
     </motion.div>
   );
 }

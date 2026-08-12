@@ -1,10 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="ogTitle ogDesc">
   <title id="ogTitle">Souldawn</title>
   <desc id="ogDesc">Souldawn — люди интереснее, чем их фото. Знакомства по интересам в Telegram и на iPhone</desc>
-  <!-- Палитра дизайн-системы: фон #0a0b0f, акцент #ff2d6f, вторая аура #8b5cf6.
-       Знак марки «стеклянные линзы» — геометрия из tools/brandmark.py.
-       Ворднарк белым, без перелива: градиентный текст читается как
-       развлекательное приложение, а марка должна выглядеть спокойно. -->
+  <!-- Палитра: фон #0a0b0f, акцент #ff2d6f, вторая аура #8b5cf6.
+       Знак: одна искра мэтча + капля (soul). Геометрия из tools/brandmark.py. -->
   <defs>
     <radialGradient id="glow1" cx="18%" cy="0%" r="70%">
       <stop offset="0%" stop-color="#ff2d6f" stop-opacity="0.16"/>
@@ -18,35 +16,10 @@
       <stop offset="0%" stop-color="#ff2d6f"/>
       <stop offset="100%" stop-color="#5b3aa8"/>
     </linearGradient>
-    <radialGradient id="oga" cx="32%" cy="28%" r="72%">
-      <stop offset="0%" stop-color="#ffb0c8"/>
-      <stop offset="28%" stop-color="#ff5c8a"/>
-      <stop offset="58%" stop-color="#ff2d6f"/>
-      <stop offset="100%" stop-color="#6b102e"/>
-    </radialGradient>
-    <radialGradient id="ogb" cx="32%" cy="28%" r="72%">
-      <stop offset="0%" stop-color="#ddd6fe"/>
-      <stop offset="28%" stop-color="#a78bfa"/>
-      <stop offset="58%" stop-color="#8b5cf6"/>
-      <stop offset="100%" stop-color="#2e1065"/>
-    </radialGradient>
-    <radialGradient id="oglens" cx="50%" cy="42%" r="62%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
-      <stop offset="40%" stop-color="#f5f3ff" stop-opacity="0.85"/>
-      <stop offset="78%" stop-color="#e9d5ff" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#c084fc" stop-opacity="0.15"/>
-    </radialGradient>
-    <filter id="ogf" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur"/>
-      <feOffset dy="3" result="off"/>
-      <feFlood flood-color="#000000" flood-opacity="0.4" result="color"/>
-      <feComposite in="color" in2="off" operator="in" result="shadow"/>
-      <feMerge>
-        <feMergeNode in="shadow"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <clipPath id="ogLens"><circle cx="-39.2" cy="24.5" r="70"/></clipPath>
+    <linearGradient id="ogSpark" x1="0" y1="0" x2="140" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ff2d6f"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
   </defs>
 
   <rect width="1200" height="630" fill="#0a0b0f"/>
@@ -65,15 +38,10 @@
     <rect x="126" y="346" width="90" height="18" rx="9" fill="#ffffff" opacity="0.3"/>
   </g>
 
-  <!-- знак марки: стеклянные линзы, пересечение — каустика.
-       Центр группы (0,0), R=70, смещения ±39.2 / ∓24.5 (0.560R / 0.350R) -->
-  <g transform="translate(210,235)" filter="url(#ogf)">
-    <circle cx="-39.2" cy="24.5" r="70" fill="url(#oga)"/>
-    <circle cx="39.2" cy="-24.5" r="70" fill="url(#ogb)"/>
-    <circle cx="39.2" cy="-24.5" r="70" fill="url(#oglens)" clip-path="url(#ogLens)" opacity="0.92"/>
-    <ellipse cx="-58.8" cy="0.7" rx="19.6" ry="12.6" fill="#ffffff" opacity="0.55"/>
-    <ellipse cx="19.6" cy="-48.3" rx="19.6" ry="12.6" fill="#ffffff" opacity="0.55"/>
-    <circle cx="0" cy="0" r="9" fill="#ffffff" opacity="0.9"/>
+  <!-- знак: искра + капля. viewBox 100→ масштаб 1.6, центр (210, 235) -->
+  <g transform="translate(210,235) scale(1.6) translate(-50,-50)">
+    <path d="M50 8C53 34 66 47 92 50C66 53 53 66 50 92C47 66 34 53 8 50C34 47 47 34 50 8Z" fill="url(#ogSpark)"/>
+    <path d="M50 36C50 36 39.5 47 39.5 55.5C39.5 61.8 44.2 66.5 50 66.5C55.8 66.5 60.5 61.8 60.5 55.5C60.5 47 50 36 50 36Z" fill="#fafbfc"/>
   </g>
 
   <text x="120" y="430" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="800" letter-spacing="-2" fill="#fafbfc">souldawn</text>

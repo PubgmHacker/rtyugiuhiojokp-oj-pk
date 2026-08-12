@@ -1,54 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="Souldawn">
-  <!-- Знак марки «стеклянные линзы»: геометрия из tools/brandmark.py
-       (R = 0.24 стороны, смещение центров 0.560R / 0.350R) -->
+  <!-- Знак: одна искра мэтча + капля (soul). Геометрия из tools/brandmark.py.
+       Не венн и не два шара — вложенность одной детали в одну форму. -->
   <defs>
-    <radialGradient id="ga" cx="32%" cy="28%" r="72%">
-      <stop offset="0%" stop-color="#ffb0c8"/>
-      <stop offset="28%" stop-color="#ff5c8a"/>
-      <stop offset="58%" stop-color="#ff2d6f"/>
-      <stop offset="100%" stop-color="#6b102e"/>
-    </radialGradient>
-    <radialGradient id="gb" cx="32%" cy="28%" r="72%">
-      <stop offset="0%" stop-color="#ddd6fe"/>
-      <stop offset="28%" stop-color="#a78bfa"/>
-      <stop offset="58%" stop-color="#8b5cf6"/>
-      <stop offset="100%" stop-color="#2e1065"/>
-    </radialGradient>
-    <radialGradient id="glens" cx="50%" cy="42%" r="62%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
-      <stop offset="40%" stop-color="#f5f3ff" stop-opacity="0.85"/>
-      <stop offset="78%" stop-color="#e9d5ff" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#c084fc" stop-opacity="0.15"/>
-    </radialGradient>
-    <radialGradient id="glowA" cx="50%" cy="50%" r="50%">
-      <stop offset="55%" stop-color="#ff2d6f" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#ff2d6f" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glowB" cx="50%" cy="50%" r="50%">
-      <stop offset="55%" stop-color="#8b5cf6" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="f" x="-25%" y="-25%" width="150%" height="150%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.2" result="blur"/>
-      <feOffset dy="2.8" result="off"/>
-      <feFlood flood-color="#000000" flood-opacity="0.5" result="color"/>
-      <feComposite in="color" in2="off" operator="in" result="shadow"/>
-      <feMerge>
-        <feMergeNode in="shadow"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <clipPath id="lens"><circle cx="65.9" cy="105.1" r="43.2"/></clipPath>
+    <linearGradient id="spark" x1="32" y1="32" x2="148" y2="148" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ff2d6f"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
   </defs>
   <rect width="180" height="180" rx="40" fill="#0a0b0f"/>
-  <circle cx="65.9" cy="105.1" r="52.7" fill="url(#glowA)"/>
-  <circle cx="114.1" cy="74.9" r="52.7" fill="url(#glowB)"/>
-  <g filter="url(#f)">
-    <circle cx="65.9" cy="105.1" r="43.2" fill="url(#ga)"/>
-    <circle cx="114.1" cy="74.9" r="43.2" fill="url(#gb)"/>
+  <g transform="translate(90,90) scale(1.55) translate(-50,-50)">
+    <path d="M50 8C53 34 66 47 92 50C66 53 53 66 50 92C47 66 34 53 8 50C34 47 47 34 50 8Z" fill="url(#spark)"/>
+    <path d="M50 36C50 36 39.5 47 39.5 55.5C39.5 61.8 44.2 66.5 50 66.5C55.8 66.5 60.5 61.8 60.5 55.5C60.5 47 50 36 50 36Z" fill="#fafbfc"/>
   </g>
-  <circle cx="114.1" cy="74.9" r="43.2" fill="url(#glens)" clip-path="url(#lens)" opacity="0.9"/>
-  <ellipse cx="52.1" cy="88.7" rx="11.2" ry="6.5" fill="#ffffff" opacity="0.78"/>
-  <ellipse cx="100.3" cy="58.5" rx="11.2" ry="6.5" fill="#ffffff" opacity="0.78"/>
-  <circle cx="90" cy="90" r="5" fill="#ffffff" opacity="0.95"/>
 </svg>
