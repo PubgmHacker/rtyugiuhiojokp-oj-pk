@@ -64,6 +64,9 @@ def _profile(uid: str, **over):
         boost_until=None,
         bonus_superlikes=0,
         sticker=None,
+        # Как в новой строке БД: рамки нет (NULL), схема не выбрана ("")
+        decor=None,
+        app_theme="",
         looking_for="any",
         age_min=18,
         age_max=99,

@@ -255,7 +255,7 @@ function Recipient({
                   rounded-[var(--radius-tile)] border transition-colors
                   ${
                     selected
-                      ? "bg-dawn/12 border-dawn/50"
+                      ? "bg-accent/12 border-dawn/50"
                       : "bg-surface-2 border-hairline active:bg-surface"
                   }`}
     >

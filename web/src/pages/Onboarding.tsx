@@ -291,7 +291,7 @@ export default function Onboarding() {
               <div
                 key={i}
                 className={`h-[3px] flex-1 rounded-full transition-colors duration-300 ${
-                  i <= index ? "bg-dawn" : "bg-surface-2"
+                  i <= index ? "bg-accent" : "bg-surface-2"
                 }`}
               />
             ))}
@@ -869,7 +869,7 @@ function PhotoTile({
         {isPrimary && (
           <span
             className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full
-                       bg-dawn text-[10px] font-bold text-white
+                       bg-accent text-[10px] font-bold text-white
                        flex items-center gap-1"
           >
             <Star size={9} fill="currentColor" />

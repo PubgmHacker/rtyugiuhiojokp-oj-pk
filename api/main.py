@@ -14,6 +14,7 @@ from middleware.rate_limit import RateLimitMiddleware
 from routers import (
     auth, profiles, likes, matches, chat, upload, report, admin, blocks, iap, reels,
     leaderboard, photo_ratings, rooms, cases, daily, voice, sections, tarot, habits,
+    chat_themes, stories,
 )
 
 settings = get_settings()
@@ -30,6 +31,17 @@ _MIGRATIONS = [
 ]
 
 
+def _конфиг_alembic():
+    """Конфиг alembic с адресом базы из настроек, а не из alembic.ini."""
+    from alembic.config import Config
+
+    здесь = Path(__file__).resolve().parent
+    cfg = Config(str(здесь / "alembic.ini"))
+    cfg.set_main_option("script_location", str(здесь / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    return cfg
+
+
 def _применить_миграции() -> None:
     """Накатить миграции Alembic до последней ревизии.
 
@@ -44,13 +56,55 @@ def _применить_миграции() -> None:
     подняться, — второе видно сразу, а первое всплывает у пользователей.
     """
     from alembic import command
-    from alembic.config import Config
 
-    здесь = Path(__file__).resolve().parent
-    cfg = Config(str(здесь / "alembic.ini"))
-    cfg.set_main_option("script_location", str(здесь / "migrations"))
-    cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
-    command.upgrade(cfg, "head")
+    command.upgrade(_конфиг_alembic(), "head")
+
+
+def _отметить_схему_свежей() -> None:
+    """Пометить пустую базу как «уже на последней ревизии».
+
+    На чистой базе схему ставит `create_all` по моделям — она по
+    определению совпадает с последней ревизией. Прогонять после этого
+    всю цепочку нельзя: первая же миграция с `create_table` упала бы на
+    только что созданной таблице, а транзакционный DDL Postgres откатил
+    бы вместе с ней всю пачку. Поэтому ставим штамп: догонять нечего,
+    а следующие миграции найдут точку отсчёта.
+    """
+    from alembic import command
+
+    command.stamp(_конфиг_alembic(), "head")
+
+
+async def _уборка_историй(интервал: int = 3600) -> None:
+    """Снимать истёкшие истории раз в час, вечно.
+
+    Час, а не сутки: суточный проход копил бы за раз всё опубликованное
+    и удалял пачкой в тысячи файлов, а истории — единственный контент со
+    сроком, и «исчезло вовремя» здесь часть обещания.
+
+    Каждый проход в своём try: упавший запрос к БД или к R2 не должен
+    убивать цикл — иначе одна ночная недоступность хранилища оставляет
+    истёкшие истории видимыми до следующего перезапуска процесса.
+
+    Первая пауза идёт до первого прохода: на старте база может быть ещё
+    не готова, а уборка — не то, ради чего стоит задерживать запуск.
+    """
+    from database.connection import async_session_factory
+    from services.stories import удалить_истёкшие
+
+    while True:
+        try:
+            await asyncio.sleep(интервал)
+            async with async_session_factory() as session:
+                снято = await удалить_истёкшие(session)
+                await session.commit()
+            if снято:
+                logger.info(f"stories janitor: снято {снято}")
+        except asyncio.CancelledError:
+            # Остановка процесса — выходим молча, не логируя как сбой
+            raise
+        except Exception as e:
+            logger.warning(f"stories janitor failed: {e}")
 
 
 @asynccontextmanager
@@ -69,15 +123,33 @@ async def lifespan(app: FastAPI):
 
     # Test DB connection + auto-create tables
     try:
+        from sqlalchemy import inspect as sa_inspect
         from sqlalchemy import text as sa_text
         from database.connection import engine
         from models.models import Base
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
 
-        # Миграции после create_all: на пустой базе create_all уже всё создал,
-        # а на боевой именно они добавляют новые колонки в существующие таблицы
-        await asyncio.to_thread(_применить_миграции)
+        async with engine.begin() as conn:
+            под_alembic = await conn.run_sync(
+                lambda c: sa_inspect(c).has_table("alembic_version")
+            )
+
+        if под_alembic:
+            # База уже версионирована: СНАЧАЛА миграции, потом create_all как
+            # страховка для таблиц, которым миграции не завели. Обратный
+            # порядок ломал деплой: create_all поднимал новую таблицу по
+            # модели, следующая же миграция падала на ней DuplicateTableError,
+            # и транзакционный DDL откатывал ВСЮ пачку — включая ревизии,
+            # которые добавляли колонки. Схема оставалась старой, а запрос к
+            # новой колонке падал у пользователей.
+            await asyncio.to_thread(_применить_миграции)
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        else:
+            # Чистая база: схему ставит create_all по моделям и сразу
+            # штампуем последнюю ревизию — цепочку догонять нечего.
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            await asyncio.to_thread(_отметить_схему_свежей)
 
         for stmt in _MIGRATIONS:
             try:
@@ -98,9 +170,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Redis not available: {e}")
 
+    # Уборщик историй. Держим ссылку: задача без ссылки может быть собрана
+    # сборщиком мусора на середине паузы, и уборка тихо перестанет идти.
+    janitor = asyncio.create_task(_уборка_историй(), name="stories-janitor")
+
     yield
 
     logger.info("SOULDAWN DATING API shutting down...")
+
+    # Гасим уборщика первым: он берёт сессию из того же пула и лезет в R2,
+    # а закрывать пул под работающим запросом — способ получить ошибку
+    # в логе на каждой остановке.
+    janitor.cancel()
+    try:
+        await janitor
+    except asyncio.CancelledError:
+        pass
+
     from services.push import close as close_push
     from services.realtime import _redis
 
@@ -159,6 +245,8 @@ app.include_router(tarot.router, prefix="/api")
 app.include_router(voice.router, prefix="/api")
 app.include_router(sections.router, prefix="/api")
 app.include_router(habits.router, prefix="/api")
+app.include_router(chat_themes.router, prefix="/api")
+app.include_router(stories.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
 

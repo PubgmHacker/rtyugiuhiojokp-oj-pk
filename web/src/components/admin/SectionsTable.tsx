@@ -52,7 +52,7 @@ export default function SectionsTable() {
             className={`px-3.5 py-1.5 rounded-full text-[13.5px] font-semibold
                         transition-colors ${
                           days === p
-                            ? "bg-dawn text-white"
+                            ? "bg-accent text-white"
                             : "bg-surface-2 border border-hairline text-text-secondary"
                         }`}
           >
@@ -85,7 +85,7 @@ export default function SectionsTable() {
                     неудобно, а по длине — сразу видно */}
                 <span className="hidden sm:block w-24 h-1.5 rounded-full bg-surface-3 overflow-hidden">
                   <span
-                    className="block h-full rounded-full bg-dawn"
+                    className="block h-full rounded-full bg-accent"
                     style={{ width: `${Math.min(100, s.reach_percent)}%` }}
                   />
                 </span>

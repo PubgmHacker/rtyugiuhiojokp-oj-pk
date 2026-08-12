@@ -136,6 +136,11 @@ FEATURE_MIN_TIER: dict[str, str] = {
     "visitors": TIER_ULTRA,
     "direct_messages": TIER_AURORA,
     "tg_channel": TIER_AURORA,
+    #: Свои цвета в чате поверх готовых пресетов: платим за произвольный
+    #: цвет, а не за возможность вообще поменять оформление.
+    "chat_theme_custom": TIER_PLUS,
+    #: Премиальные схемы оформления приложения.
+    "appearance_premium": TIER_PLUS,
 }
 
 

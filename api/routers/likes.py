@@ -24,6 +24,7 @@ from services.ai_matchmaker import score_match
 from services.ai_moderation import log_moderation, moderate_text
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
+from services.decor import безопасный_код
 from services.premium import current_tier
 from services.plans import superlikes_for, tier_allows
 from services.push import is_configured, notify_new_match
@@ -75,6 +76,7 @@ async def _profile_to_user(
         mbti=profile.mbti or "",
         height_cm=profile.height_cm,
         sticker=картинка_наклейки(profile.sticker),
+        decor=безопасный_код(profile.decor),
         like_message=like_message,
         tg_channel=tg_channel,
     )

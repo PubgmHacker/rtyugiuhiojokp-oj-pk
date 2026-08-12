@@ -43,17 +43,34 @@ def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
+def new_gift_code() -> str:
+    """Сгенерировать код подарка. Plaintext живёт только у вызывающего.
+
+    Отдельно от purchase_gift потому, что показать код можно ровно один раз:
+    в базе лежит хеш, и восстановить его оттуда нельзя. Раньше код рождался
+    внутри и там же терялся — эндпоинт возвращал несуществующее имя.
+    """
+    return "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(CODE_LEN))
+
+
 async def purchase_gift(
     session: AsyncSession,
     buyer: User,
     plan_code: str,
     recipient: User | None = None,
+    code: str | None = None,
+    payment_id: str | None = None,
 ) -> GiftSubscription:
     """Создать черновик подарка под конкретный план.
 
-    Код показываем создателю один раз, и здесь он живёт только в ответе.
-    Если получатель указан сразу — не даём подарить самому себе: этот путь
-    не предназначен для самопокупки, для него есть /premium/activate."""
+    `code` передаёт тот, кому нужно показать plaintext (IAP-вход). Не передан —
+    генерируем сами, и тогда код не покидает базу: так ведут себя бот и
+    внутренние вызовы, им показывать нечего.
+
+    `payment_id` делает вход идемпотентным: Apple повторяет доставку чека, а
+    сеть теряет ответы. Без ключа один платёж выдавал бы новый подарок на
+    каждую повторную проверку.
+    """
     plan = PLANS_BY_CODE.get(plan_code)
     if not plan:
         raise ValueError(f"Неизвестный план: {plan_code}")
@@ -61,13 +78,20 @@ async def purchase_gift(
     if recipient and recipient.id == buyer.id:
         raise ValueError("Нельзя подарить подписку самому себе")
 
-    code = "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(CODE_LEN))
+    if payment_id:
+        уже = await session.scalar(
+            select(GiftSubscription).where(GiftSubscription.payment_id == payment_id)
+        )
+        if уже is not None:
+            return уже
+
     gift = GiftSubscription(
         buyer_user_id=buyer.id,
         recipient_user_id=recipient.id if recipient else None,
         plan=plan.tier,
         months=plan.months,
-        code_hash=_hash_code(code),
+        code_hash=_hash_code(code or new_gift_code()),
+        payment_id=payment_id,
     )
     session.add(gift)
     await session.flush()

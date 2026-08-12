@@ -3,6 +3,8 @@
 /* ═══════════════════════════════════════════════════════════════
    SOULDAWN — Design System
 
+   «Souldawn» — случайное слово, а не бриф: дизайн не выводится из
+   имени, поэтому здесь нет ни рассветов, ни закатов, ни «души».
    Холодная нейтральная база + один плоский акцент. Сознательно без
    «рассветных» градиентов: многоцветная заливка читается как
    развлекательное приложение, а мы хотим спокойный продукт, в
@@ -219,10 +221,10 @@
     background:
       radial-gradient(80% 50% at 12% 0%, rgb(255 45 111 / 0.05), transparent 70%),
       radial-gradient(70% 45% at 88% 100%, rgb(90 30 80 / 0.04), transparent 72%);
-    animation: рассвет 40s ease-in-out infinite alternate;
+    animation: дыхание-фона 40s ease-in-out infinite alternate;
   }
 
-  @keyframes рассвет {
+  @keyframes дыхание-фона {
     from { transform: translate3d(0, 0, 0) scale(1); }
     to { transform: translate3d(0, -1.5%, 0) scale(1.06); }
   }
@@ -286,14 +288,10 @@
   color: var(--color-text);
 }
 
-/* Заливка главного действия. Плоский цвет вместо градиента */
-@utility bg-dawn {
-  background: var(--color-accent);
-}
-
-@utility bg-dawn-soft {
-  background: var(--color-accent-soft);
-}
+/* Заливку главного действия дают штатные bg-accent / bg-accent-soft,
+   которые Tailwind собирает из токенов --color-accent*. Собственные
+   утилиты bg-dawn удалены: имя тянуло «рассветную» метафору в каждый
+   экран, а продукт от имени не зависит. */
 
 /* Заглушка под аватар без фото */
 @utility bg-plum {
@@ -339,8 +337,10 @@
   box-shadow: var(--shadow-float);
 }
 
-/* Обводка аватара. Тонкая линия вместо градиентной рамки */
-@utility ring-dawn {
+/* Обводка аватара. Тонкая линия вместо градиентной рамки.
+   Не «ring-accent»: так называется штатная утилита теневого кольца
+   Tailwind, и одинаковое имя с другим поведением путало бы. */
+@utility avatar-ring {
   border: 2px solid var(--color-accent);
 }
 
@@ -477,4 +477,212 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   СХЕМЫ ОФОРМЛЕНИЯ
+
+   Переопределяем только токены: утилиты Tailwind компилируются в
+   var(--color-*), поэтому смена схемы не требует ни одной правки в
+   экранах. Атрибут ставит lib/appearance.ts на <html>.
+
+   Светлые схемы обязаны переключать color-scheme — иначе системные
+   элементы (скроллбары, поля ввода) остаются тёмными и выглядят
+   сломанными на светлом фоне.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root[data-appearance="midnight"] {
+  --color-bg: #05070f;
+  --color-bg-elevated: #0c1020;
+  --color-surface: #0f142a;
+  --color-surface-2: #151c38;
+  --color-surface-3: #1e284a;
+  --color-hairline: #1f2745;
+  --color-accent: #4f7cff;
+  --color-accent-soft: #7d9dff;
+  --color-accent-deep: #2f56cc;
+  --color-accent-dim: #14203f;
+  --color-info: #7d9dff;
+}
+
+:root[data-appearance="graphite"] {
+  --color-bg: #0c0c0d;
+  --color-bg-elevated: #141416;
+  --color-surface: #17171a;
+  --color-surface-2: #1f1f23;
+  --color-surface-3: #2a2a30;
+  --color-hairline: #29292f;
+  --color-accent: #d8d8dc;
+  --color-accent-soft: #ebebef;
+  --color-accent-deep: #a9a9b0;
+  --color-accent-dim: #26262b;
+  --color-on-accent: #0c0c0d;
+}
+
+:root[data-appearance="light"] {
+  color-scheme: light;
+  --color-bg: #f6f7f9;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-2: #eff1f5;
+  --color-surface-3: #e2e5ec;
+  --color-hairline: #dcdfe6;
+  --color-text: #0d1017;
+  --color-text-secondary: #333a47;
+  --color-text-muted: #5b6473;
+  --color-text-faint: #6f7a86;
+  --color-accent: #e51f5c;
+  --color-accent-soft: #ff5c8a;
+  --color-accent-deep: #b8134a;
+  --color-accent-dim: #ffe3ec;
+  --gradient-placeholder: linear-gradient(145deg, #e6e8ee 0%, #d5d9e2 100%);
+  --glass-bg: rgb(0 0 0 / 0.04);
+  --glass-bg-strong: rgb(0 0 0 / 0.07);
+  --glass-border: rgb(0 0 0 / 0.09);
+  --shadow-card: 0 18px 44px -18px rgb(15 20 32 / 0.22),
+    0 2px 6px -2px rgb(15 20 32 / 0.1);
+  --shadow-float: 0 8px 24px -8px rgb(15 20 32 / 0.18);
+}
+
+:root[data-appearance="sepia"] {
+  color-scheme: light;
+  --color-bg: #f6f1e7;
+  --color-bg-elevated: #fffaf0;
+  --color-surface: #fffaf0;
+  --color-surface-2: #efe6d6;
+  --color-surface-3: #e3d7c2;
+  --color-hairline: #ddd0ba;
+  --color-text: #221b12;
+  --color-text-secondary: #453927;
+  --color-text-muted: #6b5c45;
+  --color-text-faint: #8a7a61;
+  --color-accent: #b4531f;
+  --color-accent-soft: #d97742;
+  --color-accent-deep: #8e3d12;
+  --color-accent-dim: #f5e0cf;
+  --gradient-placeholder: linear-gradient(145deg, #e8dcc7 0%, #d8c8ab 100%);
+  --glass-bg: rgb(60 40 20 / 0.05);
+  --glass-border: rgb(60 40 20 / 0.1);
+}
+
+:root[data-appearance="nebula"] {
+  --color-bg: #080615;
+  --color-bg-elevated: #100c26;
+  --color-surface: #140f2e;
+  --color-surface-2: #1c1540;
+  --color-surface-3: #281d58;
+  --color-hairline: #251c4d;
+  --color-accent: #a855f7;
+  --color-accent-soft: #c88bff;
+  --color-accent-deep: #7c2fd4;
+  --color-accent-dim: #251043;
+}
+
+:root[data-appearance="goldleaf"] {
+  --color-bg: #0b0904;
+  --color-bg-elevated: #14100a;
+  --color-surface: #17130b;
+  --color-surface-2: #1f1a0f;
+  --color-surface-3: #2c2416;
+  --color-hairline: #2b2416;
+  --color-accent: #d4a72c;
+  --color-accent-soft: #e8c65e;
+  --color-accent-deep: #a87f18;
+  --color-accent-dim: #2a2110;
+  --color-on-accent: #17130b;
+}
+
+/* Живой фон отвечает акценту схемы, а не своей зашитой малине: на
+   синей «Полночи» малиновое пятно читалось грязным разводом. */
+body::before {
+  background:
+    radial-gradient(
+      80% 50% at 12% 0%,
+      color-mix(in srgb, var(--color-accent) 6%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(70% 45% at 88% 100%, rgb(90 30 80 / 0.04), transparent 72%);
+}
+
+/* Светлым схемам живой фон не идёт: пятно на светлом читается как
+   грязь на экране, а не как воздух. */
+:root[data-appearance="light"] body::before,
+:root[data-appearance="sepia"] body::before {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   УЗОРЫ ФОНА ЧАТА
+
+   Рисуем градиентами, а не картинками: сеть в дейтинге дорогая, а
+   узор — украшение, за которое незачем платить запросом.
+   ═══════════════════════════════════════════════════════════════ */
+
+.chat-surface {
+  position: relative;
+  background: var(--chat-bg, var(--color-bg));
+}
+
+.chat-surface > * {
+  position: relative;
+  z-index: 1;
+}
+
+.chat-surface[data-pattern]:not([data-pattern="none"])::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.chat-surface[data-pattern="dots"]::before {
+  background-image: radial-gradient(
+    currentColor 1.2px,
+    transparent 1.3px
+  );
+  background-size: 18px 18px;
+  color: var(--chat-ink, var(--color-text));
+  opacity: 0.08;
+}
+
+.chat-surface[data-pattern="grid"]::before {
+  background-image:
+    linear-gradient(to right, currentColor 1px, transparent 1px),
+    linear-gradient(to bottom, currentColor 1px, transparent 1px);
+  background-size: 26px 26px;
+  color: var(--chat-ink, var(--color-text));
+  opacity: 0.06;
+}
+
+.chat-surface[data-pattern="waves"]::before {
+  background-image: repeating-radial-gradient(
+    circle at 50% 120%,
+    transparent 0 16px,
+    currentColor 16px 17px
+  );
+  background-size: 120px 60px;
+  color: var(--chat-ink, var(--color-text));
+  opacity: 0.05;
+}
+
+.chat-surface[data-pattern="stars"]::before {
+  background-image:
+    radial-gradient(currentColor 0.9px, transparent 1px),
+    radial-gradient(currentColor 0.7px, transparent 0.8px);
+  background-size: 54px 54px, 31px 31px;
+  background-position: 0 0, 17px 23px;
+  color: var(--chat-ink, var(--color-text));
+  opacity: 0.14;
+}
+
+.chat-surface[data-pattern="hearts"]::before {
+  background-image: radial-gradient(
+    circle at 30% 35%, currentColor 3px, transparent 3.4px
+  ),
+  radial-gradient(circle at 46% 35%, currentColor 3px, transparent 3.4px);
+  background-size: 44px 44px;
+  color: var(--chat-accent, var(--color-accent));
+  opacity: 0.1;
 }

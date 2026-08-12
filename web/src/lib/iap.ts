@@ -12,7 +12,7 @@
 
 import { registerPlugin } from "@capacitor/core";
 import { isNative } from "./native";
-import api from "./api";
+import api, { type IAPVerifyResponse } from "./api";
 
 export interface IAPProduct {
   id: string;
@@ -89,16 +89,29 @@ export async function loadProducts(): Promise<IAPProduct[]> {
   }
 }
 
-/** Отправить транзакцию на сервер и подтвердить её только после успеха. */
-async function redeem(tx: Transaction, gift_recipient_id?: string): Promise<{ expiresAt: string; giftCode?: string }> {
-  const { data } = await api.post("/iap/verify", { 
-    jws: tx.jws, 
-    gift_recipient_id: gift_recipient_id || "",
-  });
+/** Отправить транзакцию на сервер и подтвердить её только после успеха.
+ *
+ * `kind` решает, чем станет платёж: подпиской покупателю или подарочным
+ * кодом. Раньше ручка была одна, а признак подарка ехал полем, которое
+ * сервер не читал — деньги списывались, подписка доставалась покупателю,
+ * а подарок не рождался.
+ */
+async function redeem(
+  tx: Transaction,
+  kind: "self" | "gift" = "self",
+): Promise<{ expiresAt: string; giftCode?: string; alreadyProcessed: boolean }> {
+  const data: IAPVerifyResponse =
+    kind === "gift"
+      ? (await api.post("/iap/verify-gift", { jws: tx.jws })).data
+      : (await api.post("/iap/verify", { jws: tx.jws })).data;
   // Подтверждаем чек именем Apple, как в документации: иначе сервер
   // не подпишет ту же транзакцию, и мы спишем деньги без начисления
   await SouldawnIAP.finishTransaction({ transactionId: tx.transactionId });
-  return { expiresAt: data.expires_at || "", giftCode: data.gift_code };
+  return {
+    expiresAt: data.expires_at || "",
+    giftCode: data.gift_code || undefined,
+    alreadyProcessed: Boolean(data.already_processed),
+  };
 }
 
 /**
@@ -188,24 +201,33 @@ export async function startTransactionListener(
 }
 
 /**
- * Подарить Premium другому пользователю по коду.
+ * Купить Premium в подарок.
  *
- * Клиент присылает тот же JWS, что и себе, но указывает получателя —
- * сервер не начисляет подписку напрямую, а создаёт одноразовый код:
- * это безопаснее, чем просто показать счёт второму человеку, и проще
- * совместимо с виртуальной валютой Telegram (Stars).
+ * Сервер не начисляет подписку никому, а выдаёт одноразовый код —
+ * получателя выбирает покупатель, пересылая код куда угодно. Так подарок
+ * работает и для того, кто ещё не зарегистрирован, и не требует знать
+ * чужой user_id до оплаты.
+ *
+ * Код возвращается один раз. Если ответ потерян по сети, повторная
+ * проверка того же чека придёт с already_processed и без кода: второй
+ * подарок за те же деньги сервер не выпишет.
  */
 export async function purchaseGift(
   productId: string,
   userId: string,
-  recipientId: string,
 ): Promise<PurchaseOutcome> {
   if (!isNative()) {
     return { status: "error", message: "Доступно только в приложении" };
   }
   try {
     const tx = await SouldawnIAP.purchase({ productId, appAccountToken: userId });
-    const { expiresAt, giftCode } = await redeem(tx, recipientId);
+    const { expiresAt, giftCode, alreadyProcessed } = await redeem(tx, "gift");
+    if (alreadyProcessed && !giftCode) {
+      return {
+        status: "error",
+        message: "Подарок за эту покупку уже оформлен — код был показан ранее",
+      };
+    }
     return { status: "success", expiresAt, giftCode };
   } catch (e: any) {
     const code = e?.code || e?.message || "";

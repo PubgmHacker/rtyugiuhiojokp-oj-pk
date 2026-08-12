@@ -31,8 +31,14 @@ config.set_main_option("sqlalchemy.url", get_settings().DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
+#
+# disable_existing_loggers=False обязателен: миграции накатываются из lifespan
+# приложения, а fileConfig по умолчанию ГЛУШИТ все уже созданные логгеры. После
+# старта переставали писать и `main`, и обработчик необработанных исключений —
+# пятисотки уходили клиенту без единой строки в логе, и искать причину было
+# нечем. Ровно на этом ушёл час: вход падал молча.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

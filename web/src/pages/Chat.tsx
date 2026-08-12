@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   Send,
   MoreVertical,
+  Palette,
+  ListChecks,
   Sparkles,
   Flag,
   Ban,
@@ -16,10 +18,12 @@ import {
   getMessages,
   getMatches,
   getIcebreakers,
+  getChatTheme,
   reportUser,
   blockUser,
   unmatch,
   type ChatMessage,
+  type ChatTheme,
   type MatchResponse,
 } from "../lib/api";
 import { ChatWebSocket, type ConnectionStatus } from "../lib/websocket";
@@ -28,11 +32,15 @@ import { haptic } from "../lib/haptics";
 import { useIsMounted } from "../hooks/useSafeAsync";
 import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
+import { ChatThemeSheet } from "../components/ChatThemeSheet";
+import { HabitsSheet } from "../components/HabitsSheet";
 import { REPORT_REASONS } from "../lib/profileOptions";
+import { readableOn } from "../lib/aura";
 
 export default function Chat() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { token } = useStore();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -46,6 +54,9 @@ export default function Chat() {
   const [loadingIce, setLoadingIce] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [sendError, setSendError] = useState(false);
+  const [theme, setTheme] = useState<ChatTheme | null>(null);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [habitsOpen, setHabitsOpen] = useState(false);
 
   const wsRef = useRef<ChatWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -149,6 +160,41 @@ export default function Chat() {
   }, [messages, partnerTyping]);
 
   /* ── Отправка ────────────────────────────────────────────── */
+  // Тему тянем при входе и при возврате на вкладку: её мог поменять
+  // партнёр, а отдельного канала для этого нет — сообщения ходят своим
+  // сокетом, и вешать на него оформление значит связать два несвязанных.
+  useEffect(() => {
+    if (!matchId) return;
+    let живо = true;
+    const тянуть = () => {
+      getChatTheme(matchId)
+        .then((t) => живо && setTheme(t))
+        .catch(() => {});
+    };
+    тянуть();
+    const onFocus = () => document.visibilityState === "visible" && тянуть();
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      живо = false;
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [matchId]);
+
+  // Ответ на историю приходит текстом в состоянии перехода: сама история
+  // живёт сутки, а переписка остаётся, поэтому ответ — обычное сообщение.
+  useEffect(() => {
+    const prefill = (location.state as { prefill?: string } | null)?.prefill;
+    if (prefill) {
+      setInput(prefill);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // Разово при входе: state гасится тут же, и повторный проход стёр бы
+    // текст, который человек уже начал править.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const send = useCallback(
     (override?: string) => {
       const text = (override ?? input).trim();
@@ -314,6 +360,28 @@ export default function Chat() {
           </div>
 
 
+          <button
+            aria-label="Задачи на день"
+            onClick={() => {
+              haptic("light");
+              setHabitsOpen(true);
+            }}
+            className="tap-target flex items-center justify-center text-text-secondary"
+          >
+            <ListChecks size={20} />
+          </button>
+
+          <button
+            aria-label="Тема переписки"
+            onClick={() => {
+              haptic("light");
+              setThemeOpen(true);
+            }}
+            className="tap-target flex items-center justify-center text-text-secondary"
+          >
+            <Palette size={20} />
+          </button>
+
           <div className="relative">
             <button
               aria-label="Действия"
@@ -387,7 +455,18 @@ export default function Chat() {
       </header>
 
       {/* ── Лента сообщений ─────────────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-3 py-3">
+      <div
+        className="chat-surface flex-1 min-h-0 overflow-y-auto overscroll-contain
+                   no-scrollbar px-3 py-3"
+        data-pattern={theme?.pattern_key || "none"}
+        style={{
+          ["--chat-bg" as any]: theme?.background_color || undefined,
+          ["--chat-ink" as any]: theme?.background_color
+            ? readableOn(theme.background_color)
+            : undefined,
+          ["--chat-accent" as any]: theme?.bubble_mine_color || undefined,
+        }}
+      >
         {loading ? (
           <div className="flex flex-col gap-3">
             {[0, 1, 2, 3].map((i) => (
@@ -476,14 +555,31 @@ export default function Chat() {
                           transition={{ type: "spring", stiffness: 420, damping: 32 }}
                           className={`max-w-[78%] px-3.5 py-2 text-[15px] leading-snug
                                       break-words selectable ${
-                                        group.mine
-                                          ? "bg-dawn text-white"
-                                          : "bg-surface-2 text-text"
+                                        theme?.bubble_mine_color ||
+                                        theme?.bubble_theirs_color
+                                          ? ""
+                                          : group.mine
+                                            ? "bg-accent text-white"
+                                            : "bg-surface-2 text-text"
                                       }`}
                           style={{
                             borderRadius: 20,
                             borderBottomRightRadius: group.mine && isLast ? 6 : 20,
                             borderBottomLeftRadius: !group.mine && isLast ? 6 : 20,
+                            // Тема задана — красим значением; нет — оставляем
+                            // классы выше. Класс и style одновременно дали бы
+                            // градиент под сплошным цветом, и на полупрозрачных
+                            // цветах он проступал бы полосами.
+                            background: group.mine
+                              ? theme?.bubble_mine_color || undefined
+                              : theme?.bubble_theirs_color || undefined,
+                            color: group.mine
+                              ? theme?.bubble_mine_color
+                                ? readableOn(theme.bubble_mine_color)
+                                : undefined
+                              : theme?.bubble_theirs_color
+                                ? readableOn(theme.bubble_theirs_color)
+                                : undefined,
                           }}
                         >
                           {m.reel && <ReelBubble reel={m.reel} mine={group.mine} />}
@@ -500,7 +596,18 @@ export default function Chat() {
                     })}
 
                     <div className="flex items-center gap-1 px-1 mt-0.5">
-                      <span className="text-[10.5px] text-text-faint">
+                      <span
+                        className="text-[10.5px] text-text-faint"
+                        style={{
+                          // `text-faint` — фиксированный цвет под базовый фон.
+                          // Тема красит фон произвольным, и время на нём
+                          // пропадало: берём читаемый по фону.
+                          color: theme?.background_color
+                            ? readableOn(theme.background_color)
+                            : undefined,
+                          opacity: theme?.background_color ? 0.6 : undefined,
+                        }}
+                      >
                         {formatTime(last.created_at)}
                       </span>
                       {group.mine &&
@@ -570,7 +677,7 @@ export default function Chat() {
             aria-label="Отправить"
             onClick={() => send()}
             disabled={!input.trim()}
-            className="w-11 h-11 rounded-full bg-dawn text-white shrink-0
+            className="w-11 h-11 rounded-full bg-accent text-white shrink-0
                        flex items-center justify-center
                        disabled:opacity-30 active:scale-95 transition-transform"
           >
@@ -585,6 +692,23 @@ export default function Chat() {
         onClose={() => setReportOpen(false)}
         onPick={sendReport}
       />
+
+      <ChatThemeSheet
+        open={themeOpen}
+        onClose={() => setThemeOpen(false)}
+        matchId={matchId!}
+        theme={theme}
+        onApplied={(t) => {
+          setTheme(t);
+          setThemeOpen(false);
+        }}
+        onNeedPlus={() => {
+          setThemeOpen(false);
+          navigate("/plans");
+        }}
+      />
+
+      <HabitsSheet open={habitsOpen} onClose={() => setHabitsOpen(false)} />
     </div>
   );
 }

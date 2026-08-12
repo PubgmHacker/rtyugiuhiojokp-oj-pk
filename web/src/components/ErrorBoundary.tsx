@@ -38,7 +38,7 @@ export default class ErrorBoundary extends Component<
         </p>
         <button
           onClick={() => window.location.reload()}
-          className="mt-1 h-12 px-6 rounded-[var(--radius-control)] bg-dawn
+          className="mt-1 h-12 px-6 rounded-[var(--radius-control)] bg-accent
                      text-white text-[15px] font-semibold"
         >
           Обновить

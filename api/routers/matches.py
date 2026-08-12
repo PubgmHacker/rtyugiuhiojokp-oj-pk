@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, desc, func, or_, select
@@ -19,7 +18,7 @@ from services.chat_delivery import (
     ДоставкаОтклонена, fan_out, reel_preview, save_message,
 )
 from services.streaks import (
-    revive_streak, streak_emoji, get_streak,
+    can_revive as стрик_оживим, revive_streak, streak_emoji, get_streak,
 )
 from services.direct_messages import direct_quota_left, start_direct_message
 from services.plans import (
@@ -31,6 +30,7 @@ from services.plans import (
 from services.premium import current_tier
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
+from services.decor import безопасный_код
 from utils import as_list
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -69,6 +69,7 @@ async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> Matc
             photos=as_list(profile.photos) if profile else [],
             interests=as_list(profile.interests) if profile else [],
             sticker=картинка_наклейки(profile.sticker if profile else None),
+            decor=безопасный_код(profile.decor if profile else None),
         ),
         kind=match.kind,
         initiator_id=match.initiator_id,
@@ -153,6 +154,7 @@ async def get_matches(
             photos=as_list(profile.photos) if profile else [],
             interests=as_list(profile.interests) if profile else [],
             sticker=картинка_наклейки(profile.sticker if profile else None),
+            decor=безопасный_код(profile.decor if profile else None),
         )
 
         last = last_messages.get(m.id)
@@ -166,15 +168,13 @@ async def get_matches(
         streak = await get_streak(session, m.id)
         days = streak.streak_days if streak else 0
         emoji = streak_emoji(days) if days else ""
-        # Пропусти revive только если ещё есть сегодня и серия погашена не сегодня
-        can_revive = False
+        # Кнопку показываем ровно по тому правилу, по которому её примет
+        # `revive_streak`. Здесь стояла своя копия условия («сгорела именно
+        # вчера»), и она расходилась с сервисом в обе стороны: кнопка была
+        # там, где запрос вернёт 429, и пропадала на второй день, хотя
+        # окно восстановления — месяц.
+        can_revive = стрик_оживим(streak)
         revives_left = streak.revives_left if streak else 0
-        if streak and streak.streak_days == 0 and streak.last_counted_for:
-            yesterday = datetime.now(timezone.utc).replace(
-                hour=0, minute=0, second=0, microsecond=0,
-            ) - timedelta(days=1)
-            if streak.last_counted_for == yesterday:
-                can_revive = revives_left > 0
 
         responses.append(
             MatchResponse(
@@ -402,7 +402,7 @@ async def revive_streak_route(
     """
     match = await _get_own_match(session, match_id, user.id)
     try:
-        streak = await revive_streak(session, match)
+        streak = await revive_streak(session, match.id)
     except ValueError as err:
         raise HTTPException(status_code=429, detail=str(err))
     await session.commit()

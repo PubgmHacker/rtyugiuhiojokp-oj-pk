@@ -460,7 +460,7 @@ function Logo({ animated }: { animated?: boolean }) {
       initial={animated ? { scale: 0.7, opacity: 0 } : false}
       animate={animated ? { scale: 1, opacity: 1 } : undefined}
       transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      className="w-[72px] h-[72px] rounded-[var(--radius-card)] bg-dawn
+      className="w-[72px] h-[72px] rounded-[var(--radius-card)] bg-accent
                  flex items-center justify-center shrink-0 float-shadow"
     >
       <Heart size={34} fill="#fff" className="text-white" />

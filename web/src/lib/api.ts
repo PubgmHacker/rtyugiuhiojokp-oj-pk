@@ -80,6 +80,10 @@ export interface UserProfile {
   email?: string | null;
   /** Путь к картинке выбранной наклейки; собирает сервер. */
   sticker?: string | null;
+  /** Код рамки карточки из кейсов; пусто — рамки нет. */
+  decor?: string | null;
+  /** Схема оформления приложения: переезжает с человеком между устройствами. */
+  app_theme?: string;
   invited_count?: number;
   referral_boost?: boolean;
   referral_target?: number;
@@ -109,6 +113,8 @@ export interface DeckProfile {
   is_online?: boolean;
   /** Путь к картинке выбранной наклейки. */
   sticker?: string | null;
+  /** Код рамки карточки; пусто — рамки нет. */
+  decor?: string | null;
 }
 
 export interface MatchResponse {
@@ -266,16 +272,6 @@ export async function likeProfile(
   match?: MatchResponse;
 }> {
   const { data } = await api.post("/likes", { target_id: targetId, type, message });
-  return data;
-}
-/** Проверить покупку. Если gift_recipient_id задан — код не активируется
- * у покупателя, а становится подарочным кодом к другому. */
-export async function verifyPurchase(
-  jws: string, gift_recipient_id?: string,
-): Promise<IAPVerifyResponse> {
-  const body: Record<string, unknown> = { jws };
-  if (gift_recipient_id) body.gift_recipient_id = gift_recipient_id;
-  const { data } = await api.post("/iap/verify", body);
   return data;
 }
 
@@ -528,7 +524,11 @@ export type Section =
   | "cases"
   | "leaderboard"
   | "daily"
-  | "tarot";
+  | "tarot"
+  | "habits"
+  | "chat_theme"
+  | "appearance"
+  | "stories";
 
 /**
  * Отметить открытие раздела.
@@ -872,7 +872,7 @@ export interface IAPVerifyResponse {
   plan: string;
   expires_at: string;
   already_processed: boolean;
-  gift_code?: string;
+  gift_code?: string | null;
 }
 
 /**
@@ -920,5 +920,220 @@ export async function reviveStreak(matchId: string): Promise<{
   streak_revives_left: number;
 }> {
   const { data } = await api.post(`/matches/${matchId}/revive-streak`);
+  return data;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ТЕМА ЧАТА
+// ════════════════════════════════════════════════════════════════
+
+export interface ChatTheme {
+  match_id: string;
+  bubble_mine_color: string | null;
+  bubble_theirs_color: string | null;
+  background_color: string | null;
+  pattern_key: string | null;
+}
+
+export interface ChatThemePreset {
+  key: string;
+  name: string;
+  bubble_mine_color: string;
+  bubble_theirs_color: string;
+  background_color: string;
+  pattern_key: string;
+  min_tier: string;
+  locked: boolean;
+}
+
+export interface ChatThemePresets {
+  presets: ChatThemePreset[];
+  tier: string;
+  custom_allowed: boolean;
+}
+
+export async function getChatThemePresets(): Promise<ChatThemePresets> {
+  const { data } = await api.get("/chat-themes/presets");
+  return data;
+}
+
+export async function getChatTheme(matchId: string): Promise<ChatTheme> {
+  const { data } = await api.get(`/chat-themes/${matchId}`);
+  return data;
+}
+
+export async function setChatTheme(
+  matchId: string,
+  body:
+    | { preset: string }
+    | {
+        bubble_mine_color?: string | null;
+        bubble_theirs_color?: string | null;
+        background_color?: string | null;
+        pattern_key?: string | null;
+      },
+): Promise<ChatTheme> {
+  const { data } = await api.put(`/chat-themes/${matchId}`, body);
+  return data;
+}
+
+export async function resetChatTheme(matchId: string): Promise<ChatTheme> {
+  const { data } = await api.delete(`/chat-themes/${matchId}`);
+  return data;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ЗАДАЧИ ДНЯ
+// ════════════════════════════════════════════════════════════════
+
+export interface Habit {
+  id: string;
+  name: string;
+  target_per_day: number;
+  today_count: number;
+  done_today: boolean;
+}
+
+export interface HabitsResponse {
+  habits: Habit[];
+  limit: number;
+}
+
+export async function getHabits(): Promise<HabitsResponse> {
+  const { data } = await api.get("/habits");
+  return data;
+}
+
+export async function createHabit(
+  name: string,
+  target_per_day = 1,
+): Promise<Habit> {
+  const { data } = await api.post("/habits", { name, target_per_day });
+  return data;
+}
+
+export async function checkHabit(habitId: string): Promise<Habit> {
+  const { data } = await api.post(`/habits/${habitId}/check`);
+  return data;
+}
+
+export async function uncheckHabit(habitId: string): Promise<Habit> {
+  const { data } = await api.post(`/habits/${habitId}/uncheck`);
+  return data;
+}
+
+export async function deleteHabit(habitId: string): Promise<void> {
+  await api.delete(`/habits/${habitId}`);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ИСТОРИИ
+// ════════════════════════════════════════════════════════════════
+
+export interface Story {
+  id: string;
+  user_id: string;
+  display_name: string;
+  media_url: string;
+  caption: string;
+  audience: "matches" | "everyone";
+  created_at: string;
+  expires_at: string;
+  views_count: number | null;
+  seen: boolean;
+  mine: boolean;
+}
+
+export interface StoryAuthor {
+  user_id: string;
+  display_name: string;
+  avatar: string | null;
+  count: number;
+  latest_at: string;
+  has_unseen: boolean;
+}
+
+export interface StoriesFeed {
+  authors: StoryAuthor[];
+  mine: Story[];
+}
+
+export interface StoryViewer {
+  user_id: string;
+  display_name: string;
+  avatar: string | null;
+  viewed_at: string;
+}
+
+export async function getStoriesFeed(): Promise<StoriesFeed> {
+  const { data } = await api.get("/stories/feed");
+  return data;
+}
+
+export async function getUserStories(userId: string): Promise<Story[]> {
+  const { data } = await api.get(`/stories/user/${userId}`);
+  return data;
+}
+
+export async function publishStory(
+  file: File,
+  caption: string,
+  audience: "matches" | "everyone",
+): Promise<Story> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("caption", caption);
+  form.append("audience", audience);
+  // Загрузка кадра дольше обычного запроса: таймаут инстанса 15 секунд
+  // отменил бы её на медленной сети уже после отправки половины файла.
+  const { data } = await api.post("/stories", form, { timeout: 60000 });
+  return data;
+}
+
+export async function markStoryViewed(storyId: string): Promise<void> {
+  await api.post(`/stories/${storyId}/view`);
+}
+
+export async function getStoryViewers(
+  storyId: string,
+): Promise<{ viewers: StoryViewer[]; total: number }> {
+  const { data } = await api.get(`/stories/${storyId}/viewers`);
+  return data;
+}
+
+export async function getStoryReplyTarget(
+  storyId: string,
+): Promise<{ match_id: string; prefill: string }> {
+  const { data } = await api.post(`/stories/${storyId}/reply`);
+  return data;
+}
+
+export async function deleteStory(storyId: string): Promise<void> {
+  await api.delete(`/stories/${storyId}`);
+}
+
+export interface DecorItem {
+  code: string;
+  title: string;
+  hint: string;
+  unlocked: boolean;
+  have: number;
+  need: number;
+}
+
+export interface DecorCollection {
+  decors: DecorItem[];
+  selected?: string | null;
+  stickers_owned: number;
+}
+
+export async function getDecor(): Promise<DecorCollection> {
+  const { data } = await api.get("/cases/decor");
+  return data;
+}
+
+/** Надеть рамку. Пустой код снимает. Право проверяет сервер. */
+export async function selectDecor(code: string): Promise<DecorCollection> {
+  const { data } = await api.post("/cases/decor/select", { code });
   return data;
 }

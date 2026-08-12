@@ -247,7 +247,7 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
                 <div
                   className={`max-w-[76%] px-3.5 py-2 rounded-[var(--radius-tile)] ${
                     m.is_mine
-                      ? "bg-dawn text-white"
+                      ? "bg-accent text-white"
                       : "bg-surface-2 border border-hairline"
                   }`}
                 >
@@ -295,7 +295,7 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
             aria-label="Отправить"
             onClick={send}
             disabled={!text.trim() || sending}
-            className="w-11 h-11 rounded-full bg-dawn text-white shrink-0
+            className="w-11 h-11 rounded-full bg-accent text-white shrink-0
                        flex items-center justify-center
                        disabled:opacity-30 active:scale-95 transition-transform"
           >

@@ -12,6 +12,7 @@ import type { DeckProfile } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { VerifiedBadge } from "./ui";
 import { GOALS, RELATION_TYPES, SUBCULTURES, optionLabel } from "../lib/profileOptions";
+import { decorStyle } from "../lib/decor";
 
 export type SwipeDirection = "left" | "right" | "up";
 
@@ -50,6 +51,7 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
 
   const photos = profile.photos?.length ? profile.photos : [];
   const hasPhotos = photos.length > 0;
+  const decor = decorStyle(profile.decor);
 
   const handleDragEnd = useCallback(
     (_: unknown, info: PanInfo) => {
@@ -176,6 +178,17 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
 
       {/* Затемнение под текстом */}
       <div className="absolute inset-0 bg-scrim pointer-events-none" />
+
+      {/* Рамка коллекции. Над затемнением, но под индикатором фото и
+          кнопками: свечение должно лежать на фото, а не перекрывать
+          элементы, по которым нажимают */}
+      {decor && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 rounded-[inherit] pointer-events-none z-[15]"
+          style={{ boxShadow: `${decor.ring}, ${decor.glow}` }}
+        />
+      )}
 
       {/* Индикатор фото + зоны перелистывания */}
       {photos.length > 1 && (

@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Flame, MessageCircle, User, Sparkles, LayoutGrid, WifiOff } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useStore } from "./lib/store";
+import { applyAppearance, isAppearance, loadAppearance } from "./lib/appearance";
 import { initTelegram } from "./lib/telegram";
 import { initNative, registerPushNotifications } from "./lib/native";
 import { startTransactionListener } from "./lib/iap";
@@ -36,6 +37,7 @@ const Cases = lazy(() => import("./pages/Cases"));
 const Tarot = lazy(() => import("./pages/Tarot"));
 const VoiceRoulette = lazy(() => import("./pages/VoiceRoulette"));
 const More = lazy(() => import("./pages/More"));
+const Habits = lazy(() => import("./pages/Habits"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
 // Пять вкладок, как в референсе: Лента, Лайки, Чаты, Ещё, Профиль.
@@ -81,7 +83,7 @@ function BottomNav() {
                 {isActive && (
                   <motion.span
                     layoutId="nav-indicator"
-                    className="absolute -inset-x-3 -inset-y-1.5 rounded-full bg-dawn"
+                    className="absolute -inset-x-3 -inset-y-1.5 rounded-full bg-accent"
                     transition={{ type: "spring", stiffness: 420, damping: 34 }}
                   />
                 )}
@@ -101,7 +103,7 @@ function BottomNav() {
                 {badge > 0 && (
                   <span
                     className="absolute -top-1 -right-2 min-w-[17px] h-[17px] px-1
-                               rounded-full bg-dawn text-white text-[10px] font-bold
+                               rounded-full bg-accent text-white text-[10px] font-bold
                                flex items-center justify-center"
                   >
                     {badge > 99 ? "99+" : badge}
@@ -186,7 +188,7 @@ function Protected({ children, nav = true }: { children: React.ReactNode; nav?: 
 }
 
 export default function App() {
-  const { token, setUser, isOnboarded } = useStore();
+  const { token, user, setUser, isOnboarded } = useStore();
 
   useEffect(() => {
     initTelegram();
@@ -211,6 +213,14 @@ export default function App() {
       })
     );
   }, [token]);
+
+  // Схема из анкеты догоняет локальную: initAppearance() в main.tsx уже
+  // показал сохранённую на этом устройстве, здесь выравниваем по серверу,
+  // чтобы выбор с другого телефона доехал.
+  useEffect(() => {
+    const key = user?.app_theme;
+    if (isAppearance(key) && key !== loadAppearance()) applyAppearance(key);
+  }, [user?.app_theme]);
 
   // Продления подписки и покупки с другого устройства приходят только сюда.
   // Без этого слушателя сервер не узнает о продлении и Premium погаснет
@@ -257,6 +267,7 @@ export default function App() {
           <Route path="/photo-ratings" element={<Protected><PhotoRatings /></Protected>} />
           <Route path="/rooms" element={<Protected><Rooms /></Protected>} />
           <Route path="/cases" element={<Protected><Cases /></Protected>} />
+          <Route path="/habits" element={<Protected><Habits /></Protected>} />
           <Route path="/tarot" element={<Protected><Tarot /></Protected>} />
           <Route path="/voice" element={<Protected><VoiceRoulette /></Protected>} />
           <Route path="/profile" element={<Protected><Profile /></Protected>} />

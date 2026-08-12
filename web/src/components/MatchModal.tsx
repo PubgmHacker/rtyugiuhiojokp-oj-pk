@@ -103,7 +103,7 @@ export default function MatchModal({ data, onClose }: MatchModalProps) {
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.18, type: "spring", stiffness: 480, damping: 18 }}
-                className="relative z-10 w-12 h-12 rounded-full bg-dawn
+                className="relative z-10 w-12 h-12 rounded-full bg-accent
                            flex items-center justify-center glow-rose"
               >
                 <Heart size={22} fill="#fff" className="text-white heart-beat" />
@@ -179,7 +179,7 @@ function Avatar({
 }) {
   return (
     <div
-      className={`w-[84px] h-[84px] rounded-full overflow-hidden ring-dawn
+      className={`w-[84px] h-[84px] rounded-full overflow-hidden avatar-ring
                   shrink-0 ${className}`}
     >
       {src ? (

@@ -245,7 +245,7 @@ export default function VoiceRoulette() {
             repeat: stage === "waiting" ? Infinity : 0,
           }}
           className={`w-32 h-32 rounded-full flex items-center justify-center glow-rose
-                      ${stage === "idle" ? "bg-dawn active:scale-95" : "bg-dawn/60"}
+                      ${stage === "idle" ? "bg-accent active:scale-95" : "bg-accent/60"}
                       transition-transform`}
           aria-label={stage === "idle" ? "Начать звонок" : "Идёт поиск"}
         >

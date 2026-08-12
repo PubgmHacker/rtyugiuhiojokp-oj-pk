@@ -47,7 +47,7 @@ export default function Discover() {
         <div className="flex items-center justify-between gap-2 min-h-[44px]">
           <span
             className="inline-flex items-center gap-2 pl-2 pr-4 py-1.5 rounded-full
-                       bg-dawn text-white font-bold text-[15px] shadow-lg"
+                       bg-accent text-white font-bold text-[15px] shadow-lg"
           >
             <span
               aria-hidden

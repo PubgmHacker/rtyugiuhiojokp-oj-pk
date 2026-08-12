@@ -293,7 +293,7 @@ function TarotLock({ message }: { message: string }) {
         to="/plans"
         onClick={() => haptic("light")}
         className="flex items-center justify-center gap-2 w-full h-12 px-6
-                   rounded-[var(--radius-control)] bg-dawn text-on-accent
+                   rounded-[var(--radius-control)] bg-accent text-on-accent
                    text-[15px] font-semibold shadow-[var(--shadow-control)]"
       >
         Открыть тарифы

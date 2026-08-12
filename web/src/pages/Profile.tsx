@@ -22,6 +22,7 @@ import {
   Ban,
   Send,
   X,
+  Palette,
 } from "lucide-react";
 import {
   getMyProfile,
@@ -38,6 +39,8 @@ import {
   type Reel as ReelType,
 } from "../lib/api";
 import { useStore } from "../lib/store";
+import { AppearanceSheet } from "../components/AppearanceSheet";
+import { appearanceByKey, loadAppearance } from "../lib/appearance";
 import { haptic } from "../lib/haptics";
 import { getCurrentPosition, openExternal } from "../lib/native";
 import { Button, Card, Chip, Skeleton, VerifiedBadge, Spinner } from "../components/ui";
@@ -60,6 +63,7 @@ export default function Profile() {
   // не может исправить случайный тап
   const [blocked, setBlocked] = useState<UserProfile[] | null>(null);
   const [blockedOpen, setBlockedOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "busy" | "fail">("idle");
   // Какой тумблер приватности сейчас сохраняется — блокируем только его,
   // а не всю секцию: остальные переключать можно
@@ -219,7 +223,7 @@ export default function Profile() {
       {/* ── Шапка профиля ─────────────────────────────────────── */}
       <div className="flex flex-col items-center pt-5 pb-7">
         <div className="relative mb-4">
-          <div className="w-[104px] h-[104px] rounded-full ring-dawn overflow-hidden">
+          <div className="w-[104px] h-[104px] rounded-full avatar-ring overflow-hidden">
             {photo ? (
               <img
                 src={photo}
@@ -239,7 +243,7 @@ export default function Profile() {
           {profile?.is_premium && (
             <span
               className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-2.5 py-0.5
-                         rounded-full bg-dawn text-[10px] font-bold text-white
+                         rounded-full bg-accent text-[10px] font-bold text-white
                          flex items-center gap-1 whitespace-nowrap"
             >
               <Crown size={10} fill="currentColor" />
@@ -483,6 +487,39 @@ export default function Profile() {
         </div>
       </Card>
 
+      {/* ── Оформление ────────────────────────────────────────── */}
+      {/* Рядом с приватностью: это тоже «как меня видно», только глазами
+          хозяина анкеты. Плитка в идиоме соседних строк настроек. */}
+      <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
+        <button
+          onClick={() => {
+            haptic("light");
+            setAppearanceOpen(true);
+          }}
+          className="w-full flex items-center gap-3 px-4 py-3.5 bg-surface text-left
+                     active:bg-surface-2 transition-colors"
+        >
+          <Palette size={17} className="shrink-0 text-text-muted" />
+          <span className="flex-1 text-[15px] text-text">Оформление</span>
+          <span className="flex items-center gap-2">
+            {/* Три точки палитры вместо названия: цвет узнаётся быстрее слова,
+                а название всё равно стоит рядом. */}
+            <span className="flex gap-1">
+              {appearanceByKey(loadAppearance()).swatch.map((c, i) => (
+                <span
+                  key={i}
+                  className="h-3.5 w-3.5 rounded-full border border-hairline"
+                  style={{ background: c }}
+                />
+              ))}
+            </span>
+            <span className="text-[14px] text-text-muted">
+              {appearanceByKey(loadAppearance()).name}
+            </span>
+          </span>
+        </button>
+      </div>
+
       {/* ── Telegram-канал ─────────────────────────────────────── */}
       <TgChannelCard profile={profile} setProfile={setProfile} />
 
@@ -508,7 +545,7 @@ export default function Profile() {
                 <div
                   key={i}
                   className={`h-1.5 flex-1 rounded-full ${
-                    i < (profile?.invited_count ?? 0) ? "bg-dawn" : "bg-surface-3"
+                    i < (profile?.invited_count ?? 0) ? "bg-accent" : "bg-surface-3"
                   }`}
                 />
               ))}
@@ -701,6 +738,15 @@ export default function Profile() {
           Удалить аккаунт
         </Button>
       </div>
+
+      <AppearanceSheet
+        open={appearanceOpen}
+        onClose={() => setAppearanceOpen(false)}
+        onNeedPlus={() => {
+          setAppearanceOpen(false);
+          navigate("/plans");
+        }}
+      />
 
       <DeleteAccountDialog
         open={deleteOpen}
@@ -1158,7 +1204,7 @@ function ProfileCompleteness({
           initial={{ width: 0 }}
           animate={{ width: `${percent}%` }}
           transition={{ type: "spring", stiffness: 120, damping: 20 }}
-          className="h-full rounded-full bg-dawn"
+          className="h-full rounded-full bg-accent"
         />
       </div>
 

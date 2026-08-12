@@ -61,7 +61,7 @@ export default function Likes() {
               aria-pressed={tab === value}
               className={`flex-1 py-2 rounded-full text-[14px] font-semibold
                           transition-colors ${
-                            tab === value ? "bg-dawn text-white" : "text-text-secondary"
+                            tab === value ? "bg-accent text-white" : "text-text-secondary"
                           }`}
             >
               {label}
@@ -310,7 +310,7 @@ function IncomingLikes() {
                     aria-label={`Лайк ${p.display_name}`}
                     disabled={busyId === p.id}
                     onClick={() => respond(p, "like")}
-                    className="flex-1 h-10 rounded-full bg-dawn text-white
+                    className="flex-1 h-10 rounded-full bg-accent text-white
                                flex items-center justify-center
                                disabled:opacity-40 active:scale-95 transition-transform"
                   >

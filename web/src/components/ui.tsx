@@ -12,7 +12,7 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "glass";
 type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: "bg-dawn text-on-accent shadow-[var(--shadow-control)]",
+  primary: "bg-accent text-on-accent shadow-[var(--shadow-control)]",
   secondary: "bg-surface-2 text-text border border-hairline",
   ghost: "bg-transparent text-text-secondary",
   danger: "bg-danger/15 text-danger border border-danger/30",
@@ -87,7 +87,7 @@ const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
   // Главное действие экрана: залитый акцентом круг, а не цветной глиф на
   // стекле. Столбец из пяти разноцветных иконок читается как страница
   // UI-кита — цвет должен быть один и означать «нажми сюда»
-  primary: "bg-dawn text-white border-transparent",
+  primary: "bg-accent text-white border-transparent",
   neutral: "text-text-secondary",
   danger: "text-danger",
   success: "text-success",
@@ -196,7 +196,7 @@ export function Chip({
         px-3.5 py-2 rounded-full text-sm font-medium transition-colors
         ${
           active
-            ? "bg-dawn text-on-accent"
+            ? "bg-accent text-on-accent"
             : "bg-surface-2 text-text-secondary border border-hairline"
         }
         ${interactive ? "" : "cursor-default"}

@@ -70,6 +70,12 @@ class UserProfile(BaseModel):
     #: анкете, а клиенту нужен путь, и склейка на фронте разъехалась бы с
     #: папкой при первом же переносе.
     sticker: Optional[str] = None
+    #: Код оформления карточки. Клиент рисует рамку сам (см. lib/decor.ts):
+    #: CSS не гоняем по сети и не версионируем в базе.
+    decor: Optional[str] = None
+    #: Схема оформления приложения. Отдаётся только владельцу: другим она
+    #: не видна и в публичной карточке ей места нет.
+    app_theme: str = ""
     #: Привязанная почта — по ней можно вернуть аккаунт, если потерян Telegram.
     #: Отдаётся только владельцу (эндпоинты /profiles/me и /auth/me).
     email: Optional[str] = None
@@ -100,6 +106,8 @@ class ProfileUpdate(BaseModel):
     hide_age: Optional[bool] = None
     hide_distance: Optional[bool] = None
     hide_from_visitors: Optional[bool] = None
+    #: Пустая строка — «вернуть базовую схему», поэтому min_length не ставим.
+    app_theme: Optional[str] = Field(None, max_length=24)
     looking_for: Optional[str] = Field(None, pattern="^(male|female|other|any)$")
     age_min: Optional[int] = Field(None, ge=16, le=99)
     age_max: Optional[int] = Field(None, ge=16, le=99)
@@ -242,6 +250,8 @@ class DeckProfile(BaseModel):
     #: Выбранная наклейка из коллекции — маленький знак характера на карточке.
     #: Путь к картинке собирает сервер (см. services/stickers.py).
     sticker: Optional[str] = None
+    #: Код оформления карточки — рамка, заработанная коллекцией.
+    decor: Optional[str] = None
 
 
 # ════════════════════════════════════════════════════════════════
@@ -689,3 +699,119 @@ class IAPVerifyResponse(BaseModel):
     #: Секрет подарочного кода, одноразовый. Не None только при
     # покупке-подарке: мы его не сохраняем plaintext, храним только хеш.
     gift_code: Optional[str] = None
+
+
+# ════════════════════════════════════════════════════════════════
+#  ТЕМА ЧАТА
+# ════════════════════════════════════════════════════════════════
+
+class ChatThemeOut(BaseModel):
+    """Тема пары. `null` в цвете — «берём базовый токен интерфейса»."""
+    match_id: str
+    bubble_mine_color: Optional[str] = None
+    bubble_theirs_color: Optional[str] = None
+    background_color: Optional[str] = None
+    pattern_key: Optional[str] = None
+
+
+class ChatThemePreset(BaseModel):
+    key: str
+    name: str
+    bubble_mine_color: str
+    bubble_theirs_color: str
+    background_color: str
+    pattern_key: str
+    min_tier: str
+    #: Уровень подписки не позволяет выбрать. Показываем с замком, а не
+    #: скрываем: непонятно, чего человек лишён, если темы не видно.
+    locked: bool
+
+
+class ChatThemePresets(BaseModel):
+    presets: list[ChatThemePreset]
+    tier: str
+    #: Можно ли задавать произвольные цвета (уровень Plus и выше).
+    custom_allowed: bool
+
+
+class ChatThemeSet(BaseModel):
+    """Либо `preset`, либо набор цветов. Оба сразу — 422."""
+    preset: Optional[str] = Field(None, max_length=32)
+    bubble_mine_color: Optional[str] = Field(None, max_length=7)
+    bubble_theirs_color: Optional[str] = Field(None, max_length=7)
+    background_color: Optional[str] = Field(None, max_length=7)
+    pattern_key: Optional[str] = Field(None, max_length=16)
+
+
+# ════════════════════════════════════════════════════════════════
+#  ИСТОРИИ
+# ════════════════════════════════════════════════════════════════
+
+class StoryOut(BaseModel):
+    id: str
+    user_id: str
+    display_name: str
+    media_url: str
+    caption: str
+    audience: str
+    created_at: datetime
+    expires_at: datetime
+    #: Просмотры отдаём только автору — чужой счётчик не его дело.
+    views_count: Optional[int] = None
+    seen: bool = False
+    mine: bool = False
+
+
+class StoryAuthorOut(BaseModel):
+    user_id: str
+    display_name: str
+    avatar: Optional[str] = None
+    count: int
+    latest_at: datetime
+    has_unseen: bool
+
+
+class StoriesFeed(BaseModel):
+    authors: list[StoryAuthorOut]
+    #: Свои истории отдельным полем: в ленте они всегда первые, и
+    #: клиенту не приходится выуживать себя из общего списка.
+    mine: list[StoryOut]
+
+
+class StoryViewerOut(BaseModel):
+    user_id: str
+    display_name: str
+    avatar: Optional[str] = None
+    viewed_at: datetime
+
+
+class StoryViewers(BaseModel):
+    viewers: list[StoryViewerOut]
+    total: int
+
+
+class StoryReplyTarget(BaseModel):
+    """Куда клиенту идти с ответом на историю."""
+    match_id: str
+    #: Текст-затравка: цитировать нечего, история исчезнет, поэтому
+    #: подставляем подпись или отметку о кадре.
+    prefill: str
+
+
+class DecorOut(BaseModel):
+    code: str
+    title: str
+    #: Условие открытия человеческим языком.
+    hint: str
+    unlocked: bool
+    #: Собрано из нужного. Оба нуля — условия по коллекции нет.
+    have: int = 0
+    need: int = 0
+
+
+class DecorCollectionOut(BaseModel):
+    decors: list[DecorOut] = Field(default_factory=list)
+    #: Что надето сейчас. None — без рамки.
+    selected: Optional[str] = None
+    #: Наклеек в коллекции — то же число, что в условиях.
+    stickers_owned: int = 0

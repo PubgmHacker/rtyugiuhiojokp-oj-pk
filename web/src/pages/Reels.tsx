@@ -224,7 +224,7 @@ export default function Reels() {
             haptic("light");
             setUploadOpen(true);
           }}
-          className="w-11 h-11 rounded-full bg-dawn text-white flex items-center
+          className="w-11 h-11 rounded-full bg-accent text-white flex items-center
                      justify-center active:scale-95 transition-transform"
         >
           <Plus size={20} />
@@ -426,7 +426,7 @@ function ReelItem({
         >
           <span
             className={`w-12 h-12 rounded-full flex items-center justify-center
-                        ${reel.liked_by_me ? "bg-dawn text-white" : "glass-strong"}`}
+                        ${reel.liked_by_me ? "bg-accent text-white" : "glass-strong"}`}
           >
             <Heart size={22} fill={reel.liked_by_me ? "currentColor" : "none"} />
           </span>

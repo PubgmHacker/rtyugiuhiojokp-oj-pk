@@ -179,6 +179,15 @@ class Profile(Base):
     #: Показывать все значило бы превратить карточку в витрину достижений, а
     #: смотрят на неё ради человека. Пусто — ничего не выбрано.
     sticker: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Код оформления карточки из services/decor.py. Не путь и не CSS:
+    #: рисует клиент, сервер отвечает только за право носить.
+    decor: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Выбранная схема оформления приложения (см. services/appearance.py).
+    #:
+    #: Хранится на сервере, хотя видна только владельцу: настройка внешнего
+    #: вида, теряющаяся при переустановке, воспринимается как потеря данных.
+    #: Пусто — базовая схема.
+    app_theme: Mapped[str] = mapped_column(String, default="", server_default="")
     #: Ссылка на свой Telegram-канал в анкете (платная возможность).
     #:
     #: Хранится «голым» юзернеймом без @ и без https://t.me/ — так его нельзя
@@ -380,6 +389,11 @@ class GiftSubscription(Base):
     paid: Mapped[bool] = mapped_column(Boolean, default=False)
     # Использован? Отработанный код уже нельзя ввести повторно
     redeemed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Идентификатор транзакции магазина. Ключ идемпотентности: Apple
+    #: повторяет доставку чека, и без него один платёж выдавал бы новый
+    #: подарочный код на каждую повторную проверку. NULL у подарков, купленных
+    #: не через магазин, поэтому уникальность частичная.
+    payment_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -842,27 +856,40 @@ class DeviceToken(Base):
 # Виден в чате и в списке чатов как огонёк. Считается по паре, а не по
 # пользователю: стрик — про двоих, и если он прогорел, обидно обоим.
 class ChatStreak(Base):
+    """Серия общения в паре — огонёк, который держит пару в переписке.
+
+    Устроено как в TikTok: считаем не сообщения, а ДНИ, в которые оба
+    написали. Один день молчания — серия сгорает. Дальше два поля решают
+    судьбу: `burnt_from_days` помнит, какой длины была серия на момент
+    смерти, `burnt_at` — когда она умерла. Без первого восстановление
+    возвращало бы серию к единице, то есть продавало бы пустоту; без
+    второго можно было бы оживить серию, забытую полгода назад.
+    """
     __tablename__ = "dating_chat_streaks"
-    __table_args__ = (
-        UniqueConstraint("match_id", name="uq_chat_streak_match"),
-    )
+    __table_args__ = (UniqueConstraint("match_id", name="uq_chat_streak_match"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
-    # Сколько дней подряд уже общаются. Не меньше 1: «старт» — первый день.
-    streak_days: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
-    # За какую календарную дату считали последний раз: чтобы в полночь ГТО
-    # заёк 00:00 мы не задвоили серию, проверяя «не писали ли вчера»
-    last_counted_for: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Остаток revive'ов в текущем окне (обычно месяц). Стрик 100+ дней
-    # жалко потерять, и цена ошибки выше — поэтому продажа востребована.
-    revives_left: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
-    # Когда обновляли окно revives. Сбрасывается на 1-е число следующего
-    # месяца, чтобы игрок не голосовал сам и не перетаскивал счётчик.
-    revives_refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    match_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_matches.id", ondelete="CASCADE"), nullable=False
+    )
+
+    streak_days: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    last_counted_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Длина серии на момент сгорания и момент сгорания. Живая серия держит
+    # здесь 0 и NULL — это и есть признак «гореть ещё нечему».
+    burnt_from_days: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    burnt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    revives_left: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    # NULL, а не now(): «квота ни разу не выдавалась» и «выдана в этом
+    # месяце» — разные состояния, и server_default=now() их склеивал,
+    # из-за чего месячная квота не начислялась никогда.
+    revives_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -877,3 +904,87 @@ class AiModerationLog(Base):
     action: Mapped[str] = mapped_column(String, default="none")  # none | warn | ban
     reason: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Story(Base):
+    """История — фотография на сутки.
+
+    Зачем в дейтинге: анкета статична, а история показывает человека
+    сегодня. Это единственный вид контента, который люди производят сами
+    и охотно — нам не нужно ни закупать его, ни генерировать.
+
+    Живёт ровно 24 часа. Срок — не техническое ограничение, а причина
+    выкладывать: то, что исчезнет, публикуют без отбора и правок.
+    """
+
+    __tablename__ = "dating_stories"
+    __table_args__ = (
+        Index("ix_story_author_created", "user_id", "created_at"),
+        #: Лента и уборка ходят по сроку — индекс обязателен, иначе оба
+        #: запроса переходят в полный проход по таблице на второй неделе.
+        Index("ix_story_expires", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    media_url: Mapped[str] = mapped_column(String, nullable=False)
+    #: Ключ объекта в R2. Держим отдельно от ссылки: по ссылке файл не
+    #: удалить, а истёкшие истории обязаны уносить за собой и файл.
+    object_key: Mapped[str] = mapped_column(String, default="", server_default="")
+
+    caption: Mapped[str] = mapped_column(String, default="", server_default="")
+
+    #: "matches" — видят только пары; "everyone" — ещё и любой, кто открыл
+    #: анкету. Значение по умолчанию закрытое: аудиторию расширяют
+    #: осознанно, а не по недосмотру.
+    audience: Mapped[str] = mapped_column(
+        String, default="matches", server_default="matches", nullable=False
+    )
+
+    views_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    replies_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Скрыта модерацией. Не удаляем: удалённую историю нельзя показать
+    #: поддержке, когда автор придёт спорить.
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class StoryView(Base):
+    """Кто посмотрел историю.
+
+    Отдельная таблица, а не счётчик: автору важно именно «кто», это
+    половина смысла публикации. Уникальность по паре — повторный заход
+    не должен накручивать просмотры.
+    """
+
+    __tablename__ = "dating_story_views"
+    __table_args__ = (
+        UniqueConstraint("story_id", "viewer_id", name="uq_story_view"),
+        Index("ix_story_view_viewer", "viewer_id", "story_id"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    story_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_stories.id", ondelete="CASCADE"), nullable=False
+    )
+    viewer_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

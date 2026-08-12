@@ -14,6 +14,7 @@ from models.schemas import DeckProfile
 from services.plans import deck_priority, tier_from_plan
 from services.public_profile import буст_активен, возраст_из_даты, публичный_возраст
 from services.stickers import картинка_наклейки
+from services.decor import безопасный_код
 from utils import as_list
 
 settings = get_settings()
@@ -407,6 +408,7 @@ async def get_deck_profiles(
             # считаем от них: если фильтр однажды ослабнет, «в сети» не должно
             # выдать спрятавшегося
             sticker=картинка_наклейки(profile.sticker),
+            decor=безопасный_код(profile.decor),
             is_online=(
                 profile.user_id in онлайн
                 and not profile.is_incognito

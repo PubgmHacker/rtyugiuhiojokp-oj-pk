@@ -6,6 +6,7 @@ import { getMatches } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { clearNotificationBadge } from "../lib/native";
+import { StoriesRail } from "../components/StoriesRail";
 import {
   ScreenHeader,
   EmptyState,
@@ -109,6 +110,10 @@ export default function Matches() {
         title="Чаты"
         subtitle={`${matches.length} ${plural(matches.length, "совпадение", "совпадения", "совпадений")}`}
       />
+
+      {/* Истории — над списком: они живут сутки, а переписка ждёт. Полоса
+          скрывается сама, когда ни у кого ничего нет */}
+      <StoriesRail />
 
       {/* Комнаты по интересам: в общий чат написать проще, чем первым в личку,
           поэтому вход в них живёт рядом со списком переписок */}
@@ -224,7 +229,7 @@ export default function Matches() {
                       {!!m.streak_days && (
                         <span
                           className="flex items-center gap-1 text-[12px]
-                                     text-warning font-semibold shrink-0"
+                                     text-warn font-semibold shrink-0"
                           aria-label={`Серия общения: ${m.streak_days} дн.`}
                         >
                           {m.streak_emoji} {m.streak_days}
@@ -241,7 +246,7 @@ export default function Matches() {
                   </div>
                   {!!m.unread_count && (
                     <span
-                      className="min-w-[20px] h-5 px-1.5 rounded-full bg-dawn
+                      className="min-w-[20px] h-5 px-1.5 rounded-full bg-accent
                                  text-white text-[11px] font-bold
                                  flex items-center justify-center shrink-0"
                     >
@@ -275,7 +280,7 @@ function Avatar({
     <div
       style={{ width: size, height: size }}
       className={`rounded-full overflow-hidden shrink-0 ${
-        ring ? "ring-dawn" : "bg-surface-2"
+        ring ? "avatar-ring" : "bg-surface-2"
       }`}
     >
       {src ? (

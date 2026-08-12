@@ -146,7 +146,7 @@ async def save_message(
             # Стрик: +1 день, если это первое сообщение сегодня. Читаем эту
             # ветку до флага answer-статуса: иначе при повторном открытии
             # окна неизвестно, какой из флагов должен победить.
-            await touch_streak_for_message(session, match)
+            await touch_streak_for_message(session, match.id)
 
             message = Message(
                 match_id=match_id,

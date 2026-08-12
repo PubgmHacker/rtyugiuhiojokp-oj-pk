@@ -112,6 +112,11 @@ class Profile(Base):
     #: Показывать все значило бы превратить карточку в витрину достижений, а
     #: смотрят на неё ради человека. Пусто — ничего не выбрано.
     sticker: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: Оформление карточки и схема приложения. Боту они не нужны, но обе
+    #: схемы создают таблицы в одной базе — расхождение роняет того, кто
+    #: поднялся вторым, на первом же запросе к отсутствующей колонке.
+    decor: Mapped[str | None] = mapped_column(String, nullable=True)
+    app_theme: Mapped[str] = mapped_column(String, default="", server_default="")
     #: Telegram-канал в анкете (платно) — см. api/models/models.py.
     #: Хранится голым юзернеймом, без @ и без https://t.me/.
     tg_channel: Mapped[str] = mapped_column(String, default="")
@@ -553,3 +558,139 @@ class AiModerationLog(Base):
     action: Mapped[str] = mapped_column(String, default="none")  # none | warn | ban
     reason: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatThemeSettings(Base):
+    """Оформление чата пары — см. api/models/models.py.
+
+    Боту не нужна, но схема ДОЛЖНА совпадать с API: обе создают таблицы
+    в одной БД.
+    """
+
+    __tablename__ = "dating_chat_themes"
+    __table_args__ = (
+        UniqueConstraint("match_id", name="uq_chat_theme_match"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
+    bubble_mine_color: Mapped[str | None] = mapped_column(String, nullable=True)
+    bubble_theirs_color: Mapped[str | None] = mapped_column(String, nullable=True)
+    background_color: Mapped[str | None] = mapped_column(String, nullable=True)
+    pattern_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UserHabit(Base):
+    """Привычка человека — см. api/models/models.py."""
+
+    __tablename__ = "dating_habits"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String)
+    target_per_day: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
+    today_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    counted_for_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ChatStreak(Base):
+    """Серия дней общения в паре — см. api/models/models.py."""
+
+    __tablename__ = "dating_chat_streaks"
+    __table_args__ = (
+        UniqueConstraint("match_id", name="uq_chat_streak_match"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
+    streak_days: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    last_counted_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revives_left: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    revives_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    burnt_from_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    burnt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class GiftSubscription(Base):
+    """Подарок подписки — см. api/models/models.py.
+
+    Боту нужна по-настоящему: подписку дарят и через Telegram Stars, и
+    активирует код тоже бот.
+    """
+
+    __tablename__ = "dating_gift_subscriptions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    buyer_user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    recipient_user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=True
+    )
+    plan: Mapped[str] = mapped_column(String)
+    months: Mapped[int] = mapped_column(Integer, default=1)
+    code_hash: Mapped[str] = mapped_column(String)
+    payment_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Story(Base):
+    """История на сутки — см. api/models/models.py."""
+
+    __tablename__ = "dating_stories"
+    __table_args__ = (
+        Index("ix_story_author_created", "user_id", "created_at"),
+        Index("ix_story_expires", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=False
+    )
+    media_url: Mapped[str] = mapped_column(String, nullable=False)
+    object_key: Mapped[str] = mapped_column(String, default="", server_default="")
+    caption: Mapped[str] = mapped_column(String, default="", server_default="")
+    audience: Mapped[str] = mapped_column(
+        String, default="matches", server_default="matches", nullable=False
+    )
+    views_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    replies_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class StoryView(Base):
+    """Просмотр истории — см. api/models/models.py."""
+
+    __tablename__ = "dating_story_views"
+    __table_args__ = (
+        UniqueConstraint("story_id", "viewer_id", name="uq_story_view"),
+        Index("ix_story_view_viewer", "viewer_id", "story_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    story_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_stories.id", ondelete="CASCADE"), nullable=False
+    )
+    viewer_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

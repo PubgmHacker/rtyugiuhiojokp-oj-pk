@@ -16,6 +16,7 @@ import { haptic } from "../lib/haptics";
 import { isNative, openExternal } from "../lib/native";
 import {
   isPurchaseAvailable,
+  purchaseGift,
   purchasePremium,
   restorePurchases,
 } from "../lib/iap";
@@ -90,7 +91,9 @@ export default function Plans() {
           /* профиль подтянется при следующем открытии */
         }
         if (result.giftCode) setGiftCode(result.giftCode);
-        setMessage("Готово! Подписка активна");
+        setMessage(
+          result.giftCode ? "Подарок оформлен — код ниже" : "Готово! Подписка активна"
+        );
         return;
       }
       if (result.status === "cancelled") return;
@@ -172,7 +175,7 @@ export default function Plans() {
                     className={`flex-1 py-2.5 rounded-full text-[15px] font-bold
                                 transition-colors ${
                       active
-                        ? "bg-dawn text-white shadow"
+                        ? "bg-accent text-white shadow"
                         : "text-text-secondary"
                     }`}
                   >
@@ -196,7 +199,7 @@ export default function Plans() {
                 }}
                 aria-pressed={gifting}
                 className={`shrink-0 w-10 h-6 rounded-full transition-colors
-                           ${gifting ? "bg-dawn" : "bg-surface-2"}`}
+                           ${gifting ? "bg-accent" : "bg-surface-2"}`}
               >
                 <span
                   className={`block w-4 h-4 rounded-full bg-white transition-transform
@@ -246,16 +249,9 @@ export default function Plans() {
                   busy={busy === plan.code}
                   disabled={busy !== null}
                   onBuy={() => {
-                    if (gifting) {
-                      // Переводим пальцем: подарок оформляется кодом,
-                      // который можно переслать. Начисляем не себе, а
-                      // получателю — поэтому и маршрут другой.
-                      handle(
-                        () => purchasePremium(plan.appstore_id, user?.id ?? ""),
-                        `${plan.code}-gift`,
-                      );
-                      return;
-                    }
+                    // Подарок и покупка себе проходят через один и тот же
+                    // товар App Store, но через разные проверки чека:
+                    // подарок не начисляет подписку, а выпускает код.
                     if (!isNative()) {
                       haptic("light");
                       openExternal(
@@ -267,11 +263,13 @@ export default function Plans() {
                       setMessage("Покупка в приложении сейчас недоступна");
                       return;
                     }
-                      handle(
-                        () => purchasePremium(plan.appstore_id, user?.id ?? ""),
-                        plan.code
-                      );
-                    }}
+                    handle(
+                      gifting
+                        ? () => purchaseGift(plan.appstore_id, user?.id ?? "")
+                        : () => purchasePremium(plan.appstore_id, user?.id ?? ""),
+                      plan.code
+                    );
+                  }}
                 />
               ))}
             </div>

@@ -73,7 +73,7 @@ export default function AdminDashboard() {
       <header className="sticky top-0 z-30 bg-bg/95 backdrop-blur-lg border-b border-surface safe-top">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-dawn flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center">
               <span className="text-white font-bold">SD</span>
             </div>
             <div>
@@ -108,7 +108,7 @@ export default function AdminDashboard() {
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition ${
                   isActive
-                    ? "bg-dawn text-white"
+                    ? "bg-accent text-white"
                     : "bg-surface text-text-muted hover:text-text"
                 }`}
               >

@@ -15,6 +15,7 @@ import {
   Crown,
   Film,
   Gift,
+  ListChecks,
   Mic,
   Moon,
   Sparkles,
@@ -63,6 +64,12 @@ const DATING: Item[] = [
 
 /** Развлечения — поводы вернуться, но не способ познакомиться. */
 const FUN: Item[] = [
+  {
+    path: "/habits",
+    icon: ListChecks,
+    title: "План дня",
+    hint: "Задачи и привычки — прямо в чате",
+  },
   {
     path: "/photo-ratings",
     icon: Star,

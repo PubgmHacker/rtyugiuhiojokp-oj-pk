@@ -37,6 +37,7 @@ from models.schemas import (
 )
 from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text
+from services.appearance import DEFAULT_THEME, доступна, нормализовать
 from services.plans import (
     BOOST_MINUTES,
     FEATURE_MIN_TIER,
@@ -47,6 +48,7 @@ from services.plans import (
 from services.premium import current_tier, is_premium as _is_premium
 from services.public_profile import в_utc, возраст_из_даты, наша_картинка, публичный_возраст
 from services.stickers import картинка_наклейки
+from services.decor import безопасный_код
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
 from utils import as_list
@@ -85,6 +87,7 @@ async def _deck_like_profile(
         mbti=profile.mbti or "",
         height_cm=profile.height_cm,
         sticker=картинка_наклейки(profile.sticker),
+        decor=безопасный_код(profile.decor),
         tg_channel=tg_channel,
     )
 
@@ -353,6 +356,10 @@ async def get_my_profile(
         filter_height_min=profile.filter_height_min if profile else None,
         filter_height_max=profile.filter_height_max if profile else None,
         has_location=bool(profile and profile.latitude is not None),
+        # Своё оформление владелец видит всегда: схему он выбирал сам, и
+        # прятать её от него в его же настройках нечего.
+        app_theme=profile.app_theme if profile else "",
+        decor=безопасный_код(profile.decor if profile else None),
         # Только своя анкета: в чужой почте нет и быть не должно
         email=user.email,
         # Владелец видит свой канал вне зависимости от тарифа — гейт
@@ -444,6 +451,20 @@ async def update_my_profile(
         await session.flush()
 
     update_fields = data.model_dump(exclude_unset=True)
+
+    # Схему оформления проверяем до записи: платные схемы иначе включались
+    # бы правкой запроса, а незнакомый ключ приехал бы в базу и вернулся
+    # клиенту, который его не понимает.
+    if "app_theme" in update_fields:
+        желаемая = нормализовать(update_fields["app_theme"])
+        if желаемая != DEFAULT_THEME:
+            tier = await current_tier(session, user.id)
+            if not доступна(желаемая, tier):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Эта схема оформления доступна с подпиской Plus",
+                )
+        update_fields["app_theme"] = желаемая
 
     # Инкогнито-режим — платная фича (выключить может любой). Спрашиваем
     # таблицу возможностей, а не «есть ли вообще подписка»: `is_premium` — это

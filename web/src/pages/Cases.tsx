@@ -23,6 +23,7 @@ import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, Card, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 import StickerCollection from "../components/StickerCollection";
+import DecorPicker from "../components/DecorPicker";
 
 export default function Cases() {
   useSectionOpen("cases");
@@ -81,7 +82,7 @@ export default function Cases() {
             animate={busy ? { rotate: [0, -8, 8, -8, 0] } : { rotate: 0 }}
             transition={{ duration: 0.5, repeat: busy ? Infinity : 0 }}
             className="inline-flex items-center justify-center w-20 h-20 mb-3
-                       rounded-full bg-dawn/15"
+                       rounded-full bg-accent/15"
           >
             <Gift size={36} className="text-accent" />
           </motion.div>
@@ -192,6 +193,13 @@ export default function Cases() {
       {/* Коллекция под витриной шансов: сначала «что можно выиграть», потом
           «что уже собрано» — в этом порядке человек и думает */}
       <StickerCollection />
+
+      {/* Рамка — награда за коллекцию, поэтому строго под ней:
+          обратный порядок показывал бы цель до того, как понятно,
+          чем её брать */}
+      <div className="mt-6">
+        <DecorPicker />
+      </div>
     </div>
   );
 }

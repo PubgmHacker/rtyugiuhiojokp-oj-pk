@@ -19,7 +19,8 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import CaseOpening, Profile, StickerOwned, User
 from models.schemas import (
-    CaseOpenResult, CaseRewardOut, CaseStateOut, StickerCollectionOut, StickerOut,
+    CaseOpenResult, CaseRewardOut, CaseStateOut, DecorCollectionOut, DecorOut,
+    StickerCollectionOut, StickerOut,
 )
 from services.cases import (
     REWARD_BOOST, REWARD_STICKER, REWARDS, Reward, REWARD_SUPERLIKE,
@@ -31,6 +32,7 @@ from services.stickers import (
 )
 from services.plans import BOOST_MINUTES
 from services.premium import current_tier
+from services.decor import ОФОРМЛЕНИЯ, безопасный_код, открыто, по_коду, прогресс
 
 logger = logging.getLogger(__name__)
 
@@ -250,3 +252,94 @@ async def select_sticker(
     await session.commit()
 
     return await my_stickers(session=session, user=user)
+
+
+async def _наклеек_у(session: AsyncSession, user_id: str) -> int:
+    """Сколько РАЗНЫХ наклеек собрано.
+
+    Разных, а не выпадений: иначе рамка открывалась бы повторами одной
+    обычной наклейки, и условие перестало бы означать коллекцию.
+    """
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(StickerOwned)
+            .where(StickerOwned.user_id == user_id)
+        )
+        or 0
+    )
+
+
+@router.get("/decor", response_model=DecorCollectionOut)
+async def my_decor(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Витрина оформлений: и открытые, и закрытые с условием.
+
+    Закрытые показываем всегда — рамка, о которой не знаешь, не мотивирует
+    открывать кейсы. Это ровно тот же приём, что с пустыми ячейками в
+    коллекции наклеек.
+    """
+    наклеек = await _наклеек_у(session, user.id)
+    tier = await current_tier(session, user.id)
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    витрина: list[DecorOut] = []
+    for о in ОФОРМЛЕНИЯ:
+        have, need = прогресс(о, наклеек)
+        витрина.append(
+            DecorOut(
+                code=о.code,
+                title=о.title,
+                hint=о.hint,
+                unlocked=открыто(о, наклеек, tier),
+                have=have,
+                need=need,
+            )
+        )
+
+    return DecorCollectionOut(
+        decors=витрина,
+        selected=безопасный_код(profile.decor if profile else None),
+        stickers_owned=наклеек,
+    )
+
+
+@router.post("/decor/select", response_model=DecorCollectionOut)
+async def select_decor(
+    data: dict,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Надеть рамку. Пустой код — снять.
+
+    Право проверяем здесь, а не на клиенте: закрытая рамка, поставленная
+    запросом мимо интерфейса, обесценила бы её у всех, кто собирал.
+
+    Условие проверяется в момент выбора и больше не пересматривается: у
+    подписки может кончиться срок, но снимать с человека уже надетую
+    рамку — наказание за то, что он платил, а не за нарушение.
+    """
+    код = str(data.get("code") or "").strip()
+
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=400, detail="Сначала заполните анкету")
+
+    if код:
+        о = по_коду(код)
+        if о is None:
+            raise HTTPException(status_code=400, detail="Неизвестное оформление")
+        наклеек = await _наклеек_у(session, user.id)
+        tier = await current_tier(session, user.id)
+        if not открыто(о, наклеек, tier):
+            raise HTTPException(status_code=403, detail=f"Ещё не открыто: {о.hint}")
+
+    profile.decor = код or None
+    await session.commit()
+
+    return await my_decor(session=session, user=user)

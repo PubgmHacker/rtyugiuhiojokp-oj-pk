@@ -28,7 +28,7 @@ from models.schemas import (
 from services.appstore import (
     ReceiptInvalid, is_configured, verify_transaction, разобрать_уведомление,
 )
-from services.gifting import activate_gift, purchase_gift
+from services.gifting import activate_gift, new_gift_code, purchase_gift
 from services.premium import activate_premium, current_tier, отозвать_покупку
 from services.plans import PLANS, TIER_ORDER, TIERS, plan_for_appstore_id
 
@@ -170,16 +170,30 @@ async def verify_gift_purchase(
     if plan is None:
         raise HTTPException(status_code=400, detail="Неизвестный продукт")
 
-    gift = await purchase_gift(session, buyer=user, plan_code=plan.code)
-    await activate_gift(session, gift)
+    # Код рождается здесь: показать его можно один раз, в базе только хеш
+    code = new_gift_code()
+    gift = await purchase_gift(
+        session,
+        buyer=user,
+        plan_code=plan.code,
+        code=code,
+        payment_id=purchase.transaction_id,
+    )
+    повтор = gift.payment_id == purchase.transaction_id and gift.paid
+    if not повтор:
+        await activate_gift(session, gift)
     await session.commit()
 
     return IAPVerifyResponse(
         success=True,
         plan=plan.code,
+        # У покупателя подписка не меняется — срок принадлежит получателю,
+        # и он появится только после ввода кода
         expires_at="",
-        already_processed=False,
-        gift_code=gift_code,
+        already_processed=повтор,
+        # На повторе plaintext вернуть нечем и не нужно: клиент сохранил его
+        # при первом успешном ответе
+        gift_code=None if повтор else code,
     )
 
 
