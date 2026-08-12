@@ -2,25 +2,23 @@ import { useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
 /**
- * Знак марки: две ауры, в пересечении — свет.
+ * Знак марки: два сплошных диска, в пересечении — свет.
  *
  * У каждого человека в продукте свой детерминированный цвет — аура
- * (lib/aura.ts). Знак: два кольца-ауры сходятся, пересечение загорается.
- * Кольца вместо залитых дисков — чтобы не читаться как Venn из слайда.
+ * (lib/aura.ts). Знак: два залитых диска сходятся, пересечение — жёсткая
+ * белая линза. Без колец и без soft-glow.
  *
  * Геометрия повторяет tools/brandmark.py (источник правды для PIL и
- * SVG-носителей): R = 24 при холсте 100, смещения ±13.92 / ∓8.64,
- * толщина кольца 0.30 R.
+ * SVG-носителей): R = 24 при холсте 100, смещения ±13.92 / ∓8.64.
  *
- * `animated` — «дыхание»: кольца медленно сходятся и расходятся, линза
- * пересечения растёт и тает. Уважает prefers-reduced-motion.
+ * `animated` — «дыхание»: диски медленно сходятся и расходятся, линза
+ * растёт и тает. Уважает prefers-reduced-motion.
  */
 
 const R = 24;
 const DX = 13.92; // 0.580 R
 const DY = 8.64; // 0.360 R
-const W = 7.2; // 0.30 R
-// Насколько кольца сходятся в крайней точке дыхания
+// Насколько диски сходятся в крайней точке дыхания
 const ШАГ = 2.6;
 
 const A = { cx: 50 - DX, cy: 50 + DY };
@@ -76,20 +74,16 @@ export default function BrandMark({
       <motion.circle
         cx={A.cx}
         cy={A.cy}
-        r={R - W / 2}
-        stroke="var(--color-accent)"
-        strokeWidth={W}
-        fill="none"
+        r={R}
+        fill="var(--color-accent)"
         animate={ходА}
         transition={переход}
       />
       <motion.circle
         cx={B.cx}
         cy={B.cy}
-        r={R - W / 2}
-        stroke="var(--color-mark-b)"
-        strokeWidth={W}
-        fill="none"
+        r={R}
+        fill="var(--color-mark-b)"
         animate={ходБ}
         transition={переход}
       />
