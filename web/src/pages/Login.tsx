@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { Heart } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   authWithTelegram,
@@ -16,6 +15,7 @@ import { haptic } from "../lib/haptics";
 import { openExternal, isNative } from "../lib/native";
 import { appleSignInAvailable, signInWithApple, ВходОтменён } from "../lib/appleSignIn";
 import { Button, Spinner } from "../components/ui";
+import BrandMark from "../components/BrandMark";
 
 const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
 // Дефолт — рабочий юзернейм: с неверным весь канал привлечения обрывался на
@@ -201,14 +201,16 @@ export default function Login() {
 
   return (
     <div className="relative h-screen-safe overflow-hidden flex flex-col">
-      {/* Сдержанная подсветка за логотипом: один холодный оттенок
-          вместо трёх цветных пятен */}
+      {/* Две ауры за знаком: те же оттенки, что у марки — встречаются
+          по диагонали, как круги в BrandMark. Без третьих «радужных» пятен */}
       <div
         aria-hidden
         className="absolute inset-0 pointer-events-none"
         style={{
-          background:
-            "radial-gradient(80% 45% at 50% 12%, rgb(255 45 111 / 0.12), transparent 72%)",
+          background: [
+            "radial-gradient(55% 40% at 32% 18%, rgb(255 45 111 / 0.18), transparent 70%)",
+            "radial-gradient(50% 38% at 68% 12%, rgb(139 92 246 / 0.14), transparent 68%)",
+          ].join(","),
         }}
       />
 
@@ -219,7 +221,7 @@ export default function Login() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, type: "spring", stiffness: 320, damping: 28 }}
-          className="text-display text-gradient text-center mt-7 mb-3"
+          className="text-display text-text text-center mt-8 mb-2.5 tracking-[-0.03em]"
         >
           Souldawn
         </motion.h1>
@@ -228,9 +230,9 @@ export default function Login() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.18, type: "spring", stiffness: 320, damping: 28 }}
-          className="text-[16px] text-text-secondary text-center max-w-[30ch] leading-relaxed"
+          className="text-[15.5px] text-text-secondary text-center max-w-[28ch] leading-[1.45]"
         >
-          Знакомства без спешки — по интересам, а не только по фото
+          Интересы и аура — раньше фото. Знакомства в Telegram и на iPhone
         </motion.p>
       </div>
 
@@ -457,13 +459,23 @@ export default function Login() {
 function Logo({ animated }: { animated?: boolean }) {
   return (
     <motion.div
-      initial={animated ? { scale: 0.7, opacity: 0 } : false}
+      initial={animated ? { scale: 0.86, opacity: 0 } : false}
       animate={animated ? { scale: 1, opacity: 1 } : undefined}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      className="w-[72px] h-[72px] rounded-[var(--radius-card)] bg-accent
-                 flex items-center justify-center shrink-0 float-shadow"
+      transition={{ type: "spring", stiffness: 280, damping: 22 }}
+      className="relative shrink-0 w-[112px] h-[112px] flex items-center justify-center"
     >
-      <Heart size={34} fill="#fff" className="text-white" />
+      {/* Мягкая линза под знаком — не плашка-квадрат: квадрат читался как
+          «иконка приложения на экране входа», а нужен сам знак */}
+      <div
+        aria-hidden
+        className="absolute inset-[8%] rounded-full opacity-70"
+        style={{
+          background:
+            "radial-gradient(circle at 40% 60%, rgb(255 45 111 / 0.22), transparent 62%)," +
+            "radial-gradient(circle at 62% 38%, rgb(139 92 246 / 0.2), transparent 60%)",
+        }}
+      />
+      <BrandMark size={96} animated={animated} className="relative" />
     </motion.div>
   );
 }

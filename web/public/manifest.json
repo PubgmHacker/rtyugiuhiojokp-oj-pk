@@ -1,7 +1,7 @@
 {
   "name": "Souldawn — знакомства",
   "short_name": "Souldawn",
-  "description": "Умный подбор, живое общение и безопасность. Знакомства нового поколения.",
+  "description": "Знакомства по интересам и ауре, а не только по фото.",
   "start_url": "/discover",
   "scope": "/",
   "display": "standalone",
