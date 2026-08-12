@@ -427,7 +427,7 @@ export default function Login() {
         )}
 
         <p className="mt-2 text-[11.5px] text-text-faint text-center leading-relaxed">
-          16+. Продолжая, вы принимаете{" "}
+          Сервис только для лиц старше 16 лет. Продолжая, вы принимаете{" "}
           <a
             href={`${SITE_URL}/terms.html`}
             target="_blank"
