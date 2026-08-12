@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, SlidersHorizontal, Mail, MessageCircleHeart } from "lucide-react";
+import { X, Heart, Star, SlidersHorizontal, MessageCircleHeart } from "lucide-react";
 import type { DeckProfile, MatchResponse } from "../lib/api";
 import {
   likeProfile,
@@ -47,6 +47,10 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   const [directFor, setDirectFor] = useState<DeckProfile | null>(null);
 
   const loadingRef = useRef(false);
+  // Долгое удержание лайка открывает «лайк с сообщением» — отдельной
+  // кнопки на рейле больше нет, иначе два «написать» стояли рядом
+  const likeHoldRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const likeNoteOpenedRef = useRef(false);
   // Блокируем повторный свайп, пока текущий не обработан — иначе
   // быстрые тапы отправляют лайк за уже удалённую карточку
   const busyRef = useRef(false);
@@ -182,7 +186,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         <div className="relative flex-1 min-h-0">
           <Skeleton className="absolute inset-0 rounded-[var(--radius-card)]" />
           <div className="absolute right-3 bottom-24 flex flex-col items-center gap-3">
-            {[48, 64, 48, 48, 48].map((s, i) => (
+            {[48, 64, 48, 48].map((s, i) => (
               <Skeleton key={i} className="rounded-full" style={{ width: s, height: s }} />
             ))}
           </div>
@@ -285,11 +289,42 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
             )}
           </div>
 
-          {/* Лайк крупнее остальных — главное действие экрана */}
+          {/* Лайк крупнее остальных — главное действие экрана.
+              Короткий тап = лайк, удержание ≈450 мс = лайк с сообщением.
+              Так на рейле не стоят два «написать» рядом */}
           <div className="pointer-events-auto">
             <IconButton
-              label="Лайк"
-              onClick={() => handleButton("right")}
+              label="Лайк. Удерживайте, чтобы добавить сообщение"
+              onPointerDown={() => {
+                const top = deck[0];
+                if (!top) return;
+                likeNoteOpenedRef.current = false;
+                if (likeHoldRef.current) clearTimeout(likeHoldRef.current);
+                likeHoldRef.current = setTimeout(() => {
+                  likeNoteOpenedRef.current = true;
+                  haptic("medium");
+                  setNoteFor(top);
+                }, 450);
+              }}
+              onPointerUp={() => {
+                if (likeHoldRef.current) {
+                  clearTimeout(likeHoldRef.current);
+                  likeHoldRef.current = null;
+                }
+              }}
+              onPointerLeave={() => {
+                if (likeHoldRef.current) {
+                  clearTimeout(likeHoldRef.current);
+                  likeHoldRef.current = null;
+                }
+              }}
+              onClick={() => {
+                if (likeNoteOpenedRef.current) {
+                  likeNoteOpenedRef.current = false;
+                  return;
+                }
+                handleButton("right");
+              }}
               size={64}
               tone="primary"
             >
@@ -297,25 +332,8 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
             </IconButton>
           </div>
 
-          <div className="pointer-events-auto">
-            <IconButton
-              label="Лайк с сообщением"
-              onClick={() => {
-                const top = deck[0];
-                if (!top) return;
-                haptic("light");
-                setNoteFor(top);
-              }}
-              disabled={!deck.length}
-              size={48}
-            >
-              <Mail size={19} />
-            </IconButton>
-          </div>
-
           {/* Письмо без взаимного лайка — платный крючок на самом частом
-              экране (фирменная механика референса). Гейт по тарифу и лимиту
-              показывает сама шторка, честно и с объяснением */}
+              экране. Гейт по тарифу и лимиту показывает сама шторка */}
           <div className="pointer-events-auto">
             <IconButton
               label="Написать без мэтча"

@@ -85,8 +85,7 @@ interface IconButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
 
 const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
   // Главное действие экрана: залитый акцентом круг, а не цветной глиф на
-  // стекле. Столбец из пяти разноцветных иконок читается как страница
-  // UI-кита — цвет должен быть один и означать «нажми сюда»
+  // стекле. Цвет один и означает «нажми сюда» — остальные кнопки нейтральные
   primary: "bg-accent text-white border-transparent",
   neutral: "text-text-secondary",
   danger: "text-danger",
