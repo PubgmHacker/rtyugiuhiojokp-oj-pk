@@ -191,95 +191,55 @@ export default function Login() {
   /* ── Автовход внутри Telegram ────────────────────────────── */
   if (inTelegram && loading) {
     return (
-      <div className="h-screen-safe flex flex-col items-center justify-center gap-5">
+      <div className="h-screen-safe flex flex-col items-center justify-center gap-4">
         <Logo />
-        <Spinner size={24} />
+        <Spinner size={22} />
         <p className="text-[14px] text-text-muted">Входим…</p>
       </div>
     );
   }
 
+  // Композиция как у первого экрана Мимолёта: бренд сверху, без «космоса»
+  // посередине и без лендинговых буллетов — сразу к действию и мелочи внизу
   return (
     <div className="relative h-screen-safe overflow-hidden flex flex-col">
-      {/* Две ауры за знаком: те же оттенки, что у марки — встречаются
-          по диагонали, как круги в BrandMark. Без третьих «радужных» пятен */}
       <div
         aria-hidden
         className="absolute inset-0 pointer-events-none"
         style={{
           background: [
-            "radial-gradient(55% 40% at 32% 18%, rgb(255 45 111 / 0.18), transparent 70%)",
-            "radial-gradient(50% 38% at 68% 12%, rgb(139 92 246 / 0.14), transparent 68%)",
+            "radial-gradient(48% 32% at 28% 10%, rgb(255 45 111 / 0.12), transparent 72%)",
+            "radial-gradient(42% 28% at 72% 6%, rgb(139 92 246 / 0.1), transparent 70%)",
           ].join(","),
         }}
       />
 
-      {/* Бренд сверху + плотный блок «что внутри» — без пустой дыры
-          посередине. Ориентир по иерархии: Mimolet (конкретный подзаголовок,
-          шаги рядом с CTA), палитра и знак — свои */}
-      <div className="relative flex-1 flex flex-col px-6 safe-top pt-10 min-h-0">
-        <div className="flex flex-col items-center">
-          <Logo animated />
-
-          <motion.h1
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, type: "spring", stiffness: 320, damping: 28 }}
-            className="text-display text-text text-center mt-5 mb-2 tracking-[-0.03em]"
-          >
-            Souldawn
-          </motion.h1>
-
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.16, type: "spring", stiffness: 320, damping: 28 }}
-            className="text-[15.5px] text-text-secondary text-center max-w-[28ch] leading-[1.4]"
-          >
-            Знакомства по общим интересам — сначала темы, потом фото
-          </motion.p>
-        </div>
-
-        <motion.ul
-          initial={{ opacity: 0, y: 12 }}
+      <div className="relative px-6 safe-top pt-8">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22, type: "spring", stiffness: 320, damping: 28 }}
-          className="mt-8 w-full max-w-[340px] mx-auto flex flex-col gap-3"
+          transition={{ type: "spring", stiffness: 340, damping: 28 }}
+          className="flex items-center gap-3"
         >
-          {[
-            "Общие интересы видны до фото",
-            "Лайк — и ждёте взаимность",
-            "Чат, когда уже есть о чём говорить",
-          ].map((line) => (
-            <li
-              key={line}
-              className="flex items-start gap-3 text-[14.5px] text-text leading-[1.35]"
-            >
-              <span
-                aria-hidden
-                className="mt-[0.45em] shrink-0 w-1.5 h-1.5 rounded-full bg-primary"
-              />
-              {line}
-            </li>
-          ))}
-        </motion.ul>
-
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="mt-auto pt-6 pb-2 text-[12.5px] text-text-faint text-center tracking-wide"
-        >
-          Telegram · iPhone · 16+
-        </motion.p>
+          <Logo animated />
+          <div className="min-w-0">
+            <h1 className="text-[28px] font-bold text-text tracking-[-0.03em] leading-none">
+              Souldawn
+            </h1>
+            <p className="mt-1.5 text-[14px] text-text-muted leading-none">
+              знакомства
+            </p>
+          </div>
+        </motion.div>
       </div>
 
-      {/* Действия */}
+      <div className="relative flex-1 min-h-0" aria-hidden />
+
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.26, type: "spring", stiffness: 320, damping: 30 }}
-        className="relative px-6 pb-7 safe-bottom flex flex-col gap-2.5"
+        transition={{ delay: 0.08, type: "spring", stiffness: 320, damping: 30 }}
+        className="relative px-6 pb-6 safe-bottom flex flex-col gap-2.5"
       >
         {error && (
           <div
@@ -307,8 +267,6 @@ export default function Login() {
                              flex items-center justify-center gap-2
                              disabled:opacity-60 active:scale-[0.99] transition-transform"
                 >
-                  {/* Знак Apple рисуем сами: подключать иконочный пакет ради
-                      одного глифа — лишняя зависимость в бандле */}
                   <svg width="17" height="20" viewBox="0 0 17 20" fill="currentColor" aria-hidden="true">
                     <path d="M14.2 10.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.5-.1-2.8.8-3.5.8s-1.9-.8-3.1-.8C4.5 5.3 2.8 6.3 1.9 8c-1.8 3.2-.5 7.9 1.3 10.5.9 1.3 1.9 2.7 3.3 2.6 1.3 0 1.8-.8 3.4-.8s2 .8 3.4.8 2.3-1.3 3.2-2.6c1-1.5 1.4-2.9 1.4-3-.1 0-2.7-1-2.7-3.9zM11.9 3.6c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/>
                   </svg>
@@ -462,14 +420,14 @@ export default function Login() {
         ) : (
           <button
             onClick={() => setПочтаОткрыта(true)}
-            className="mt-1 text-[12.5px] text-text-muted underline underline-offset-2"
+            className="mt-1 text-[12.5px] text-text-muted underline underline-offset-2 self-center"
           >
             Потеряли доступ к Telegram?
           </button>
         )}
 
-        <p className="mt-3 text-[11.5px] text-text-faint text-center leading-relaxed">
-          Сервис для лиц старше 16 лет. Продолжая, вы принимаете{" "}
+        <p className="mt-2 text-[11.5px] text-text-faint text-center leading-relaxed">
+          16+. Продолжая, вы принимаете{" "}
           <a
             href={`${SITE_URL}/terms.html`}
             target="_blank"
@@ -497,23 +455,21 @@ export default function Login() {
 function Logo({ animated }: { animated?: boolean }) {
   return (
     <motion.div
-      initial={animated ? { scale: 0.86, opacity: 0 } : false}
+      initial={animated ? { scale: 0.9, opacity: 0 } : false}
       animate={animated ? { scale: 1, opacity: 1 } : undefined}
-      transition={{ type: "spring", stiffness: 280, damping: 22 }}
-      className="relative shrink-0 w-[84px] h-[84px] flex items-center justify-center"
+      transition={{ type: "spring", stiffness: 300, damping: 24 }}
+      className="relative shrink-0 w-12 h-12 flex items-center justify-center"
     >
-      {/* Мягкая линза под знаком — не плашка-квадрат: квадрат читался как
-          «иконка приложения на экране входа», а нужен сам знак */}
       <div
         aria-hidden
-        className="absolute inset-[8%] rounded-full opacity-70"
+        className="absolute inset-[6%] rounded-full opacity-65"
         style={{
           background:
-            "radial-gradient(circle at 40% 60%, rgb(255 45 111 / 0.22), transparent 62%)," +
-            "radial-gradient(circle at 62% 38%, rgb(139 92 246 / 0.2), transparent 60%)",
+            "radial-gradient(circle at 40% 60%, rgb(255 45 111 / 0.2), transparent 62%)," +
+            "radial-gradient(circle at 62% 38%, rgb(139 92 246 / 0.18), transparent 60%)",
         }}
       />
-      <BrandMark size={72} animated={animated} className="relative" />
+      <BrandMark size={44} animated={animated} className="relative" />
     </motion.div>
   );
 }
