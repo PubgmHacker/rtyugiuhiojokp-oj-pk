@@ -326,7 +326,7 @@ export default function Onboarding() {
             {step === "age" && (
               <StepShell
                 title="Сколько вам лет?"
-                hint="Souldawn — сервис только для совершеннолетних"
+                hint="Souldawn — сервис с 16 лет"
               >
                 <TextField
                   value={age}
