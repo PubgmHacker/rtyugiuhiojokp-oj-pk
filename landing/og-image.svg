@@ -1,22 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="ogTitle ogDesc">
   <title id="ogTitle">Souldawn</title>
-  <desc id="ogDesc">Souldawn — сервис знакомств с AI-подбором пар в Telegram и на iPhone</desc>
-  <!-- Палитра дизайн-системы: фон #0a0b0f, акцент #ff2d6f (accent-deep #d61e5a).
+  <desc id="ogDesc">Souldawn — люди интереснее, чем их фото. Знакомства по интересам в Telegram и на iPhone</desc>
+  <!-- Палитра дизайн-системы: фон #0a0b0f, акцент #ff2d6f, вторая аура #8b5cf6.
+       Знак марки «две ауры» — геометрия из tools/brandmark.py.
        Ворднарк белым, без перелива: градиентный текст читается как
        развлекательное приложение, а марка должна выглядеть спокойно. -->
   <defs>
-    <radialGradient id="glow1" cx="50%" cy="0%" r="75%">
-      <stop offset="0%" stop-color="#ff2d6f" stop-opacity="0.28"/>
+    <radialGradient id="glow1" cx="18%" cy="0%" r="70%">
+      <stop offset="0%" stop-color="#ff2d6f" stop-opacity="0.16"/>
       <stop offset="60%" stop-color="#ff2d6f" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="glow2" cx="100%" cy="100%" r="70%">
-      <stop offset="0%" stop-color="#d61e5a" stop-opacity="0.22"/>
-      <stop offset="60%" stop-color="#d61e5a" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.14"/>
+      <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ff2d6f"/>
-      <stop offset="100%" stop-color="#7c1a44"/>
+      <stop offset="100%" stop-color="#5b3aa8"/>
     </linearGradient>
+    <clipPath id="ogLens"><circle cx="-30.8" cy="20.0" r="70"/></clipPath>
   </defs>
 
   <rect width="1200" height="630" fill="#0a0b0f"/>
@@ -35,13 +37,15 @@
     <rect x="126" y="346" width="90" height="18" rx="9" fill="#ffffff" opacity="0.3"/>
   </g>
 
-  <!-- логотип-метка: плоский акцентный круг, белое сердце — как на иконке -->
-  <g transform="translate(120,205)">
-    <circle cx="34" cy="34" r="34" fill="#ff2d6f"/>
-    <path d="M34 50c-8-6-16-13-16-22a11 11 0 0 1 20-6 11 11 0 0 1 20 6c0 9-8 16-16 22l-4 3z" fill="#ffffff"/>
+  <!-- знак марки: две ауры, пересечение — свет.
+       Центр группы (0,0), R=70, смещения ±30.8 / ∓20.0 -->
+  <g transform="translate(210,235)">
+    <circle cx="-30.8" cy="20.0" r="70" fill="#ff2d6f"/>
+    <circle cx="30.8" cy="-20.0" r="70" fill="#8b5cf6"/>
+    <circle cx="30.8" cy="-20.0" r="70" fill="#fafbfc" clip-path="url(#ogLens)"/>
   </g>
 
-  <text x="120" y="330" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="800" letter-spacing="-2" fill="#fafbfc">souldawn</text>
-  <text x="122" y="380" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" fill="#c8cdd4">Знакомства с AI-подбором пар</text>
-  <text x="122" y="420" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" fill="#c8cdd4">Telegram · iPhone</text>
+  <text x="120" y="430" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="800" letter-spacing="-2" fill="#fafbfc">souldawn</text>
+  <text x="122" y="484" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="400" fill="#c8cdd4">Люди интереснее, чем их фото</text>
+  <text x="122" y="526" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" fill="#9ba1ab">Знакомства по интересам · Telegram и iPhone</text>
 </svg>

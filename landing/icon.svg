@@ -1,4 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="Souldawn">
-  <rect width="180" height="180" rx="40" fill="#ff2d6f"/>
-  <path d="M90 138s-46-27.6-60-57.3C22.5 60 30 36 51 36c13 0 21.5 8 30 16.5 8.5-8.5 17-16.5 30-16.5 21 0 28.5 24 21 44.7C136 110.4 90 138 90 138z" fill="#ffffff"/>
+  <!-- Знак марки «две ауры»: геометрия из tools/brandmark.py
+       (R = 0.25 стороны, смещение центров 0.4403R / 0.2859R) -->
+  <defs>
+    <clipPath id="lens"><circle cx="70.2" cy="102.9" r="45"/></clipPath>
+  </defs>
+  <rect width="180" height="180" rx="40" fill="#0a0b0f"/>
+  <circle cx="70.2" cy="102.9" r="45" fill="#ff2d6f"/>
+  <circle cx="109.8" cy="77.1" r="45" fill="#8b5cf6"/>
+  <circle cx="109.8" cy="77.1" r="45" fill="#fafbfc" clip-path="url(#lens)"/>
 </svg>
