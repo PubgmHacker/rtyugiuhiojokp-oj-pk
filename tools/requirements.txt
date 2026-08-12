@@ -1,0 +1,7 @@
+# Зависимости утилит в tools/ — не ставятся в прод API/бота.
+# Установка: api/.venv/bin/pip install -r tools/requirements.txt
+#
+# Pillow уже есть в api/requirements.txt (seed_demo, brandmark, icons).
+# websocket-client нужен только screenshot.py (CDP к headless Chrome).
+
+websocket-client>=1.8.0

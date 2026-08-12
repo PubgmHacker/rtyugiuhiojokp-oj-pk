@@ -75,7 +75,13 @@ JSON.stringify((() => {
 
 
 def _соединиться():
-    import websocket  # ставится отдельно: нужен только этому инструменту
+    try:
+        import websocket  # tools/requirements.txt → websocket-client
+    except ImportError as e:
+        raise SystemExit(
+            "Нужен пакет websocket-client для CDP.\n"
+            "Установка: api/.venv/bin/pip install -r tools/requirements.txt"
+        ) from e
 
     список = json.load(
         urllib.request.urlopen(f"http://localhost:{ПОРТ_ОТЛАДКИ}/json/list")
