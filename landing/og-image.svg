@@ -18,7 +18,7 @@
       <stop offset="0%" stop-color="#ff2d6f"/>
       <stop offset="100%" stop-color="#5b3aa8"/>
     </linearGradient>
-    <clipPath id="ogLens"><circle cx="-30.8" cy="20.0" r="70"/></clipPath>
+    <clipPath id="ogLens"><circle cx="-40.6" cy="25.2" r="70"/></clipPath>
   </defs>
 
   <rect width="1200" height="630" fill="#0a0b0f"/>
@@ -37,12 +37,12 @@
     <rect x="126" y="346" width="90" height="18" rx="9" fill="#ffffff" opacity="0.3"/>
   </g>
 
-  <!-- знак марки: две ауры, пересечение — свет.
-       Центр группы (0,0), R=70, смещения ±30.8 / ∓20.0 -->
+  <!-- знак марки: две ауры-кольца, пересечение — свет.
+       Центр группы (0,0), R=70, смещения ±40.6 / ∓25.2, толщина 0.30R -->
   <g transform="translate(210,235)">
-    <circle cx="-30.8" cy="20.0" r="70" fill="#ff2d6f"/>
-    <circle cx="30.8" cy="-20.0" r="70" fill="#8b5cf6"/>
-    <circle cx="30.8" cy="-20.0" r="70" fill="#fafbfc" clip-path="url(#ogLens)"/>
+    <circle cx="-40.6" cy="25.2" r="59.5" fill="none" stroke="#ff2d6f" stroke-width="21"/>
+    <circle cx="40.6" cy="-25.2" r="59.5" fill="none" stroke="#8b5cf6" stroke-width="21"/>
+    <circle cx="40.6" cy="-25.2" r="70" fill="#fafbfc" clip-path="url(#ogLens)"/>
   </g>
 
   <text x="120" y="430" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="800" letter-spacing="-2" fill="#fafbfc">souldawn</text>

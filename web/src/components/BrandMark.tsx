@@ -5,22 +5,23 @@ import { motion, useReducedMotion } from "framer-motion";
  * Знак марки: две ауры, в пересечении — свет.
  *
  * У каждого человека в продукте свой детерминированный цвет — аура
- * (lib/aura.ts). Знак строится из той же идеи: два круга-ауры разных
- * оттенков перекрываются, и место пересечения загорается. Мэтч — это
- * пересечение двух людей; у знака ровно этот смысл.
+ * (lib/aura.ts). Знак: два кольца-ауры сходятся, пересечение загорается.
+ * Кольца вместо залитых дисков — чтобы не читаться как Venn из слайда.
  *
  * Геометрия повторяет tools/brandmark.py (источник правды для PIL и
- * SVG-носителей): R = 25 при холсте 100, смещения центров ±11 / ∓7.15.
+ * SVG-носителей): R = 24 при холсте 100, смещения ±13.92 / ∓8.64,
+ * толщина кольца 0.30 R.
  *
- * `animated` — «дыхание»: круги медленно сходятся и расходятся, линза
+ * `animated` — «дыхание»: кольца медленно сходятся и расходятся, линза
  * пересечения растёт и тает. Уважает prefers-reduced-motion.
  */
 
-const R = 25;
-const DX = 11;
-const DY = 7.15;
-// Насколько круги сходятся в крайней точке дыхания
-const ШАГ = 3.2;
+const R = 24;
+const DX = 13.92; // 0.580 R
+const DY = 8.64; // 0.360 R
+const W = 7.2; // 0.30 R
+// Насколько кольца сходятся в крайней точке дыхания
+const ШАГ = 2.6;
 
 const A = { cx: 50 - DX, cy: 50 + DY };
 const B = { cx: 50 + DX, cy: 50 - DY };
@@ -52,10 +53,10 @@ export default function BrandMark({
   // круг внутри clipPath обязан двигаться синхронно с видимым — иначе
   // свет отстанет от пересечения.
   const ходА = дышит
-    ? { cx: [A.cx, A.cx + ШАГ], cy: [A.cy, A.cy - ШАГ * 0.65] }
+    ? { cx: [A.cx, A.cx + ШАГ], cy: [A.cy, A.cy - ШАГ * 0.62] }
     : undefined;
   const ходБ = дышит
-    ? { cx: [B.cx, B.cx - ШАГ], cy: [B.cy, B.cy + ШАГ * 0.65] }
+    ? { cx: [B.cx, B.cx - ШАГ], cy: [B.cy, B.cy + ШАГ * 0.62] }
     : undefined;
 
   return (
@@ -75,16 +76,20 @@ export default function BrandMark({
       <motion.circle
         cx={A.cx}
         cy={A.cy}
-        r={R}
-        fill="var(--color-accent)"
+        r={R - W / 2}
+        stroke="var(--color-accent)"
+        strokeWidth={W}
+        fill="none"
         animate={ходА}
         transition={переход}
       />
       <motion.circle
         cx={B.cx}
         cy={B.cy}
-        r={R}
-        fill="var(--color-mark-b)"
+        r={R - W / 2}
+        stroke="var(--color-mark-b)"
+        strokeWidth={W}
+        fill="none"
         animate={ходБ}
         transition={переход}
       />
