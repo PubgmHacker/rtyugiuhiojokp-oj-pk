@@ -1,7 +1,7 @@
 {
   "name": "Souldawn — знакомства",
   "short_name": "Souldawn",
-  "description": "Знакомства по интересам и ауре, а не только по фото.",
+  "description": "Знакомства по интересам. Telegram и iPhone. С 16 лет.",
   "start_url": "/discover",
   "scope": "/",
   "display": "standalone",
