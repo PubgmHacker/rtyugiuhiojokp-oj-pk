@@ -197,7 +197,7 @@ async def process_age(message: Message, state: FSMContext):
         return
 
     age = int(raw)
-    if age < 18:
+    if age < 16:
         await message.answer(T.REG_AGE_TOO_YOUNG)
         return
     if age > 99:

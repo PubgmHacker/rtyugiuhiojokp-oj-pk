@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     MAX_PHOTOS: int = 6
     MAX_BIO_LENGTH: int = 500
     MAX_INTERESTS: int = 10
-    MIN_AGE: int = 18
+    MIN_AGE: int = 16
     MAX_AGE: int = 99
     DECK_SIZE: int = 10  # анкет за один запрос
 

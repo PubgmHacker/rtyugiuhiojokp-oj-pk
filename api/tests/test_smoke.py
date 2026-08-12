@@ -83,10 +83,12 @@ def test_admin_id_parsing():
     assert Settings(ADMIN_IDS="1, 22 ,notanumber,333").admin_id_list == [1, 22, 333]
 
 
-def test_age_limits_are_adult_only():
+def test_age_limits_match_product_policy():
     from config import get_settings
 
-    assert get_settings().MIN_AGE >= 18
+    # Политика продукта — 16+ (см. Login, онбординг, бот). App Store рейтинг
+    # 18+ живёт отдельно в APPSTORE.md и сюда не подмешивается.
+    assert get_settings().MIN_AGE == 16
 
 
 # ── Схемы ───────────────────────────────────────────────────────

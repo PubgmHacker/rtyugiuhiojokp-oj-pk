@@ -123,7 +123,7 @@ export default function Onboarding() {
       case "name":
         return name.trim().length >= 2;
       case "age":
-        return Number.isInteger(ageNum) && ageNum >= 18 && ageNum <= 99;
+        return Number.isInteger(ageNum) && ageNum >= 16 && ageNum <= 99;
       case "gender":
         return !!gender;
       case "lookingFor":
@@ -331,13 +331,13 @@ export default function Onboarding() {
                 <TextField
                   value={age}
                   onChange={(v) => setAge(v.replace(/\D/g, "").slice(0, 2))}
-                  placeholder="18"
+                  placeholder="16"
                   inputMode="numeric"
                   autoFocus
                 />
-                {age && ageNum < 18 && (
+                {age && ageNum < 16 && (
                   <p className="mt-3 text-[14px] text-danger">
-                    Регистрация возможна с 18 лет.
+                    Регистрация возможна с 16 лет.
                   </p>
                 )}
               </StepShell>
@@ -614,7 +614,7 @@ export default function Onboarding() {
               >
                 <div className="space-y-3 text-[14px] text-text-muted">
                   <p>
-                    Нажимая «Принимаю», вы подтверждаете, что вам 18 лет или
+                    Нажимая «Принимаю», вы подтверждаете, что вам 16 лет или
                     больше, и принимаете{" "}
                     <a
                       href="https://souldawn.app/terms.html"
