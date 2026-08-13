@@ -216,25 +216,25 @@ export function StoryViewer({
           <>
             {/* Полосы прогресса. Пройденные залиты целиком — иначе
                 непонятно, сколько кадров уже позади. */}
-            <div className="safe-top absolute inset-x-0 top-0 z-20 flex gap-1 px-3 pt-2">
-              {stories.map((s, i) => (
-                <div
-                  key={s.id}
-                  className="h-[2.5px] flex-1 overflow-hidden rounded-full bg-white/25"
-                >
+            <div className="safe-top absolute inset-x-0 top-0 z-20 flex flex-col gap-2 px-3">
+              <div className="flex gap-1 pt-2">
+                {stories.map((s, i) => (
                   <div
-                    className="h-full rounded-full bg-white"
-                    style={{
-                      width:
-                        i < index ? "100%" : i === index ? `${progress * 100}%` : "0%",
-                      transition: i === index ? "none" : "width 160ms linear",
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className="safe-top absolute inset-x-0 top-0 z-20 flex items-center gap-2.5 px-3 pt-6">
+                    key={s.id}
+                    className="h-[2.5px] flex-1 overflow-hidden rounded-full bg-white/25"
+                  >
+                    <div
+                      className="h-full rounded-full bg-white"
+                      style={{
+                        width:
+                          i < index ? "100%" : i === index ? `${progress * 100}%` : "0%",
+                        transition: i === index ? "none" : "width 160ms linear",
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2.5">
               <AuraRing
                 seed={story.user_id}
                 src={null}
@@ -257,6 +257,7 @@ export function StoryViewer({
               >
                 <X size={22} />
               </button>
+              </div>
             </div>
 
             <AnimatePresence mode="wait">

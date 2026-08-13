@@ -50,6 +50,12 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const isDisabled = disabled || loading;
+  // Disabled primary: отдельный muted-стиль. opacity на --gradient-torch
+  // даёт «грязный» коричнево-красный и серый текст — как сломанная кнопка.
+  const surface =
+    isDisabled && variant === "primary"
+      ? "bg-surface-3 text-text-faint border border-hairline"
+      : VARIANT_CLASS[variant];
 
   return (
     <motion.button
@@ -62,11 +68,12 @@ export function Button({
         onClick?.(e);
       }}
       className={`
-        ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]}
+        ${surface} ${SIZE_CLASS[size]}
         ${fullWidth ? "w-full" : ""}
         inline-flex items-center justify-center gap-2 font-semibold
-        tracking-[-0.01em] transition-opacity
-        disabled:opacity-45 disabled:pointer-events-none
+        tracking-[-0.01em] transition-colors
+        disabled:pointer-events-none
+        ${isDisabled && variant === "primary" ? "" : "disabled:opacity-45"}
         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
         ${className}
       `}
@@ -87,18 +94,15 @@ interface IconButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
 }
 
 const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
-  // Главное действие экрана: залитый акцентом круг, а не цветной глиф на
-  // стекле. Цвет один и означает «нажми сюда» — остальные кнопки нейтральные
-  primary: "bg-accent text-white border-transparent",
+  // Главное действие деки: тот же перелив, что у факела и CTA.
+  primary: "btn-torch text-on-accent border-transparent glow-rose",
   neutral: "text-text-secondary",
   danger: "text-danger",
   success: "text-success",
   warn: "text-warn",
   info: "text-info",
-  // Премиум-действия (буст, подарок, рулетка) продаются не ценой, а видом:
-  // мягкое золото, против акцентного фиолетово-малинового. С 06 до 20 % по
-  // WCAG не выигрываем, но читаемость достаточная: это второстепенное, а
-  // не главное, действие — и оттенок в 60° от акцента.
+  // Премиум-действия (буст, подарок, рулетка) — мягкое золото, в стороне
+  // от акцента, чтобы не спорить с лайком.
   premium: "text-warn",
 };
 

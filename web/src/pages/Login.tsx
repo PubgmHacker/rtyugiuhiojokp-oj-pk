@@ -38,6 +38,10 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
+  // WKWebView/iOS иногда восстанавливает фокус на OTP-поле и поднимает
+  // клавиатуру на холодном старте. Поле остаётся readOnly, пока человек
+  // сам не ткнёт — тогда снимаем блокировку.
+  const [codeFieldOpen, setCodeFieldOpen] = useState(false);
   const inTelegram = isInTelegram();
   // Считываем один раз при монтировании: платформа за время жизни экрана
   // не меняется, а вызов в теле рендера означал бы, что способ входа
@@ -188,6 +192,21 @@ export default function Login() {
     }
   }, [inTelegram, loginWithTelegram]);
 
+  // Холодный старт: без фейковой ошибки и без клавиатуры. WKWebView иногда
+  // восстанавливает фокус на поле кода после переустановки/рестарта процесса.
+  useEffect(() => {
+    setError("");
+    setCode("");
+    setCodeFieldOpen(false);
+    const blur = () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+    };
+    blur();
+    const t = window.setTimeout(blur, 120);
+    return () => window.clearTimeout(t);
+  }, []);
+
   /* ── Автовход внутри Telegram ────────────────────────────── */
   if (inTelegram && loading) {
     return (
@@ -213,12 +232,14 @@ export default function Login() {
         }}
       />
 
-      <div className="relative px-6 safe-top pt-8">
+      {/* pt-* нельзя рядом с safe-top: оба пишут padding-top, и утилита
+          отступа под Dynamic Island проигрывает в каскаде. */}
+      <div className="relative px-6 safe-top">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ type: "spring", stiffness: 340, damping: 28 }}
-          className="flex items-center gap-3"
+          className="flex items-center gap-3 pt-6"
         >
           <Logo animated />
           <div className="min-w-0">
@@ -244,7 +265,8 @@ export default function Login() {
           <div
             role="alert"
             className="mb-1 px-4 py-3 rounded-[var(--radius-tile)]
-                       bg-danger/12 border border-danger/30 text-danger text-[13.5px]"
+                       bg-danger/10 border border-danger/35 text-danger
+                       text-[13.5px] leading-snug"
           >
             {error}
           </div>
@@ -286,6 +308,15 @@ export default function Login() {
             <input
               id="link-code"
               value={code}
+              readOnly={!codeFieldOpen}
+              onPointerDown={() => {
+                if (!codeFieldOpen) setCodeFieldOpen(true);
+              }}
+              onFocus={() => {
+                if (!codeFieldOpen) {
+                  setCodeFieldOpen(true);
+                }
+              }}
               onChange={(e) => {
                 setCode(e.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH));
                 setError("");
@@ -297,13 +328,14 @@ export default function Login() {
               }}
               inputMode="numeric"
               autoComplete="one-time-code"
+              autoFocus={false}
               placeholder="000000"
               aria-label="Код входа из бота"
               className="w-full h-[56px] rounded-[var(--radius-control)]
-                         bg-surface-2 border border-border text-center
+                         bg-surface-2 border border-hairline text-center
                          text-[26px] tracking-[0.4em] font-semibold
                          text-text placeholder:text-text-faint
-                         focus:outline-none focus:border-primary"
+                         focus:outline-none focus:border-accent"
             />
             <Button
               size="lg"

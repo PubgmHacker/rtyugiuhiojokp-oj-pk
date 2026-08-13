@@ -103,7 +103,7 @@ export default function MatchModal({ data, onClose }: MatchModalProps) {
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.18, type: "spring", stiffness: 480, damping: 18 }}
-                className="relative z-10 w-12 h-12 rounded-full bg-accent
+                className="relative z-10 w-12 h-12 rounded-full btn-torch
                            flex items-center justify-center glow-rose"
               >
                 <Heart size={22} fill="#fff" className="text-white heart-beat" />

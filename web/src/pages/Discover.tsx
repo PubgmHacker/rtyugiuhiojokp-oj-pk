@@ -51,7 +51,7 @@ export default function Discover() {
     <div className="flex flex-col h-[calc(100dvh-68px)]">
       {/* Шапка поверх карточки, как в референсе: пилюля-режим слева,
           фильтры справа. Фон прозрачный — фото уходит под неё */}
-      <header className="safe-top shrink-0 px-3 pb-2 pt-1">
+      <header className="safe-top shrink-0 px-3 pb-2">
         <div className="flex items-center justify-between gap-2 min-h-[44px]">
           <span
             className="inline-flex items-center gap-2 pl-2 pr-4 py-1.5 rounded-full
