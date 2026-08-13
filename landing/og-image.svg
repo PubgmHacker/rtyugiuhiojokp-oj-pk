@@ -1,24 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="ogTitle ogDesc">
   <title id="ogTitle">Souldawn</title>
   <desc id="ogDesc">Souldawn — люди интереснее, чем их фото. Знакомства по интересам в Telegram и на iPhone</desc>
-  <!-- Палитра: фон #0a0b0f, акцент #ff2d6f, вторая аура #8b5cf6.
-       Знак: одна искра мэтча + капля (soul). Геометрия из tools/brandmark.py. -->
+  <!-- Палитра: фон #0a0b0f, рассвет оранж→малина.
+       Знак: факел + сердце. Геометрия из tools/brandmark.py. -->
   <defs>
     <radialGradient id="glow1" cx="18%" cy="0%" r="70%">
-      <stop offset="0%" stop-color="#ff2d6f" stop-opacity="0.16"/>
-      <stop offset="60%" stop-color="#ff2d6f" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#ff7a1a" stop-opacity="0.16"/>
+      <stop offset="60%" stop-color="#ff7a1a" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="glow2" cx="100%" cy="100%" r="70%">
-      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.14"/>
-      <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#ff2d6f" stop-opacity="0.14"/>
+      <stop offset="60%" stop-color="#ff2d6f" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff2d6f"/>
-      <stop offset="100%" stop-color="#5b3aa8"/>
+      <stop offset="0%" stop-color="#ff7a1a"/>
+      <stop offset="100%" stop-color="#b81648"/>
     </linearGradient>
-    <linearGradient id="ogSpark" x1="0" y1="0" x2="140" y2="140" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#ff2d6f"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
+    <linearGradient id="ogDawn" x1="28" y1="8" x2="58" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ff7a1a"/>
+      <stop offset="45%" stop-color="#ff2d6f"/>
+      <stop offset="100%" stop-color="#b81648"/>
     </linearGradient>
   </defs>
 
@@ -38,10 +39,9 @@
     <rect x="126" y="346" width="90" height="18" rx="9" fill="#ffffff" opacity="0.3"/>
   </g>
 
-  <!-- знак: искра + капля. viewBox 100→ масштаб 1.6, центр (210, 235) -->
+  <!-- знак: flame + heart. viewBox 100→ масштаб 1.6, центр (210, 235) -->
   <g transform="translate(210,235) scale(1.6) translate(-50,-50)">
-    <path d="M50 8C53 34 66 47 92 50C66 53 53 66 50 92C47 66 34 53 8 50C34 47 47 34 50 8Z" fill="url(#ogSpark)"/>
-    <path d="M50 36C50 36 39.5 47 39.5 55.5C39.5 61.8 44.2 66.5 50 66.5C55.8 66.5 60.5 61.8 60.5 55.5C60.5 47 50 36 50 36Z" fill="#fafbfc"/>
+    <path fill-rule="evenodd" d="M 47.548,89.418 C 28.618,76.798 22.759,56.967 29.520,38.939 C 34.928,25.418 43.041,13.700 50.252,6.038 C 52.956,17.306 54.759,27.221 56.562,34.432 C 61.069,24.066 66.477,12.799 72.336,9.193 C 73.688,21.813 70.984,36.235 69.181,47.953 C 72.336,61.474 66.477,74.995 57.463,84.911 C 52.055,90.319 49.351,91.221 47.548,89.418 Z M 49.116,40.316 C 42.505,29.860 35.294,34.668 36.496,41.879 C 36.496,47.888 43.707,52.095 49.116,55.099 C 54.524,52.095 61.735,47.888 61.735,41.879 C 62.937,34.668 55.726,29.860 49.116,40.316 Z" fill="url(#ogDawn)"/>
   </g>
 
   <text x="120" y="430" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="800" letter-spacing="-2" fill="#fafbfc">souldawn</text>

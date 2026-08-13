@@ -1,15 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="Souldawn">
-  <!-- Знак: одна искра мэтча + капля (soul). Геометрия из tools/brandmark.py.
-       Не венн и не два шара — вложенность одной детали в одну форму. -->
+  <!-- Знак: факел рассвета + сердце. Геометрия из tools/brandmark.py.
+       Иерархия как у Мимолёта — без отдельного глифа в центре. -->
   <defs>
-    <linearGradient id="spark" x1="32" y1="32" x2="148" y2="148" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#ff2d6f"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
+    <linearGradient id="dawn" x1="50" y1="14" x2="104" y2="162" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ff7a1a"/>
+      <stop offset="45%" stop-color="#ff2d6f"/>
+      <stop offset="100%" stop-color="#b81648"/>
     </linearGradient>
+    <radialGradient id="bloom" cx="50%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#ff9ab0" stop-opacity="0.18"/>
+      <stop offset="55%" stop-color="#ff5c8a" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#0a0b0f" stop-opacity="0"/>
+    </radialGradient>
   </defs>
   <rect width="180" height="180" rx="40" fill="#0a0b0f"/>
+  <circle cx="90" cy="90" r="60" fill="url(#bloom)"/>
   <g transform="translate(90,90) scale(1.55) translate(-50,-50)">
-    <path d="M50 8C53 34 66 47 92 50C66 53 53 66 50 92C47 66 34 53 8 50C34 47 47 34 50 8Z" fill="url(#spark)"/>
-    <path d="M50 36C50 36 39.5 47 39.5 55.5C39.5 61.8 44.2 66.5 50 66.5C55.8 66.5 60.5 61.8 60.5 55.5C60.5 47 50 36 50 36Z" fill="#fafbfc"/>
+    <path fill-rule="evenodd" d="M 47.548,89.418 C 28.618,76.798 22.759,56.967 29.520,38.939 C 34.928,25.418 43.041,13.700 50.252,6.038 C 52.956,17.306 54.759,27.221 56.562,34.432 C 61.069,24.066 66.477,12.799 72.336,9.193 C 73.688,21.813 70.984,36.235 69.181,47.953 C 72.336,61.474 66.477,74.995 57.463,84.911 C 52.055,90.319 49.351,91.221 47.548,89.418 Z M 49.116,40.316 C 42.505,29.860 35.294,34.668 36.496,41.879 C 36.496,47.888 43.707,52.095 49.116,55.099 C 54.524,52.095 61.735,47.888 61.735,41.879 C 62.937,34.668 55.726,29.860 49.116,40.316 Z" fill="url(#dawn)"/>
   </g>
 </svg>
