@@ -1,12 +1,16 @@
-"""Знак марки: факел рассвета с nested тёмным силуэтом (r3-06 dawn).
+"""Знак марки: факел рассвета + dating-бейдж (сердце в гнезде).
 
-Снаружи — силуэт пламени/факела, градиент оранж → малина.
-Внутри — тёмное гнездо той же формы («ушки»), без отдельного глифа
-(+, бар, искра) и без крупного сердца, ломающего контур.
+Снаружи — силуэт пламени/факела r3-06, градиент оранж → малина.
+Внутри — открытое гнездо (ушки), затем ядро того же силуэта и
+тёмное сердце negative-space в оптическом центре nest.
+Иерархия как у Mimolet (внешняя форма + dating-noun), без деформации
+outer path. Сердце = вырез в цвет ядра/фона (#0a0b0f), не розовая
+наклейка и не белый глиф.
 
 Геометрия — outer r3-06-dawn (viewBox 1024→100) без изменений силуэта.
 Nest открыт ~11% и перераспределён по весу кольца (evenodd): тоньше
 пики/ушки, плотнее ножка. Долина стыка шардов сохранена.
+Core = nest ×0.94 от bbox-центра nest; сердце ~20% высоты nest.
 
 Растр через 4× supersample — PIL polygon без него оставлял светлую
 щель на AA.
@@ -58,26 +62,34 @@ _NEST_100 = (
     "C 51.798,65.881 50.994,66.076 50.450,65.683 Z"
 )
 
-# Микро-сердце внутри nest — только для A/B variant, не default mark.
-# viewBox 100; центр гнезда ~ (51.3, 52.5), компактно чтобы не
-# касаться ушек и не читаться как «сердце-факел».
+# Ядро гнезда: nest ×0.94 от bbox-центра nest — тонкое тёмное кольцо
+# ушек остаётся «открытым гнездом», внутри — поверхность под вырез сердца.
+_CORE_100 = (
+    "M 50.504,64.849 C 44.745,61.832 42.485,55.997 44.507,50.177 "
+    "C 46.136,45.570 48.793,41.388 51.257,38.559 "
+    "C 52.049,41.341 52.673,43.588 53.446,45.024 "
+    "C 54.359,43.588 56.100,41.341 58.869,39.734 "
+    "C 59.147,44.302 58.048,49.275 57.359,53.117 "
+    "C 58.251,57.404 56.188,61.347 53.352,63.854 "
+    "C 51.771,65.036 51.015,65.219 50.504,64.849 Z"
+)
+
+# Тёмное сердце в оптическом центре nest (~51.35, 52.0).
+# Высота ≈20% nest — читается в круге Telegram и на 32px, не гигант.
 _HEART_100 = (
-    "M 51.30,55.55 "
-    "C 49.95,54.55 48.95,53.35 48.95,52.05 "
-    "C 48.95,51.05 49.70,50.40 50.55,50.40 "
-    "C 50.95,50.40 51.30,50.60 51.30,50.60 "
-    "C 51.30,50.60 51.65,50.40 52.05,50.40 "
-    "C 52.90,50.40 53.65,51.05 53.65,52.05 "
-    "C 53.65,53.35 52.65,54.55 51.30,55.55 Z"
+    "M 51.350,54.688 "
+    "C 50.654,53.232 48.450,52.112 48.450,50.992 "
+    "C 48.450,49.648 50.074,49.200 51.350,50.768 "
+    "C 52.626,49.200 54.250,49.648 54.250,50.992 "
+    "C 54.250,52.112 52.046,53.232 51.350,54.688 Z"
 )
 
 # Половина высоты внешнего пламени в unit-space (для масштаба r).
 # (81.494 − 19.165) / 2 ≈ 31.16
 _UNIT_HALF = 31.16
 
-# Публичный path для сверки со SVG-носителями (outer + nest, evenodd).
-ФАКЕЛ_PATH_100 = f"{_OUTER_100} {_NEST_100}"
-ФАКЕЛ_HEART_PATH_100 = f"{_OUTER_100} {_NEST_100} {_HEART_100}"
+# Публичный path: outer \\ nest ∪ core \\ heart (evenodd).
+ФАКЕЛ_PATH_100 = f"{_OUTER_100} {_NEST_100} {_CORE_100} {_HEART_100}"
 
 # r3-06 асимметричен: левое ухо шире, правый кончик дальше.
 # Геометрический якорь path (50,50) и даже bbox силуэта врут — без
@@ -199,9 +211,11 @@ def _com_кольца(
 
 _OUTER_POLY = _полигон_из_path(_OUTER_100)
 _NEST_POLY = _полигон_из_path(_NEST_100)
+_CORE_POLY = _полигон_из_path(_CORE_100)
 _HEART_POLY = _полигон_из_path(_HEART_100)
 
 # Оптический якорь = COM цветного кольца (X с весом ушек), не bbox.
+# Считаем по outer\\nest — поля/safe margin как в 3f753cf.
 _ЯКОРЬ_X, _ЯКОРЬ_Y = _com_кольца(_OUTER_POLY, _NEST_POLY)
 
 
@@ -235,9 +249,8 @@ def _маска_знака(
     cx: float,
     cy: float,
     r: float,
-    с_сердцем: bool = False,
 ) -> Image.Image:
-    """Alpha-маска кольца (outer \\ nest), опционально + микро-сердце."""
+    """Alpha-маска: (outer \\ nest) ∪ (core \\ heart)."""
     if r < 1:
         return Image.new("L", size, 0)
 
@@ -246,14 +259,15 @@ def _маска_знака(
     big = (w * ss, h * ss)
     outer = _масштаб(_OUTER_POLY, cx * ss, cy * ss, r * ss)
     nest = _масштаб(_NEST_POLY, cx * ss, cy * ss, r * ss)
+    core = _масштаб(_CORE_POLY, cx * ss, cy * ss, r * ss)
+    heart = _масштаб(_HEART_POLY, cx * ss, cy * ss, r * ss)
 
     маска = Image.new("L", big, 0)
     draw_m = ImageDraw.Draw(маска)
     draw_m.polygon(outer, fill=255)
     draw_m.polygon(nest, fill=0)
-    if с_сердцем:
-        heart = _масштаб(_HEART_POLY, cx * ss, cy * ss, r * ss)
-        draw_m.polygon(heart, fill=255)
+    draw_m.polygon(core, fill=255)
+    draw_m.polygon(heart, fill=0)
     return маска.resize((w, h), Image.LANCZOS)
 
 
@@ -273,7 +287,7 @@ def нарисовать_знак(
     else:
         верх, середина, низ = ОРАНЖ, МАЛИНОВЫЙ, МАЛИНА_ТЁМНАЯ
 
-    маска = _маска_знака(img.size, cx, cy, r, с_сердцем=False)
+    маска = _маска_знака(img.size, cx, cy, r)
     градиент = _градиент_вертикаль(img.size, верх, низ, середина).convert("RGBA")
     градиент.putalpha(маска)
 
@@ -285,11 +299,11 @@ def нарисовать_знак(
 def сделать_mono_white(size: int = 1024) -> Image.Image:
     """Белый monochrome master на прозрачном — Liquid Glass / tinted iOS.
 
-    Не заменяет цветной канон. Силуэт = outer \\ nest, без сердца.
+    Не заменяет цветной канон. Силуэт = outer \\ nest ∪ core \\ heart.
     """
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     r = size * 0.36
-    маска = _маска_знака(img.size, size * 0.5, size * 0.5, r, с_сердцем=False)
+    маска = _маска_знака(img.size, size * 0.5, size * 0.5, r)
     белый = Image.new("RGBA", img.size, (255, 255, 255, 255))
     белый.putalpha(маска)
     img.alpha_composite(белый)
@@ -299,15 +313,13 @@ def сделать_mono_white(size: int = 1024) -> Image.Image:
 def svg_знак(
     *,
     mono_white: bool = False,
-    с_сердцем: bool = False,
     view: int = 100,
 ) -> str:
     """SVG viewBox 100×100 — те же path, что растр."""
-    path = ФАКЕЛ_HEART_PATH_100 if с_сердцем else ФАКЕЛ_PATH_100
+    path = ФАКЕЛ_PATH_100
     if mono_white:
-        fill = '#ffffff'
         defs = ""
-        fill_attr = fill
+        fill_attr = "#ffffff"
     else:
         defs = (
             '<defs>\n'
@@ -320,27 +332,28 @@ def svg_знак(
             "  </defs>\n  "
         )
         fill_attr = "url(#dawn)"
-    heart_note = " + micro-heart (A/B only)" if с_сердцем else ""
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {view} {view}" '
         f'width="{view}" height="{view}" fill="none" '
         f'role="img" aria-label="Souldawn">\n'
-        f"  <!-- nested torch r3-06{heart_note}. Геометрия = tools/brandmark.py -->\n"
+        f"  <!-- nested torch r3-06 + dark heart in nest. "
+        f"Геометрия = tools/brandmark.py -->\n"
         f"  {defs}"
         f'<path fill-rule="evenodd" d="{path}" fill="{fill_attr}"/>\n'
         f"</svg>\n"
     )
 
 
-def сделать_знак_с_сердцем(size: int = 512, bg: tuple[int, int, int] = (10, 11, 15)) -> Image.Image:
-    """A/B variant: default mark + микро-сердце в nest. Не production default."""
+def сделать_знак(
+    size: int = 512,
+    bg: tuple[int, int, int] = (10, 11, 15),
+) -> Image.Image:
+    """Цветной знак на тёмном фоне — production default."""
     img = Image.new("RGB", (size, size), bg)
     r = size * 0.36
-    маска = _маска_знака(img.size, size * 0.5, size * 0.5, r, с_сердцем=True)
-    градиент = _градиент_вертикаль(
-        img.size, ОРАНЖ, МАЛИНА_ТЁМНАЯ, МАЛИНОВЫЙ
-    ).convert("RGBA")
-    градиент.putalpha(маска)
-    база = img.convert("RGBA")
-    база.alpha_composite(градиент)
-    return база.convert("RGB")
+    нарисовать_знак(img, size * 0.5, size * 0.5, r)
+    return img
+
+
+# Совместимость со старым именем A/B-хелпера.
+сделать_знак_с_сердцем = сделать_знак

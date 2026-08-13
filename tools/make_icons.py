@@ -2,10 +2,10 @@
 """
 Генератор иконки, splash-экрана и favicon.
 
-Знак марки — факел рассвета с nested гнездом (см. tools/brandmark.py).
-Иконка — тёмный квадрат в цвете фона приложения со знаком по центру:
-на домашнем экране пламя с тёмным силуэтом внутри читается с расстояния;
-без отдельного глифа и без крупного сердца.
+Знак марки — факел рассвета с nested гнездом и тёмным сердцем
+(dating-бейдж, см. tools/brandmark.py). Иконка — тёмный квадрат
+в цвете фона приложения со знаком по центру: на домашнем экране
+читается «огонь + знакомства».
 
 Цвета берутся из дизайн-системы (web/src/styles/globals.css), чтобы
 иконка, splash и интерфейс выглядели одним продуктом.
@@ -25,7 +25,7 @@ from brandmark import (
     ФАКЕЛ_PATH_100,
     нарисовать_знак,
     сделать_mono_white,
-    сделать_знак_с_сердцем,
+    сделать_знак,
     svg_знак,
 )
 
@@ -133,7 +133,7 @@ def sync_vector_carriers() -> None:
 
 
 def write_mono_and_variants() -> None:
-    """Белый mono master + A/B heart variant (не default)."""
+    """Белый mono master + цветной SVG + reference nest-heart PNG."""
     brand = WEB_PUBLIC / "brand"
     brand.mkdir(parents=True, exist_ok=True)
 
@@ -149,12 +149,13 @@ def write_mono_and_variants() -> None:
     mark_svg = brand / "mark.svg"
     _write_text(mark_svg, svg_знак(mono_white=False))
 
+    # Reference PNG того же канона (раньше A/B; теперь = default).
     variants = WEB_PUBLIC / "logo-variants"
     variants.mkdir(parents=True, exist_ok=True)
     heart_svg = variants / "r3-06-dawn-nest-heart.svg"
-    _write_text(heart_svg, svg_знак(с_сердцем=True))
+    _write_text(heart_svg, svg_знак(mono_white=False))
     heart_png = variants / "r3-06-dawn-nest-heart.png"
-    сделать_знак_с_сердцем(512, BG).save(heart_png, "PNG")
+    сделать_знак(512, BG).save(heart_png, "PNG")
     print(f"✓ {heart_png}")
 
 
