@@ -56,6 +56,18 @@ def make_splash(w: int = 2732, h: int = 2732) -> Image.Image:
     return img
 
 
+def make_telegram_avatar(size: int = 640) -> Image.Image:
+    """Аватар бота для BotFather /setuserpic.
+
+    Квадрат 640×640, сплошной фон без прозрачности. Знак ~72% высоты;
+    brandmark якорит bbox силуэта в центре — под круглой маской Telegram
+    поля равномерные, ушки не режутся с одной стороны.
+    """
+    img = Image.new("RGB", (size, size), BG)
+    нарисовать_знак(img, size * 0.5, size * 0.5, size * 0.36)
+    return img
+
+
 def main() -> None:
     icon = make_icon(1024)
 
@@ -96,6 +108,17 @@ def main() -> None:
     нарисовать_знак(fav, 32, 32, 64 * 0.40)
     fav.save(WEB_PUBLIC / "favicon.ico", "ICO", sizes=fav_sizes)
     print(f"✓ {WEB_PUBLIC / 'favicon.ico'}")
+
+    # Telegram bot avatar (BotFather): brand/ + копия в корне public.
+    tg = make_telegram_avatar(640)
+    brand_dir = WEB_PUBLIC / "brand"
+    brand_dir.mkdir(parents=True, exist_ok=True)
+    tg_brand = brand_dir / "telegram-bot-avatar.png"
+    tg_public = WEB_PUBLIC / "telegram-bot-avatar.png"
+    tg.save(tg_brand, "PNG")
+    shutil.copyfile(tg_brand, tg_public)
+    print(f"✓ {tg_brand}")
+    print(f"✓ {tg_public}")
 
     # Превью ссылки в соцсетях и мессенджерах.
     #

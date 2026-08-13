@@ -60,6 +60,11 @@ _UNIT_HALF = 31.16
 # Публичный path для сверки со SVG-носителями (outer + nest, evenodd).
 ФАКЕЛ_PATH_100 = f"{_OUTER_100} {_NEST_100}"
 
+# r3-06 асимметричен: левое ухо шире, правый кончик дальше.
+# Геометрический якорь path (50,50) ≠ bbox-центр силуэта — без сдвига
+# марка уезжает вправо/вниз на квадрате и под круглой маской Telegram.
+# Якорь пересчитывается после разбора полигона (см. ниже).
+
 
 def _lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
@@ -121,12 +126,20 @@ def _полигон_из_path(d: str) -> list[tuple[float, float]]:
 
 
 def _масштаб(pts: list[tuple[float, float]], cx: float, cy: float, r: float) -> list[tuple[float, float]]:
+    """Масштаб в пиксели: (cx, cy) — оптический центр (bbox силуэта)."""
     s = r / _UNIT_HALF
-    return [(cx + (x - 50.0) * s, cy + (y - 50.0) * s) for x, y in pts]
+    return [(cx + (x - _ЯКОРЬ_X) * s, cy + (y - _ЯКОРЬ_Y) * s) for x, y in pts]
 
 
 _OUTER_POLY = _полигон_из_path(_OUTER_100)
 _NEST_POLY = _полигон_из_path(_NEST_100)
+
+# Оптический якорь = центр bbox внешнего силуэта (равномерные поля,
+# ушки не прилипают к круглой маске с одной стороны).
+_xs_outer = [p[0] for p in _OUTER_POLY]
+_ys_outer = [p[1] for p in _OUTER_POLY]
+_ЯКОРЬ_X = (min(_xs_outer) + max(_xs_outer)) / 2.0
+_ЯКОРЬ_Y = (min(_ys_outer) + max(_ys_outer)) / 2.0
 
 
 def _градиент_вертикаль(
