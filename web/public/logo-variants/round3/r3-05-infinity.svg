@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g5" x1="0%" y1="0%" x2="0%" y2="100%">      <stop offset="0.0%" stop-color="#ff5c8a"/>
+      <stop offset="20.0%" stop-color="#ff7a1a"/>
+      <stop offset="40.0%" stop-color="#ff2d6f"/>
+      <stop offset="58.0%" stop-color="#ff8a3d"/>
+      <stop offset="78.0%" stop-color="#d61e5a"/>
+      <stop offset="100.0%" stop-color="#b81648"/>
+    </linearGradient>
+    <radialGradient id="g5Bloom" cx="50%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#ff9ab0" stop-opacity="0.20"/>
+      <stop offset="55%" stop-color="#ff5c8a" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#0a0b0f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="#0a0b0f"/>
+  <circle cx="512" cy="512" r="340" fill="url(#g5Bloom)"/>
+  <g>
+    <path fill-rule="evenodd" d="M 196.000,512.000 A 168.000,168.000 0 1,1 532.000,512.000 A 168.000,168.000 0 1,1 196.000,512.000 Z M 286.000,512.000 A 78.000,78.000 0 1,1 442.000,512.000 A 78.000,78.000 0 1,1 286.000,512.000 Z" fill="url(#g5)"/>
+    <path fill-rule="evenodd" d="M 492.000,512.000 A 168.000,168.000 0 1,1 828.000,512.000 A 168.000,168.000 0 1,1 492.000,512.000 Z M 582.000,512.000 A 78.000,78.000 0 1,1 738.000,512.000 A 78.000,78.000 0 1,1 582.000,512.000 Z" fill="url(#g5)"/>
+  </g>
+  <!-- nested detail: soft diamond void at crossing -->
+  <circle cx="512" cy="512" r="36" fill="#0a0b0f"/>
+  <circle cx="512" cy="512" r="14" fill="#fff4e8"/>
+</svg>

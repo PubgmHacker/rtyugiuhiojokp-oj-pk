@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="gDawn" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0.0%" stop-color="#ff5c8a"/>
+      <stop offset="18.0%" stop-color="#ff7a1a"/>
+      <stop offset="42.0%" stop-color="#ff2d6f"/>
+      <stop offset="62.0%" stop-color="#ff8a3d"/>
+      <stop offset="82.0%" stop-color="#d61e5a"/>
+      <stop offset="100.0%" stop-color="#b81648"/>
+    </linearGradient>
+    <radialGradient id="gBloom" cx="50%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#ff9ab0" stop-opacity="0.20"/>
+      <stop offset="55%" stop-color="#ff5c8a" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#0a0b0f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gEmber" cx="50%" cy="42%" r="50%">
+      <stop offset="0%" stop-color="#ffd0b0"/>
+      <stop offset="50%" stop-color="#ff8a5a"/>
+      <stop offset="100%" stop-color="#ff2d6f" stop-opacity="0.7"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="#0a0b0f"/>
+  <circle cx="512" cy="512" r="340" fill="url(#gBloom)"/>
+  <path fill-rule="evenodd" d="M 512.000,834.500 C 367.100,737.900 322.250,586.100 374.000,448.100 C 415.400,344.600 477.500,254.900 532.700,196.250 C 553.400,282.500 567.200,358.400 581.000,413.600 C 615.500,334.250 656.900,248.000 701.750,220.400 C 712.100,317.000 691.400,427.400 677.600,517.100 C 701.750,620.600 656.900,724.100 587.900,800.000 C 546.500,841.400 525.800,848.300 512.000,834.500 Z M 518.041,678.572 C 453.457,607.585 440.540,530.682 453.457,471.526 C 472.832,430.117 501.895,394.623 508.354,382.792 C 521.270,406.454 530.958,418.286 537.416,424.201 C 547.104,412.370 560.021,394.623 566.479,388.708 C 582.625,441.948 598.771,501.104 592.313,560.260 C 585.854,619.416 550.333,666.741 518.041,678.572 Z" fill="url(#gDawn)"/>
+</svg>

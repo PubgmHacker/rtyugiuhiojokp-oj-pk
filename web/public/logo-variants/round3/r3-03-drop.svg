@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0.0%" stop-color="#ff5c8a"/>
+      <stop offset="20.0%" stop-color="#ff7a1a"/>
+      <stop offset="40.0%" stop-color="#ff2d6f"/>
+      <stop offset="58.0%" stop-color="#ff8a3d"/>
+      <stop offset="78.0%" stop-color="#d61e5a"/>
+      <stop offset="100.0%" stop-color="#b81648"/>
+    </linearGradient>
+    <radialGradient id="g3Bloom" cx="50%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#ff9ab0" stop-opacity="0.20"/>
+      <stop offset="55%" stop-color="#ff5c8a" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#0a0b0f" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="g3Mask">
+      <rect width="100%" height="100%" fill="white"/>
+      <!-- nest hole + keep cream separate -->
+      <circle cx="512.0" cy="512.0" r="46" fill="black"/>
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="#0a0b0f"/>
+  <circle cx="512.0" cy="512.0" r="340" fill="url(#g3Bloom)"/>
+  <path fill-rule="evenodd" d="M 512.000,822.100 C 375.600,764.860 264.000,631.300 264.000,504.100 C 264.000,383.260 375.600,271.960 512.000,271.960 C 648.400,271.960 760.000,383.260 760.000,504.100 C 760.000,631.300 648.400,764.860 512.000,822.100 Z M 512.000,665.100 C 455.900,640.260 410.000,582.300 410.000,527.100 C 410.000,474.660 455.900,426.360 512.000,426.360 C 568.100,426.360 614.000,474.660 614.000,527.100 C 614.000,582.300 568.100,640.260 512.000,665.100 Z" fill="url(#g3)"/>
+  <circle cx="512.0" cy="524.0" r="15" fill="#fff4e8"/>
+</svg>
