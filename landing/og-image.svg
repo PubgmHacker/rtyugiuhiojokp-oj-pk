@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="ogTitle ogDesc">
   <title id="ogTitle">Souldawn</title>
   <desc id="ogDesc">Souldawn — люди интереснее, чем их фото. Знакомства по интересам в Telegram и на iPhone</desc>
-  <!-- Палитра: фон #0a0b0f, рассвет оранж→малина.
-       Знак: факел + nested гнездо (r3-06). Геометрия из tools/brandmark.py. -->
+  <!-- Палитра: фон #0a0b0f, факел оранж→малина.
+       Знак: nested torch r3-06. Геометрия из tools/brandmark.py. -->
   <defs>
     <radialGradient id="glow1" cx="18%" cy="0%" r="70%">
       <stop offset="0%" stop-color="#ff7a1a" stop-opacity="0.16"/>

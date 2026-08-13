@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="Souldawn">
-  <!-- Знак: факел рассвета + nested гнездо (r3-06). Геометрия из tools/brandmark.py. -->
+  <!-- Знак: nested torch r3-06. Геометрия из tools/brandmark.py. -->
   <defs>
     <linearGradient id="dawn" x1="65" y1="32" x2="108" y2="148" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#ff7a1a"/>

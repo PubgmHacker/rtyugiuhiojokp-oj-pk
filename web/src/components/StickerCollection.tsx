@@ -18,7 +18,7 @@ import { Button, EmptyState, Skeleton } from "./ui";
 const ЦВЕТ_РЕДКОСТИ: Record<string, string> = {
   common: "text-text-muted",
   rare: "text-info",
-  epic: "text-[#a78bfa]",
+  epic: "text-[var(--color-flame-start)]",
   legend: "text-warn",
 };
 

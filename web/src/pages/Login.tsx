@@ -199,8 +199,7 @@ export default function Login() {
     );
   }
 
-  // Композиция как у первого экрана Мимолёта: бренд сверху, без «космоса»
-  // посередине и без лендинговых буллетов — сразу к действию и мелочи внизу
+  // Композиция: бренд сверху, сразу к действию, мелочи внизу
   return (
     <div className="relative h-screen-safe overflow-hidden flex flex-col">
       <div
@@ -208,8 +207,8 @@ export default function Login() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background: [
-            "radial-gradient(48% 32% at 28% 10%, rgb(255 45 111 / 0.12), transparent 72%)",
-            "radial-gradient(42% 28% at 72% 6%, rgb(139 92 246 / 0.1), transparent 70%)",
+            "radial-gradient(52% 34% at 22% 8%, rgb(255 122 26 / 0.20), transparent 72%)",
+            "radial-gradient(44% 30% at 78% 4%, rgb(255 45 111 / 0.14), transparent 70%)",
           ].join(","),
         }}
       />
@@ -465,7 +464,7 @@ function Logo({ animated }: { animated?: boolean }) {
         className="absolute inset-[4%] rounded-[28%] opacity-55"
         style={{
           background:
-            "radial-gradient(circle at 50% 50%, rgb(255 45 111 / 0.22), rgb(139 92 246 / 0.12) 55%, transparent 70%)",
+            "radial-gradient(circle at 40% 35%, rgb(255 122 26 / 0.28), rgb(255 45 111 / 0.16) 50%, transparent 70%)",
         }}
       />
       <BrandMark size={44} className="relative" />

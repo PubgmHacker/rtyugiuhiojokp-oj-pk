@@ -1,7 +1,7 @@
 import { useId } from "react";
 
 /**
- * Знак марки: факел рассвета с nested тёмным силуэтом (r3-06).
+ * Знак марки: nested torch r3-06.
  *
  * Снаружи пламя (оранж→малина), внутри тёмное гнездо с «ушками».
  * Без отдельного глифа и без крупного сердца. Геометрия = tools/brandmark.py.
@@ -22,7 +22,7 @@ export default function BrandMark({
   className?: string;
 }) {
   const uid = useId().replace(/:/g, "");
-  const grad = `bm-dawn-${uid}`;
+  const grad = `bm-torch-${uid}`;
 
   return (
     <svg
@@ -35,9 +35,9 @@ export default function BrandMark({
     >
       <defs>
         <linearGradient id={grad} x1="36" y1="18" x2="60" y2="82" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#ff7a1a" />
+          <stop offset="0%" stopColor="var(--color-flame-start, #ff7a1a)" />
           <stop offset="45%" stopColor="var(--color-accent)" />
-          <stop offset="100%" stopColor="#b81648" />
+          <stop offset="100%" stopColor="var(--color-flame-end, #b81648)" />
         </linearGradient>
       </defs>
       <path d={ФАКЕЛ} fillRule="evenodd" fill={`url(#${grad})`} />
