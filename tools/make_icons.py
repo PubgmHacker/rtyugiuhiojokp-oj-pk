@@ -19,9 +19,15 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from brandmark import нарисовать_знак
+from brandmark import (
+    ФАКЕЛ_PATH_100,
+    нарисовать_знак,
+    сделать_mono_white,
+    сделать_знак_с_сердцем,
+    svg_знак,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 IOS_ASSETS = ROOT / "web" / "ios" / "App" / "App" / "Assets.xcassets"
@@ -59,18 +65,117 @@ def make_splash(w: int = 2732, h: int = 2732) -> Image.Image:
 def make_telegram_avatar(size: int = 640) -> Image.Image:
     """Аватар бота для BotFather /setuserpic.
 
-    Квадрат 640×640, сплошной #0a0b0f без прозрачности. Знак ~54%
-    высоты кадра (поля ~23% сверху/снизу) — читается в круглой маске
-    Telegram без «впритык к краю». brandmark якорит COM кольца
-    (с весом ушек) в центре квадрата — не bbox.
+    Квадрат 640×640, сплошной #0a0b0f без прозрачности. Знак ~50%
+    высоты кадра (целевой коридор 48–52%) — safe margin в круглой
+    маске Telegram, ушки не режутся. Оптический центр чуть ниже
+    геометрического (cy≈0.515): асимметрия ушей компенсируется
+    COM-якорем в brandmark, не bbox.
     """
     img = Image.new("RGB", (size, size), BG)
-    # 0.36 → ~73% высоты; 0.267 → ~54% (середина целевого 52–56%).
-    нарисовать_знак(img, size * 0.5, size * 0.5, size * 0.267)
+    # 2R/size ≈ 0.50 → r = 0.25; было 0.267 (~54%).
+    нарисовать_знак(img, size * 0.5, size * 0.515, size * 0.25)
     return img
 
 
+def _write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    print(f"✓ {path}")
+
+
+def sync_vector_carriers() -> None:
+    """Подтягивает path из brandmark в BrandMark.tsx / landing SVG."""
+    path = ФАКЕЛ_PATH_100
+
+    # BrandMark.tsx — константа ФАКЕЛ
+    bm = ROOT / "web" / "src" / "components" / "BrandMark.tsx"
+    bm_src = bm.read_text(encoding="utf-8")
+    import re
+
+    bm_new, n = re.subn(
+        r'(const ФАКЕЛ =\n  ")([^"]+)(";)',
+        rf"\g<1>{path}\g<3>",
+        bm_src,
+        count=1,
+    )
+    if n != 1:
+        raise RuntimeError("BrandMark.tsx: не нашёл const ФАКЕЛ")
+    bm.write_text(bm_new, encoding="utf-8")
+    print(f"✓ {bm} (path sync)")
+
+    # landing/icon.svg — path в <g>
+    icon = ROOT / "landing" / "icon.svg"
+    icon_src = icon.read_text(encoding="utf-8")
+    icon_new, n = re.subn(
+        r'(fill-rule="evenodd" d=")([^"]+)(")',
+        rf"\g<1>{path}\g<3>",
+        icon_src,
+        count=1,
+    )
+    if n != 1:
+        raise RuntimeError("landing/icon.svg: не нашёл path")
+    icon.write_text(icon_new, encoding="utf-8")
+    print(f"✓ {icon} (path sync)")
+
+    # landing/og-image.svg
+    og = ROOT / "landing" / "og-image.svg"
+    og_src = og.read_text(encoding="utf-8")
+    og_new, n = re.subn(
+        r'(fill-rule="evenodd" d=")([^"]+)(")',
+        rf"\g<1>{path}\g<3>",
+        og_src,
+        count=1,
+    )
+    if n != 1:
+        raise RuntimeError("landing/og-image.svg: не нашёл path")
+    og.write_text(og_new, encoding="utf-8")
+    print(f"✓ {og} (path sync)")
+
+
+def write_mono_and_variants() -> None:
+    """Белый mono master + A/B heart variant (не default)."""
+    brand = WEB_PUBLIC / "brand"
+    brand.mkdir(parents=True, exist_ok=True)
+
+    mono = сделать_mono_white(1024)
+    mono_png = brand / "mark-mono-white.png"
+    mono.save(mono_png, "PNG")
+    print(f"✓ {mono_png}")
+
+    mono_svg = brand / "mark-mono-white.svg"
+    _write_text(mono_svg, svg_знак(mono_white=True))
+
+    # Цветной SVG master рядом (для справки / tint pipelines)
+    mark_svg = brand / "mark.svg"
+    _write_text(mark_svg, svg_знак(mono_white=False))
+
+    variants = WEB_PUBLIC / "logo-variants"
+    variants.mkdir(parents=True, exist_ok=True)
+    heart_svg = variants / "r3-06-dawn-nest-heart.svg"
+    _write_text(heart_svg, svg_знак(с_сердцем=True))
+    heart_png = variants / "r3-06-dawn-nest-heart.png"
+    сделать_знак_с_сердцем(512, BG).save(heart_png, "PNG")
+    print(f"✓ {heart_png}")
+
+
+def write_circle_preview(tg: Image.Image, out: Path) -> None:
+    """Круглая маска как в Telegram — для визуальной проверки полей."""
+    size = tg.size[0]
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
+    rgba = tg.convert("RGBA")
+    rgba.putalpha(mask)
+    # на нейтральном сером, чтобы видеть края
+    canvas = Image.new("RGB", (size, size), (40, 42, 48))
+    canvas.paste(rgba, mask=mask)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out, "PNG")
+    print(f"✓ {out}")
+
+
 def main() -> None:
+    sync_vector_carriers()
+
     icon = make_icon(1024)
 
     # ── iOS ────────────────────────────────────────────────────
@@ -121,6 +226,9 @@ def main() -> None:
     shutil.copyfile(tg_brand, tg_public)
     print(f"✓ {tg_brand}")
     print(f"✓ {tg_public}")
+
+    write_circle_preview(tg, Path("/tmp/souldawn-tg-circle-preview.png"))
+    write_mono_and_variants()
 
     # Превью ссылки в соцсетях и мессенджерах.
     #
