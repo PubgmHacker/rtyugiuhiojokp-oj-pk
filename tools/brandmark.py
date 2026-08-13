@@ -61,9 +61,9 @@ _UNIT_HALF = 31.16
 ФАКЕЛ_PATH_100 = f"{_OUTER_100} {_NEST_100}"
 
 # r3-06 асимметричен: левое ухо шире, правый кончик дальше.
-# Геометрический якорь path (50,50) ≠ bbox-центр силуэта — без сдвига
-# марка уезжает вправо/вниз на квадрате и под круглой маской Telegram.
-# Якорь пересчитывается после разбора полигона (см. ниже).
+# Геометрический якорь path (50,50) и даже bbox силуэта врут — без
+# сдвига по COM кольца марка уезжает вправо/вниз под круглой маской
+# Telegram. Якорь — _com_кольца после разбора полигона (см. ниже).
 
 
 def _lerp(a: float, b: float, t: float) -> float:
@@ -126,20 +126,63 @@ def _полигон_из_path(d: str) -> list[tuple[float, float]]:
 
 
 def _масштаб(pts: list[tuple[float, float]], cx: float, cy: float, r: float) -> list[tuple[float, float]]:
-    """Масштаб в пиксели: (cx, cy) — оптический центр (bbox силуэта)."""
+    """Масштаб в пиксели: (cx, cy) — оптический центр (COM кольца)."""
     s = r / _UNIT_HALF
     return [(cx + (x - _ЯКОРЬ_X) * s, cy + (y - _ЯКОРЬ_Y) * s) for x, y in pts]
+
+
+def _com_кольца(
+    outer: list[tuple[float, float]],
+    nest: list[tuple[float, float]],
+    res: int = 1000,
+    ear_boost: float = 0.85,
+) -> tuple[float, float]:
+    """Оптический центр цветного кольца (outer \\ nest) в unit-space path 100.
+
+    Bbox на r3-06 врёт: левое ухо шире, правый кончик дальше — геометрический
+    центр даёт поля «математически ровные», а в круглой маске 640 факел
+    читается правее/ниже. Y — обычный COM кольца (поднимает марку).
+    X — COM с усиленным весом верхней трети (ушки), без правки силуэта.
+    """
+    scale = res / 100.0
+    canvas = Image.new("L", (res, res), 0)
+    draw = ImageDraw.Draw(canvas)
+    draw.polygon([(x * scale, y * scale) for x, y in outer], fill=255)
+    draw.polygon([(x * scale, y * scale) for x, y in nest], fill=0)
+
+    ys_o = [p[1] for p in outer]
+    y0 = min(ys_o) * scale
+    y1 = max(ys_o) * scale
+    span = max(y1 - y0, 1.0)
+    ear_cut = y0 + span / 3.0
+
+    sum_x = 0.0
+    sum_y = 0.0
+    n = 0
+    sum_x_ear = 0.0
+    w_ear = 0.0
+    px = canvas.load()
+    for y in range(res):
+        # Ушки тянут восприятие вправо — выше вес по X → якорь правее →
+        # контент уходит влево. По Y вес не трогаем (иначе марка тонет).
+        ear_w = 1.0 + ear_boost if y < ear_cut else 1.0
+        for x in range(res):
+            if px[x, y]:
+                sum_x += x
+                sum_y += y
+                n += 1
+                sum_x_ear += x * ear_w
+                w_ear += ear_w
+    if n == 0 or w_ear <= 0:
+        return 50.0, 50.0
+    return sum_x_ear / w_ear / scale, sum_y / n / scale
 
 
 _OUTER_POLY = _полигон_из_path(_OUTER_100)
 _NEST_POLY = _полигон_из_path(_NEST_100)
 
-# Оптический якорь = центр bbox внешнего силуэта (равномерные поля,
-# ушки не прилипают к круглой маске с одной стороны).
-_xs_outer = [p[0] for p in _OUTER_POLY]
-_ys_outer = [p[1] for p in _OUTER_POLY]
-_ЯКОРЬ_X = (min(_xs_outer) + max(_xs_outer)) / 2.0
-_ЯКОРЬ_Y = (min(_ys_outer) + max(_ys_outer)) / 2.0
+# Оптический якорь = COM цветного кольца (X с весом ушек), не bbox.
+_ЯКОРЬ_X, _ЯКОРЬ_Y = _com_кольца(_OUTER_POLY, _NEST_POLY)
 
 
 def _градиент_вертикаль(
