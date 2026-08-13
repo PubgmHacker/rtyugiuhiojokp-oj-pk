@@ -13,13 +13,11 @@ const config: CapacitorConfig = {
 
   server: {
     androidScheme: "https",
-    iosScheme: "https",
-    // Live-reload из Vite: в симуляторе «localhost» — это и есть хост-машина,
-    // поэтому просто туннелируемся на него.
-    url: "http://localhost:5173",
-    cleartext: true,
-    // Для запуска на реальном устройстве подставьте адрес машины
-    // в локальной сети: // url: "http://192.168.1.100:5173",
+    // iosScheme намеренно НЕ "https": WKWebView.handlesURLScheme("https") == true,
+    // Capacitor сбрасывает схему на capacitor://, а ассеты уходят в сетевой стек
+    // с ошибкой -1003 (CannotFindHost) — чёрный экран #0a0b0f без React.
+    // Live-reload (только при живом Vite на хосте):
+    // url: "http://localhost:5173",
     // cleartext: true,
   },
 
@@ -50,7 +48,8 @@ const config: CapacitorConfig = {
     contentInset: "never",
     backgroundColor: "#0a0b0f",
     scrollEnabled: true,
-    limitsNavigationsToAppBoundDomains: true,
+    // true без WKAppBoundDomains в Info.plist ломает загрузку capacitor:// ассетов
+    limitsNavigationsToAppBoundDomains: false,
     preferredContentMode: "mobile",
   },
 };

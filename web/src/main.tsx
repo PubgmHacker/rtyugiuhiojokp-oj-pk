@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { Capacitor } from "@capacitor/core";
 import App from "./App";
 import { initAppearance } from "./lib/appearance";
 import "./styles/globals.css";
@@ -13,16 +14,18 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   </React.StrictMode>
 );
 
-// Register PWA service worker — только в проде; в dev он отдаёт
-// закешированный старый бандл вместо HMR-версии
-if (import.meta.env.PROD && "serviceWorker" in navigator) {
+// PWA SW — только в браузерном проде. В Capacitor SW ломает локальные ассеты.
+if (
+  import.meta.env.PROD &&
+  "serviceWorker" in navigator &&
+  !Capacitor.isNativePlatform()
+) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((err) => {
       console.warn("SW registration failed:", err);
     });
   });
 } else if ("serviceWorker" in navigator) {
-  // Убираем ранее установленный SW из dev-браузеров
   navigator.serviceWorker.getRegistrations().then((regs) => {
     regs.forEach((r) => r.unregister());
   });

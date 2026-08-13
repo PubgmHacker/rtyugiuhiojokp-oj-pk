@@ -12,7 +12,10 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "glass";
 type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-on-accent shadow-[var(--shadow-control)]",
+  // Главный CTA: перелив факела. Мелкие accent-элементы (пилюли, иконки)
+  // остаются на плоском --color-accent.
+  primary:
+    "btn-torch text-on-accent shadow-[var(--shadow-control)]",
   secondary: "bg-surface-2 text-text border border-hairline",
   ghost: "bg-transparent text-text-secondary",
   danger: "bg-danger/15 text-danger border border-danger/30",
