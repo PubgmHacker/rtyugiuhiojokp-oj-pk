@@ -122,11 +122,30 @@ async def lifespan(app: FastAPI):
             "JWT_SECRET is still the default value — set a random secret before running in production"
         )
 
-    # Test DB connection + auto-create tables
+    # Подключение к БД, миграции, create_all. Два разных отказа разведены
+    # намеренно:
+    #
+    #  • База недоступна на старте — на Railway API и Postgres поднимаются
+    #    параллельно, и первая попытка может прийти раньше базы. Это переживаемо:
+    #    /health честно отдаёт 503, пока базы нет, и не притворяется здоровым.
+    #
+    #  • Миграция упала при ДОСТУПНОЙ базе — это разъехавшаяся схема, и
+    #    подниматься на ней нельзя. /health зеленел бы (SELECT 1 проходит), а
+    #    запрос к новой колонке падал бы у пользователей. Такую ошибку НЕ глотаем:
+    #    пусть деплой упадёт заметно — это видно сразу, а тихая порча — нет.
+    from sqlalchemy import text as sa_text
+    from database.connection import engine
+
+    db_reachable = False
     try:
+        async with engine.connect() as conn:
+            await conn.execute(sa_text("SELECT 1"))
+        db_reachable = True
+    except Exception as e:
+        logger.warning(f"PostgreSQL not available at startup: {e}")
+
+    if db_reachable:
         from sqlalchemy import inspect as sa_inspect
-        from sqlalchemy import text as sa_text
-        from database.connection import engine
         from models.models import Base
 
         async with engine.begin() as conn:
@@ -158,9 +177,7 @@ async def lifespan(app: FastAPI):
                     await conn.execute(sa_text(stmt))
             except Exception as e:
                 logger.debug(f"Migration skipped ({stmt[:40]}…): {e}")
-        logger.info("PostgreSQL connected, tables ensured")
-    except Exception as e:
-        logger.warning(f"PostgreSQL not available: {e}")
+        logger.info("PostgreSQL connected, migrations applied, tables ensured")
 
     # Test Redis connection
     try:
@@ -209,6 +226,10 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+    # Схему закрываем вместе с /docs: сама по себе /openapi.json открыта у
+    # FastAPI по умолчанию, даже когда UI выключен, и отдаёт полную карту
+    # эндпоинтов и моделей. В проде это лишняя разведданность для атакующего.
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
 # Лимит частоты запросов на чувствительных путях (жалобы, вход, загрузка).
@@ -275,6 +296,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     показать внутренности приложения.
     """
     logger.exception(f"Необработанная ошибка на {request.method} {request.url.path}: {exc}")
+    # В Sentry уходит именно необработанное: логи на Railway эфемерны и никто не
+    # смотрит их в реальном времени, а 500 у пользователя — то, о чём надо знать
+    # сразу. Без DSN — no-op (см. services/alerting.py).
+    from services.alerting import capture_exception
+
+    capture_exception(exc)
     return JSONResponse(
         status_code=500,
         content={"detail": "Внутренняя ошибка сервера. Попробуйте позже."},
@@ -347,6 +374,11 @@ async def health(response: Response):
         checks["turn"] = "ok" if turn_configured() else "disabled"
     except Exception:
         checks["turn"] = "unknown"
+
+    # Без BOT_TOKEN проверка Telegram initData фейлится закрыто (503), то есть
+    # вход через Mini App не работает вовсе. Для дейтинга это не «деградация»,
+    # а неработающий основной вход — состояние должно быть видно в мониторинге.
+    checks["telegram_auth"] = "ok" if settings.BOT_TOKEN else "disabled"
 
     return {
         "status": "ok" if healthy else "unhealthy",
