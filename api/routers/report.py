@@ -93,7 +93,12 @@ async def create_report(
 
     if distinct_reporters >= 5:
         target.is_banned = True
-        await remember_ban(session, target.telegram_id, "автобан по жалобам")
+        await remember_ban(
+            session,
+            telegram_id=target.telegram_id,
+            apple_id=target.apple_id,
+            reason="автобан по жалобам",
+        )
         # Автобан — такой же бан, как ручной (routers/admin.py: ban_user), и
         # токены отзывать надо так же. Иначе жертва харассмента продолжает
         # получать сообщения через уже открытый сокет обидчика

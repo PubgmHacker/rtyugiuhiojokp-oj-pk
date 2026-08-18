@@ -270,8 +270,14 @@ async def ban_user(
     await session.flush()
 
     # Список забаненных живёт отдельно от пользователя: удаление аккаунта
-    # каскадом стирает бан, и забаненный возвращался тем же Telegram-аккаунтом
-    await remember_ban(session, target.telegram_id, data.reason or "бан админом")
+    # каскадом стирает бан, и забаненный возвращался тем же аккаунтом. Пишем обе
+    # привязки — и Telegram, и Apple, — чтобы обход не прошёл ни одним входом
+    await remember_ban(
+        session,
+        telegram_id=target.telegram_id,
+        apple_id=target.apple_id,
+        reason=data.reason or "бан админом",
+    )
 
     # Бан должен убивать и уже выданные токены: HTTP-запросы отсекаются
     # проверкой is_banned, но открытый WebSocket её не переспрашивает
@@ -310,8 +316,8 @@ async def unban_user(
     await session.flush()
 
     # Без этого разбан работал бы только до первого удаления аккаунта: сам
-    # пользователь разбанен, а его Telegram-аккаунт остался в списке
-    await forgive(session, target.telegram_id)
+    # пользователь разбанен, а его привязки остались в списке. Чистим обе
+    await forgive(session, telegram_id=target.telegram_id, apple_id=target.apple_id)
 
     # Иначе отметка отзыва из бана продолжала бы гасить свежие токены
     await clear_user_revocation(data.user_id)
@@ -391,7 +397,12 @@ async def report_action(
         target = target_result.scalar_one_or_none()
         if target:
             target.is_banned = True
-            await remember_ban(session, target.telegram_id, "бан по жалобе")
+            await remember_ban(
+                session,
+                telegram_id=target.telegram_id,
+                apple_id=target.apple_id,
+                reason="бан по жалобе",
+            )
             # Тот же бан, что и в ban_user, — значит и токены отзываем так же:
             # иначе открытый сокет забаненного живёт до истечения токена
             await revoke_all_for_user(target.id)

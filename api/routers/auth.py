@@ -99,7 +99,7 @@ async def auth_telegram(
         # удаление каскадом стирает бан, поэтому проверяем отдельный список.
         # Создаём его сразу забаненным, а не отказываем — иначе он поймёт, что
         # обход не сработал, и начнёт искать другой способ
-        previously_banned = await is_banned_identity(session, tg_id)
+        previously_banned = await is_banned_identity(session, telegram_id=tg_id)
 
         user = User(
             telegram_id=tg_id,
@@ -239,8 +239,9 @@ async def auth_apple(
 
     if not user:
         # Забаненный не должен получать чистую историю, зайдя через Apple:
-        # список банов живёт отдельно от аккаунта (см. auth_telegram)
-        previously_banned = await is_banned_identity(session, apple_id)
+        # список банов живёт отдельно от аккаунта (см. auth_telegram). Ключ —
+        # именованный: apple_id строковый, и по колонке telegram_id он не искал
+        previously_banned = await is_banned_identity(session, apple_id=apple_id)
 
         user = User(apple_id=apple_id, role="user", is_banned=previously_banned)
         session.add(user)

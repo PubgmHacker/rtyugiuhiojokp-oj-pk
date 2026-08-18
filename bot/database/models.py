@@ -302,14 +302,28 @@ class Block(Base):
 
 
 class BannedIdentity(Base):
-    """Забаненные Telegram-аккаунты — см. api/models/models.py.
-    Список переживает удаление аккаунта, иначе бан обходится удалением."""
+    """Забаненные личности — см. api/models/models.py.
+
+    Список переживает удаление аккаунта, иначе бан обходится удалением.
+    Обе схемы (бот и API) создают одну и ту же таблицу и обязаны совпадать
+    по колонкам — иначе запись падает на неизвестном поле. Бот пишет только
+    telegram_id, apple_id остаётся NULL, но колонка нужна для совпадения схем.
+    """
 
     __tablename__ = "dating_banned_identities"
-    __table_args__ = (UniqueConstraint("telegram_id", name="uq_banned_telegram"),)
+    __table_args__ = (
+        UniqueConstraint("telegram_id", name="uq_banned_telegram"),
+        Index(
+            "uq_banned_apple",
+            "apple_id",
+            unique=True,
+            postgresql_where=text("apple_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    apple_id: Mapped[str | None] = mapped_column(String, nullable=True)
     reason: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

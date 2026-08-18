@@ -516,15 +516,32 @@ class UserHabit(Base):
 
 
 class BannedIdentity(Base):
-    """Забаненные Telegram-аккаунты — список, который переживает удаление."""
+    """Забаненные личности — список, который переживает удаление аккаунта.
+
+    Личность — это внешняя привязка входа: telegram_id для бота и Mini App,
+    apple_id для нативного iOS. Хранится по одной на строку: у пришедшего из
+    App Store нет Telegram, у забаненного в боте — Apple. Проверять надо ту,
+    через которую человек заходит, поэтому колонки раздельные, а не одна.
+    """
 
     __tablename__ = "dating_banned_identities"
     __table_args__ = (
         UniqueConstraint("telegram_id", name="uq_banned_telegram"),
+        # Дубли apple-банов не нужны; строки без apple_id (баны через Telegram)
+        # под ограничение не попадают
+        Index(
+            "uq_banned_apple",
+            "apple_id",
+            unique=True,
+            postgresql_where=text("apple_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    # Обе привязки необязательны и взаимоисключающи в пределах строки: NULL там,
+    # где у человека такого входа нет
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    apple_id: Mapped[str | None] = mapped_column(String, nullable=True)
     reason: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

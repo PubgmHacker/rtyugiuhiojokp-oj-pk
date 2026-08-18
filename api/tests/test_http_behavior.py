@@ -29,6 +29,7 @@ def _user(uid: str = "u-me", telegram_id: int = 111, banned: bool = False):
     return SimpleNamespace(
         id=uid,
         telegram_id=telegram_id,
+        apple_id=None,
         role="user",
         is_banned=banned,
         is_verified=False,
