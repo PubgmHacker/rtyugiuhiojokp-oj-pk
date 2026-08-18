@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Все настройки загружаются из env-переменных."""
+
+    # Ищем .env и в корне репо (запуск `uvicorn` из api/), и рядом.
+    # extra="ignore" — в общем .env есть переменные бота/фронтенда.
+    model_config = SettingsConfigDict(
+        env_file=("../.env", ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # ── App ──────────────────────────────────────────────────────
     API_HOST: str = "0.0.0.0"
@@ -14,6 +22,14 @@ class Settings(BaseSettings):
     # DEBUG включает /docs, гостевой /auth/dev и fail-open проверку initData.
     # По умолчанию ВЫКЛЮЧЕН — включайте явно через .env только локально.
     DEBUG: bool = False
+
+    # Сколько доверенных прокси стоит перед приложением. Railway ставит один
+    # свой edge, поэтому реальный адрес клиента — ПОСЛЕДНИЙ элемент
+    # X-Forwarded-For, а не первый: левые элементы клиент подставляет сам, и
+    # ключ лимита частоты по ним крутится в его руках (обход счётчика). Значение
+    # задаёт, какой элемент справа считать клиентским. 0 — не доверять заголовку
+    # вовсе и брать адрес TCP-пира.
+    TRUSTED_PROXY_COUNT: int = 1
 
     # ── JWT ─────────────────────────────────────────────────────
     JWT_SECRET: str = "change_this_in_production"
@@ -128,12 +144,6 @@ class Settings(BaseSettings):
         if not self.ADMIN_IDS:
             return []
         return [int(x.strip()) for x in self.ADMIN_IDS.split(",") if x.strip().isdigit()]
-
-    class Config:
-        # Ищем .env и в корне репо (запуск `uvicorn` из api/), и рядом
-        env_file = ("../.env", ".env")
-        env_file_encoding = "utf-8"
-        extra = "ignore"  # в общем .env есть переменные бота/фронтенда
 
 
 @lru_cache

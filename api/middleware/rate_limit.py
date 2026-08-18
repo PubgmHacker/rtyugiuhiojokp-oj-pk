@@ -5,8 +5,10 @@
 прямой путь к спаму жалобами, засорению бакета и перебору кодов.
 
 Счётчики живут в Redis, поэтому лимит общий для всех инстансов API.
-Если Redis недоступен, запросы пропускаются: сервис, который перестаёт
-работать вместе с кешем, хуже отсутствующего лимита.
+Если Redis недоступен, обычные пути пропускаются: сервис, который перестаёт
+работать вместе с кешем, хуже отсутствующего лимита. Но для чувствительных
+путей (перебор кода, спам жалобами, поток загрузок — см. _CRITICAL_PREFIXES)
+наоборот закрываемся: там открытый лимит опаснее короткой недоступности.
 
 Лимиты заданы по пути, а не глобально: свайпать деку человек может
 быстро, а жаловаться — нет.
@@ -21,9 +23,11 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from config import get_settings
 from services.realtime import get_redis
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 # (префикс пути, метод) → (сколько запросов, за сколько секунд).
 # Проверяется самое длинное совпадение префикса.
@@ -53,6 +57,19 @@ LIMITS: list[tuple[str, str, int, int]] = [
     ("/api/likes", "POST", 600, 3600),
 ]
 
+# Пути, где открытый лимит опаснее короткой недоступности сервиса: перебор кода
+# привязки, спам жалобами, штамповка гостей, поток загрузок. Если Redis отвалился,
+# по ним закрываемся (503), а не пропускаем — иначе окно недоступности кеша
+# становится окном для брутфорса и спама. Остальные пути при сбое Redis
+# пропускаются: лента и свайпы важнее лимита.
+_CRITICAL_PREFIXES = {
+    "/api/report",
+    "/api/auth/link",
+    "/api/auth/dev",
+    "/api/auth/telegram",
+    "/api/upload",
+}
+
 
 def _find_limit(path: str, method: str) -> tuple[str, int, int] | None:
     best: tuple[str, int, int] | None = None
@@ -61,6 +78,28 @@ def _find_limit(path: str, method: str) -> tuple[str, int, int] | None:
             if best is None or len(prefix) > len(best[0]):
                 best = (prefix, limit, window)
     return best
+
+
+def _client_ip(request: Request) -> str:
+    """Адрес клиента с учётом доверенного прокси.
+
+    За обратным прокси (Railway) настоящий адрес — не первый элемент
+    X-Forwarded-For, а N-й справа, где N = TRUSTED_PROXY_COUNT (число
+    прокси, которые сами дописывают заголовок). Левые элементы подставляет
+    сам клиент, и брать их как ключ лимита — значит отдать ему ручку от
+    счётчика: меняя заголовок, он крутит ключ и обходит лимит. При
+    TRUSTED_PROXY_COUNT=0 заголовку не доверяем вовсе и берём адрес TCP-пира.
+    """
+    depth = settings.TRUSTED_PROXY_COUNT
+    if depth > 0:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if parts:
+            # N-й справа: за depth прокси столько элементов справа они и
+            # добавили. Если клиент подставил лишние слева — они игнорируются.
+            idx = max(0, len(parts) - depth)
+            return parts[idx]
+    return request.client.host if request.client else "unknown"
 
 
 def _client_key(request: Request) -> str:
@@ -76,10 +115,7 @@ def _client_key(request: Request) -> str:
         # в логи целиком
         return f"t:{auth[-32:]}"
 
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return f"ip:{forwarded.split(',')[0].strip()}"
-    return f"ip:{request.client.host if request.client else 'unknown'}"
+    return f"ip:{_client_ip(request)}"
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -100,8 +136,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if used == 1:
                 await r.expire(key, window)
         except Exception as e:
-            # Лимит — защита, а не условие работы сервиса
             logger.error(f"Rate limit check failed ({prefix}): {e}")
+            # Для чувствительных путей закрываемся: открытый лимит там опаснее
+            # короткой недоступности (см. _CRITICAL_PREFIXES). Для остальных
+            # лимит — защита, а не условие работы сервиса, поэтому пропускаем.
+            if prefix in _CRITICAL_PREFIXES:
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Сервис временно недоступен, попробуйте позже"},
+                )
             return await call_next(request)
 
         if used > limit:
