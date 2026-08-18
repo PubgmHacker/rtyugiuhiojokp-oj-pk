@@ -5,13 +5,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, and_, desc, func, text as sa_text
+from sqlalchemy import select, and_, desc, func, not_, or_, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database.connection import async_session_factory, get_session
 from middleware.auth import get_current_user
-from models.models import User, Profile, Like, Match
+from models.models import User, Profile, Like, Match, Block
 from models.schemas import (
     DailyLimits,
     LikeRequest,
@@ -196,6 +196,22 @@ async def create_like(
     result = await session.execute(select(User).where(User.id == data.target_id))
     target = result.scalar_one_or_none()
     if not target or target.is_banned:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    # Блокировка действует в обе стороны и здесь тоже: заблокированный не должен
+    # снова выйти на того, кто его закрыл, — ни лайком, ни суперлайком с текстом,
+    # ни повторным мэтчем. Дека таких уже прячет (services/matching), но прямой
+    # POST её минует. Отвечаем 404, как на бан: существование блокировки наружу
+    # не подтверждаем.
+    result = await session.execute(
+        select(Block.id).where(
+            or_(
+                and_(Block.blocker_id == user.id, Block.blocked_id == data.target_id),
+                and_(Block.blocker_id == data.target_id, Block.blocked_id == user.id),
+            )
+        )
+    )
+    if result.scalar_one_or_none() is not None:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     u1, u2 = _pair(user.id, data.target_id)
@@ -408,6 +424,19 @@ async def get_likes_received(
             Like.liked_id == user.id,
             Like.type != "pass",
             User.is_banned == False,
+            # Заблокированные — в любую сторону — не должны всплывать в «кто меня
+            # лайкнул»: иначе заблокированный шлёт суперлайк с текстом, и тот
+            # доходит до платного получателя, обходя саму блокировку
+            not_(
+                select(Block.id)
+                .where(
+                    or_(
+                        and_(Block.blocker_id == user.id, Block.blocked_id == Like.liker_id),
+                        and_(Block.blocker_id == Like.liker_id, Block.blocked_id == user.id),
+                    )
+                )
+                .exists()
+            ),
         ))
         .order_by(desc(Like.created_at))
         .limit(50)
