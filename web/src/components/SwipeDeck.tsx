@@ -18,6 +18,7 @@ import SwipeCard, { type SwipeDirection } from "./SwipeCard";
 import MatchModal from "./MatchModal";
 import DirectMessageSheet from "./DirectMessageSheet";
 import LimitSheet from "./LimitSheet";
+import SafetySheet from "./SafetySheet";
 import { Button, IconButton, EmptyState, Skeleton } from "./ui";
 
 interface MatchData {
@@ -53,6 +54,8 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   const [noteFor, setNoteFor] = useState<DeckProfile | null>(null);
   // Платное письмо без взаимного лайка — вход прямо с карточки
   const [directFor, setDirectFor] = useState<DeckProfile | null>(null);
+  // Жалоба/блокировка с карточки — обязательный вход безопасности из деки
+  const [safetyFor, setSafetyFor] = useState<DeckProfile | null>(null);
 
   const loadingRef = useRef(false);
   // Долгое удержание лайка открывает «лайк с сообщением» — отдельной
@@ -315,6 +318,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
                   onSwipe={handleSwipe}
                   isTop={idx === 0}
                   index={idx}
+                  onFlag={setSafetyFor}
                 />
               );
             })}
@@ -500,6 +504,19 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         limits={limits}
         open={limitSheet}
         onClose={() => setLimitSheet(false)}
+      />
+
+      {/* Жалоба/блокировка с карточки: после любого исхода анкета уходит
+          из деки — человек только что попросил её больше не видеть */}
+      <SafetySheet
+        open={!!safetyFor}
+        onClose={() => setSafetyFor(null)}
+        userId={safetyFor?.id ?? ""}
+        name={safetyFor?.display_name ?? ""}
+        origin="Жалоба из ленты знакомств"
+        onDone={() => {
+          if (safetyFor) removeDeckProfile(safetyFor.id);
+        }}
       />
     </div>
   );

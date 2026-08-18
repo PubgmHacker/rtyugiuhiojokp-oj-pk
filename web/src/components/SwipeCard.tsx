@@ -7,7 +7,7 @@ import {
   type PanInfo,
   type MotionValue,
 } from "framer-motion";
-import { MapPin, Sparkles } from "lucide-react";
+import { Flag, MapPin, Sparkles } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { VerifiedBadge } from "./ui";
@@ -21,6 +21,9 @@ interface SwipeCardProps {
   onSwipe: (direction: SwipeDirection, profile: DeckProfile) => void;
   isTop: boolean;
   index: number;
+  /** Пожаловаться/заблокировать прямо с карточки — обязательная точка входа
+   *  безопасности на поверхности, где человек видит незнакомца (App Store 1.2). */
+  onFlag?: (profile: DeckProfile) => void;
 }
 
 /** Порог смещения и скорости, после которого жест считается свайпом. */
@@ -30,7 +33,7 @@ const VELOCITY_THRESHOLD = 420;
 /** Пружина, близкая к отклику нативного iOS. */
 const SPRING = { type: "spring" as const, stiffness: 380, damping: 34, mass: 0.9 };
 
-function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
+function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProps) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [loadedPhotos, setLoadedPhotos] = useState<Record<number, boolean>>({});
 
@@ -47,7 +50,9 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
   const glowColor = useTransform(x, (v: number) =>
     v < 0 ? "var(--color-danger)" : "var(--color-success)"
   );
-  const glowShadow = useMotionTemplate`inset 0 0 90px 12px ${glowColor}`;
+  // Кайма по краю, а не заливка всей карточки: эффект не имеет права лежать
+  // на фото пользователя (PRD §1.3, правило Z) — подсвечиваем рамку.
+  const glowShadow = useMotionTemplate`inset 0 0 0 3px ${glowColor}, inset 0 0 34px -22px ${glowColor}`;
 
   const photos = profile.photos?.length ? profile.photos : [];
   const hasPhotos = photos.length > 0;
@@ -216,6 +221,25 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index }: SwipeCardProps) {
             />
           </div>
         </>
+      )}
+
+      {/* Жалоба/блокировка — всегда доступна с карточки незнакомца.
+          Гасим pointerdown до жеста: кнопка не должна начинать drag */}
+      {isTop && onFlag && (
+        <button
+          aria-label={`Пожаловаться на ${profile.display_name}`}
+          onPointerDownCapture={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            haptic("light");
+            onFlag(profile);
+          }}
+          className="absolute top-7 right-3 z-30 tap-target grid h-9 w-9 place-items-center
+                     rounded-full glass-strong text-white/80 active:text-white
+                     transition-colors"
+        >
+          <Flag size={15} />
+        </button>
       )}
 
       {/* Штампы решения */}
