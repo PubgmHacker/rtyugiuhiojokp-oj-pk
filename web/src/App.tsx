@@ -7,7 +7,7 @@ import {
   useLocation,
   Link,
 } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { Flame, MessageCircle, User, Sparkles, LayoutGrid, WifiOff } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useStore } from "./lib/store";
@@ -195,20 +195,14 @@ function Protected({ children, nav = true }: { children: React.ReactNode; nav?: 
 }
 
 export default function App() {
-  const { token, user, setUser, isOnboarded } = useStore();
+  const { token, user, isOnboarded } = useStore();
 
   useEffect(() => {
+    // Профиль из localStorage гидрируется синхронно в store.ts: здесь его
+    // читать поздно — редирект /login уже отработал по первому рендеру.
     initTelegram();
     initNative();
-    const saved = localStorage.getItem("sd_user");
-    if (saved) {
-      try {
-        setUser(JSON.parse(saved));
-      } catch {
-        localStorage.removeItem("sd_user");
-      }
-    }
-  }, [setUser]);
+  }, []);
 
   // Разрешение на уведомления спрашиваем только после входа: системный
   // запрос на экране логина выглядит необъяснимо, и его чаще отклоняют.
@@ -265,6 +259,10 @@ export default function App() {
   }, [token]);
 
   return (
+    // reducedMotion="user": системная настройка «Уменьшить движение» гасит
+    // transform-анимации Framer (пружины, вылеты карточек), оставляя opacity.
+    // CSS-ветка в globals.css её не покрывает — Framer анимирует из JS.
+    <MotionConfig reducedMotion="user">
     <BrowserRouter>
       <OfflineBanner />
       {/* Исключение в любом экране не должно оставлять белый экран без выхода */}
@@ -287,6 +285,11 @@ export default function App() {
               )
             }
           />
+
+          {/* Экран блокировки — вне Protected: он обязан открываться без
+              единого запроса к API, иначе перехватчик 403 в api.ts зациклит
+              редирект /banned → /discover → 403 → /banned */}
+          <Route path="/banned" element={<Banned />} />
 
           <Route path="/onboarding" element={<Protected nav={false}><Onboarding /></Protected>} />
           <Route path="/discover" element={<Protected><Discover /></Protected>} />
@@ -312,5 +315,6 @@ export default function App() {
       </Suspense>
       </ErrorBoundary>
     </BrowserRouter>
+    </MotionConfig>
   );
 }

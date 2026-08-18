@@ -86,6 +86,13 @@ export async function clearNotificationBadge(): Promise<void> {
  * замечания при ревью App Store.
  */
 export async function openExternal(url: string): Promise<void> {
+  // Browser.open принимает только http(s); mailto:/tel: он отвергает с
+  // «Unable to display URL». Такие схемы передаём системе через location.href —
+  // WKWebView и Telegram WebView отдают их ОС (почта, звонилка) напрямую.
+  if (!/^https?:/i.test(url)) {
+    window.location.href = url;
+    return;
+  }
   if (!isNative()) {
     window.open(url, "_blank", "noopener,noreferrer");
     return;

@@ -28,13 +28,29 @@ interface AppState {
   logout: () => void;
 }
 
+// Профиль читаем синхронно, как и токен: если отложить в useEffect, первый
+// рендер видит token без user, и редирект с /login уводит зарегистрированного
+// человека в онбординг с пустыми полями.
+function сохранённыйПрофиль(): UserProfile | null {
+  const raw = localStorage.getItem("sd_user");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as UserProfile;
+  } catch {
+    localStorage.removeItem("sd_user");
+    return null;
+  }
+}
+
+const начальныйПрофиль = сохранённыйПрофиль();
+
 export const useStore = create<AppState>((set) => ({
-  user: null,
+  user: начальныйПрофиль,
   token: localStorage.getItem("sd_token"),
   deck: [],
   matches: [],
   isLoading: false,
-  isOnboarded: false,
+  isOnboarded: !!(начальныйПрофиль?.display_name && начальныйПрофиль?.photos?.length),
   unreadLikes: 0,
   unreadMessages: 0,
 
