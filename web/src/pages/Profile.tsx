@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { askConfirm } from "../lib/telegram";
 import {
   LogOut,
   Pencil,
@@ -138,12 +139,10 @@ export default function Profile() {
   }, []);
 
   const handleUnblock = useCallback(async (id: string, name: string) => {
-    if (
-      !window.confirm(
-        `Разблокировать ${name || "этого пользователя"}?\n\nМэтч и переписка не вернутся — знакомиться придётся заново.`
-      )
-    )
-      return;
+    const ok = await askConfirm(
+      `Разблокировать ${name || "этого пользователя"}?\n\nМэтч и переписка не вернутся — знакомиться придётся заново.`
+    );
+    if (!ok) return;
     try {
       await unblockUser(id);
       setBlocked((list) => (list ?? []).filter((u) => u.id !== id));

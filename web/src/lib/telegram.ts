@@ -37,6 +37,12 @@ interface TelegramWebApp {
     setText: (text: string) => void;
     onClick: (cb: () => void) => void;
   };
+  showConfirm?: (message: string, callback: (ok: boolean) => void) => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+  disableVerticalSwipes?: () => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
 }
 
 export function getTelegramWebApp(): TelegramWebApp | null {
@@ -58,6 +64,33 @@ export function initTelegram() {
   if (tg) {
     tg.ready();
     tg.expand();
+    // Нативная шапка Telegram по умолчанию красится в тему пользователя —
+    // белая полоса над тёмным холстом приложения. Красим под свой фон.
+    tg.setHeaderColor?.("#07070c");
+    tg.setBackgroundColor?.("#07070c");
+    // Вертикальный жест в деке и онбординге не должен сворачивать Mini App:
+    // случайное перетаскивание вниз закрывало приложение посреди свайпа.
+    tg.disableVerticalSwipes?.();
   }
+}
+
+/**
+ * Подтверждение действия. В Telegram WebView нативный window.confirm
+ * подавлен (молча возвращает false) — «Заблокировать» не срабатывал вовсе.
+ * Внутри TMA используем showConfirm, в остальных средах — window.confirm
+ * (WKWebView в Capacitor показывает системный диалог корректно).
+ */
+export function askConfirm(message: string): Promise<boolean> {
+  const tg = getTelegramWebApp();
+  if (isInTelegram() && tg?.showConfirm) {
+    return new Promise((resolve) => {
+      try {
+        tg.showConfirm!(message, resolve);
+      } catch {
+        resolve(window.confirm(message));
+      }
+    });
+  }
+  return Promise.resolve(window.confirm(message));
 }
 

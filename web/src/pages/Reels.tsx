@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { askConfirm } from "../lib/telegram";
 import {
   Heart, MessageCircle, Flag, Plus, Trash2, Volume2, VolumeX, EyeOff, Eye,
   Share2,
@@ -133,7 +134,7 @@ export default function Reels() {
   }, []);
 
   const handleDelete = useCallback(async (reel: Reel) => {
-    if (!window.confirm("Удалить этот ролик?")) return;
+    if (!(await askConfirm("Удалить этот ролик?"))) return;
     try {
       await deleteReel(reel.id);
       setReels((cur) => (cur ?? []).filter((r) => r.id !== reel.id));

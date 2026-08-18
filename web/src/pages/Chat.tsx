@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { askConfirm } from "../lib/telegram";
 import {
   ArrowLeft,
   Send,
@@ -305,12 +306,10 @@ export default function Chat() {
   const handleBlock = useCallback(async () => {
     if (!match) return;
     const name = match.partner.display_name || "этого пользователя";
-    if (
-      !window.confirm(
-        `Заблокировать ${name}?\n\nВы больше не увидите друг друга и не сможете связаться. Отменить можно в настройках профиля.`
-      )
-    )
-      return;
+    const ok = await askConfirm(
+      `Заблокировать ${name}?\n\nВы больше не увидите друг друга и не сможете связаться. Отменить можно в настройках профиля.`
+    );
+    if (!ok) return;
     try {
       await blockUser(match.partner.id);
       haptic("success");
@@ -322,7 +321,7 @@ export default function Chat() {
 
   const handleUnmatch = useCallback(async () => {
     if (!match) return;
-    if (!window.confirm("Разорвать мэтч? Чат исчезнет у обоих.")) return;
+    if (!(await askConfirm("Разорвать мэтч? Чат исчезнет у обоих."))) return;
     try {
       await unmatch(match.id);
       haptic("medium");
