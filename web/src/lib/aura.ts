@@ -49,7 +49,7 @@ export function auraOf(seed: string): Aura {
   const готовая = КЭШ.get(seed);
   if (готовая) return готовая;
 
-  const u = хеш(seed || "souldawn");
+  const u = хеш(seed || "simp");
   const hue = u % 360;
   // Разброс 26–70°: меньше — градиент читается как один цвет, больше —
   // как две несвязанные краски.

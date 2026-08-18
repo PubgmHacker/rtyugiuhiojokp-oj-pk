@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Users, ChevronRight, Mic } from "lucide-react";
-import { getMatches } from "../lib/api";
+import { Users, ChevronRight, Mic, Lock } from "lucide-react";
+import type { DailyLimits, MatchResponse } from "../lib/api";
+import { getMatches, getDailyLimits } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { clearNotificationBadge } from "../lib/native";
 import { StoriesRail } from "../components/StoriesRail";
+import LimitSheet from "../components/LimitSheet";
 import {
   ScreenHeader,
   EmptyState,
@@ -20,6 +22,10 @@ export default function Matches() {
   const { matches, setMatches, setUnreadMessages } = useStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // Суточный лимит открытых мэтчей. Запрашиваем только если в списке
+  // действительно есть закрытые — на подписке этого запроса не будет вовсе
+  const [limits, setLimits] = useState<DailyLimits | null>(null);
+  const [limitSheet, setLimitSheet] = useState(false);
 
   const load = useCallback(async () => {
     setError(false);
@@ -32,6 +38,13 @@ export default function Matches() {
         свежие.reduce((sum, m) => sum + (m.unread_count ?? 0), 0)
       );
       clearNotificationBadge();
+      if (свежие.some((m) => m.locked)) {
+        // Нужно только для времени возврата слота в шторке — сам факт
+        // блокировки уже пришёл вместе со списком
+        getDailyLimits()
+          .then(setLimits)
+          .catch(() => setLimits(null));
+      }
     } catch {
       setError(true);
     } finally {
@@ -44,17 +57,26 @@ export default function Matches() {
   }, [load]);
 
   const open = useCallback(
-    (id: string) => {
+    (m: MatchResponse) => {
+      // Закрытый мэтч не открываем даже попыткой: сервер всё равно ответит
+      // 429, а пустой чат с ошибкой хуже честного объяснения
+      if (m.locked) {
+        haptic("error");
+        setLimitSheet(true);
+        return;
+      }
       haptic("light");
-      navigate(`/chat/${id}`);
+      navigate(`/chat/${m.id}`);
     },
     [navigate]
   );
 
   // Пока переписки нет, мэтч живёт в верхней ленте: так виднее, кому
-  // ещё стоит написать
-  const fresh = matches.filter((m) => !m.last_message);
-  const conversations = matches.filter((m) => m.last_message);
+  // ещё стоит написать. Смотрим на время последнего сообщения, а не на его
+  // текст: у закрытого мэтча превью вычищено сервером, и по тексту такая
+  // беседа уезжала бы в «Новые совпадения» вместе с настоящими новыми
+  const fresh = matches.filter((m) => !m.last_message && !m.last_message_at);
+  const conversations = matches.filter((m) => m.last_message || m.last_message_at);
 
   if (loading) {
     return (
@@ -161,17 +183,18 @@ export default function Matches() {
             {fresh.map((m) => (
               <button
                 key={m.id}
-                onClick={() => open(m.id)}
+                onClick={() => open(m)}
                 className="flex flex-col items-center gap-1.5 shrink-0 w-[70px]"
               >
                 <Avatar
-                  src={m.partner.photos?.[0]}
+                  src={m.locked ? undefined : m.partner.photos?.[0]}
                   name={m.partner.display_name}
                   size={64}
-                  ring
+                  ring={!m.locked}
+                  locked={m.locked}
                 />
                 <span className="text-[12px] text-text-secondary truncate w-full text-center">
-                  {m.partner.display_name}
+                  {m.locked ? "Закрыт" : m.partner.display_name}
                 </span>
               </button>
             ))}
@@ -192,19 +215,24 @@ export default function Matches() {
                 transition={{ delay: Math.min(i * 0.03, 0.25) }}
               >
                 <button
-                  onClick={() => open(m.id)}
+                  onClick={() => open(m)}
                   className="w-full flex items-center gap-3 px-4 py-3
                              active:bg-surface transition-colors text-left"
                 >
                   <Avatar
-                    src={m.partner.photos?.[0]}
+                    src={m.locked ? undefined : m.partner.photos?.[0]}
                     name={m.partner.display_name}
                     size={56}
+                    locked={m.locked}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className="font-semibold text-[15px] truncate">
-                        {m.partner.display_name}
+                      <span
+                        className={`font-semibold text-[15px] truncate ${
+                          m.locked ? "text-text-muted" : ""
+                        }`}
+                      >
+                        {m.locked ? "Кто-то вам написал" : m.partner.display_name}
                       </span>
                       {/* Наклейка рядом с именем — там же, где она в деке.
                           20px, а не 16: на 16 детальные мотивы (лабиринт,
@@ -216,7 +244,7 @@ export default function Matches() {
                       {m.partner.is_verified && <VerifiedBadge size={14} />}
                       {/* Beседа без взаимного лайка — отличаем визуально: это
                           не мэтч, собеседник может ещё не ответить */}
-                      {m.kind === "direct" && (
+                      {m.kind === "direct" && !m.locked && (
                         <span
                           className="px-1.5 py-[1px] rounded-full text-[10.5px] font-bold
                                      shrink-0 bg-accent/12 text-accent"
@@ -242,13 +270,23 @@ export default function Matches() {
                         </span>
                       )}
                     </div>
-                    <p
-                      className={`text-[13.5px] truncate ${
-                        m.unread_count ? "text-text font-medium" : "text-text-muted"
-                      }`}
-                    >
-                      {m.last_message}
-                    </p>
+                    {m.locked ? (
+                      // Превью сервер не отдал — и не должен. Вместо него
+                      // прямая причина: так строка объясняет себя сама, без
+                      // необходимости открывать шторку
+                      <p className="flex items-center gap-1.5 text-[13.5px] text-accent font-medium">
+                        <Lock size={12} className="shrink-0" />
+                        Лимит мэтчей на сегодня — откройте по подписке
+                      </p>
+                    ) : (
+                      <p
+                        className={`text-[13.5px] truncate ${
+                          m.unread_count ? "text-text font-medium" : "text-text-muted"
+                        }`}
+                      >
+                        {m.last_message}
+                      </p>
+                    )}
                   </div>
                   {!!m.unread_count && (
                     <span
@@ -265,6 +303,14 @@ export default function Matches() {
           </ul>
         </section>
       )}
+
+      {/* Один лист на все закрытые строки: объяснение и вход в подписку */}
+      <LimitSheet
+        kind="matches"
+        limits={limits}
+        open={limitSheet}
+        onClose={() => setLimitSheet(false)}
+      />
     </div>
   );
 }
@@ -276,12 +322,27 @@ function Avatar({
   name,
   size,
   ring,
+  locked,
 }: {
   src?: string;
   name?: string;
   size: number;
   ring?: boolean;
+  /** Мэтч за суточным лимитом: ни фото, ни первой буквы имени. */
+  locked?: boolean;
 }) {
+  if (locked) {
+    return (
+      <div
+        style={{ width: size, height: size }}
+        className="rounded-full shrink-0 bg-surface-2 border border-hairline
+                   flex items-center justify-center"
+      >
+        <Lock size={size / 2.8} className="text-text-faint" />
+      </div>
+    );
+  }
+
   return (
     <div
       style={{ width: size, height: size }}

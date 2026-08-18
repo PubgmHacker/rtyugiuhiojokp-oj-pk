@@ -16,17 +16,35 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout on 401
+/** Машинный код бана в теле ответа — тот же литерал в api/middleware/auth.py. */
+export const КОД_БАНА = "account_banned";
+
+// Автовыход на 401, экран блокировки на бан
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401) {
+    const код = error.response?.status;
+
+    if (код === 401) {
       localStorage.removeItem("sd_token");
       localStorage.removeItem("sd_user");
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
       }
+    } else if (код === 403 && error.response?.data?.code === КОД_БАНА) {
+      // Отличаем по коду, а не по самому 403: тем же кодом отвечают все гейты
+      // тарифов («доступно на Plus»), и уводить с апсейла на экран блокировки
+      // было бы хуже, чем не делать ничего.
+      //
+      // Токен намеренно не гасим. Во-первых, экран блокировки показывает, какой
+      // именно аккаунт закрыт, — по нему человек пишет в поддержку. Во-вторых,
+      // выкидывать на вход значит сказать «аккаунта нет», а он есть, и после
+      // разбора он должен открыться без повторного входа.
+      if (window.location.pathname !== "/banned") {
+        window.location.href = "/banned";
+      }
     }
+
     return Promise.reject(error);
   }
 );
@@ -140,6 +158,11 @@ export interface MatchResponse {
   streak_emoji?: string;
   streak_revives_left?: number;
   streak_can_revive?: boolean;
+
+  /** Мэтч за суточным лимитом бесплатного уровня. Сервер уже вычистил имя,
+      фото и превью переписки — показывать нечего, кроме замка. Счётчик
+      непрочитанных остаётся: он честный и он же повод оформить подписку. */
+  locked?: boolean;
 }
 
 /** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
@@ -150,41 +173,7 @@ export interface ReelPreview {
   caption: string;
 }
 
-/** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
-export interface MatchResponse {
-  id: string;
-  match_score?: number | null;
-  ai_reason?: string | null;
-  created_at?: string | null;
-  partner: UserProfile;
-  /** Превью для списка чатов — приходит вместе со списком мэтчей. */
-  last_message?: string | null;
-  last_message_at?: string | null;
-  unread_count?: number;
-  /** "match" — взаимный лайк, "direct" — платное письмо без взаимности. */
-  kind?: "match" | "direct";
-  /** Кто написал первым в "direct"-беседе. */
-  initiator_id?: string | null;
-  /** Ответил ли получатель на "direct"-письмо. */
-  direct_answered?: boolean;
-
-  // Серия общения (огонёк): приходит с пакетом в списке чатов, поэтому
-  // рядом храним и emoji — клиенту нечего вычислять по дням самому.
-  streak_days?: number;
-  streak_emoji?: string;
-  streak_revives_left?: number;
-  streak_can_revive?: boolean;
-}
-
-/** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
-export interface ReelPreview {
-  id: string;
-  video_url: string;
-  cover_url: string;
-  caption: string;
-}
-
-/** Пересланный ролик внутри сообщения — одна форма в личке и в комнате. */
+/** Одно сообщение переписки. */
 export interface ChatMessage {
   id: string;
   match_id: string;
@@ -339,6 +328,33 @@ export async function getSuperlikeQuota(): Promise<SuperlikeQuota> {
 
 export async function getLikesReceived(): Promise<UserProfile[]> {
   const { data } = await api.get("/likes/received");
+  return data;
+}
+
+/** Суточные лимиты бесплатного уровня: лайки и открытия мэтчей.
+ *  `-1` в `*_total` — без ограничения (подписка). `*_reset_at` — время, когда
+ *  вернётся первый израсходованный слот: окно скользящее, а не «в полночь». */
+export interface DailyLimits {
+  likes_left: number;
+  likes_total: number;
+  likes_reset_at?: string | null;
+  matches_left: number;
+  matches_total: number;
+  matches_reset_at?: string | null;
+  is_premium: boolean;
+}
+
+/** Признак «ограничения нет» — тот же сентинел, что `UNLIMITED` на сервере.
+ *  Ноль занят смыслом «нельзя совсем», поэтому безлимит отрицательный. */
+export function безлимит(total: number): boolean {
+  return total < 0;
+}
+
+/** Остатки суточных лимитов. Дека зовёт при открытии (счётчик), шторка
+ *  лимита — после 429, чтобы показать точное время возврата вместо
+ *  бессодержательного «попробуйте позже». */
+export async function getDailyLimits(): Promise<DailyLimits> {
+  const { data } = await api.get("/likes/limits");
   return data;
 }
 

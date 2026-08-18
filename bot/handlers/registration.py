@@ -332,7 +332,7 @@ async def _reverse_geocode(lat: float, lon: float) -> str:
             "zoom": "10",
             "accept-language": "ru",
         }
-        headers = {"User-Agent": "Souldawn-Dating-Bot/1.0 (support@souldawn.app)"}
+        headers = {"User-Agent": "Simp-Dating-Bot/1.0 (support@simp.app)"}
         timeout = aiohttp.ClientTimeout(total=6)
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             async with session.get(

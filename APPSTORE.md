@@ -1,4 +1,4 @@
-# Публикация Souldawn в App Store
+# Публикация Симп в App Store
 
 Пошаговая инструкция для категории Dating — самой строгой при ревью.
 Проект собирается локально: `./tools/ios-build.sh simulator` уже проходит.
@@ -29,7 +29,7 @@
 1. **Аккаунт.** Нужен платный Apple Developer Program (99 $/год). Для
    dating-приложения выгоднее оформить на организацию: приложения от
    Individual чаще получают дополнительные вопросы при ревью.
-2. **Bundle ID.** Зарегистрируйте `com.souldawn.dating` (Identifiers →
+2. **Bundle ID.** Зарегистрируйте `com.simp.dating` (Identifiers →
    App IDs). Включите Capability **Push Notifications**.
 3. **APNs-ключ.** Keys → создайте ключ с Apple Push Notifications service,
    скачайте `.p8` (скачать можно один раз). Сохраните Key ID и Team ID —
@@ -74,18 +74,45 @@ number): App Store Connect не принимает повторную загру
 «Frequent/Intense Sexual Content or Nudity» → *None*, но категорию
 Dating указать необходимо. Прежнего уровня 17+ в анкете больше нет:
 Apple перешла на шкалу 4+ / 9+ / 13+ / 16+ / 18+, и сервисы знакомств
-с чатом и пользовательским контентом попадают в 18+. Это совпадает
-с порогом, который заявлен в самом продукте (онбординг и `terms.html`
-говорят «только для лиц старше 18 лет») — расхождение здесь само по
-себе повод для вопросов на ревью.
+с чатом и пользовательским контентом попадают в 18+.
+
+**Рейтинг магазина и порог регистрации у нас не совпадают.** Раньше
+здесь было написано обратное — будто онбординг и `terms.html` требуют
+18 — и это была неправда, из которой следовал ложный вывод «расхождения
+нет». Как на самом деле: рейтинг 18+ описывает, кому App Store отдаёт
+приложение (родительский контроль на устройстве). Порог регистрации в
+продукте — 16 лет, и он записан в пяти местах: `api/config.py`
+(`MIN_AGE`), анкета бота (`bot/texts.py`), оферта (`landing/terms.html`),
+политика (`landing/privacy.html`), лендинг и описание для поисковиков.
+
+Ревьюер открывает оферту по обязательной ссылке EULA и видит там 16 при
+рейтинге 18+. Это вопрос, который задают на ревью, и ответ на него нужен
+до подачи, а не в переписке Resolution Center. Выбор за владельцем
+продукта, вариантов три:
+
+1. **Поднять порог до 18 везде** — в `MIN_AGE` и во всех текстах.
+   Расхождение исчезает совсем, аудитория сужается. Правка механическая,
+   от рассинхрона страхует `api/tests/test_age_floor.py`.
+2. **Оставить 16 и объяснить в App Review Notes** — рейтинг выбран по
+   содержимому, регистрация допускается с 16 лет там, где это законно.
+   Дешевле всего, но это именно риск: ревью вправе потребовать, чтобы
+   заявленный порог совпадал с рейтингом, и тогда правка всё равно
+   понадобится, только уже с отклонённой сборкой на руках.
+3. **Порог по платформе: в iOS — 18, в Telegram — 16.** Так делают
+   крупные сервисы, где местное право расходится. Требует кода:
+   регистрация должна знать источник (нативная сборка или Telegram) и
+   держать для них разные границы, а оферта — описывать оба порога.
+
+Пока решение не принято, в продукте действует 16 — то есть по умолчанию
+подача идёт по варианту 2 со всеми его рисками.
 
 **Категория:** Primary — Social Networking, Secondary — Lifestyle.
 
 **Обязательные URL** (разверните `landing/` и подставьте реальный домен):
-- Privacy Policy URL → `https://souldawn.app/privacy.html`
-- Terms of Use (EULA) → `https://souldawn.app/terms.html`
-- Support URL → `https://souldawn.app/support.html`
-- Marketing URL → `https://souldawn.app/`
+- Privacy Policy URL → `https://simp.app/privacy.html`
+- Terms of Use (EULA) → `https://simp.app/terms.html`
+- Support URL → `https://simp.app/support.html`
+- Marketing URL → `https://simp.app/`
 
 **App Privacy.** Заполните Nutrition Labels строго в соответствии с
 `PrivacyInfo.xcprivacy`: имя, фото, приблизительное местоположение,
@@ -130,9 +157,9 @@ xcrun simctl io booted screenshot shot1.png
 
    | Уровень | Месяц | 3 месяца | Год |
    |---|---|---|---|
-   | Plus | `com.souldawn.dating.plus.monthly` | `...plus.quarterly` | `...plus.yearly` |
-   | Ultra | `com.souldawn.dating.ultra.monthly` | `...ultra.quarterly` | `...ultra.yearly` |
-   | Aurora | `com.souldawn.dating.aurora.monthly` | `...aurora.quarterly` | `...aurora.yearly` |
+   | Plus | `com.simp.dating.plus.monthly` | `...plus.quarterly` | `...plus.yearly` |
+   | Ultra | `com.simp.dating.ultra.monthly` | `...ultra.quarterly` | `...ultra.yearly` |
+   | Aurora | `com.simp.dating.aurora.monthly` | `...aurora.quarterly` | `...aurora.yearly` |
 
    Идентификаторы заданы в `api/services/plans.py` (`Plan.appstore_id`), а не
    переменными окружения: продукт — это уровень плюс срок, одной парой
@@ -150,7 +177,7 @@ xcrun simctl io booted screenshot shot1.png
    их покупки живут в песочнице.
 5. Локально покупки тестируются без App Store Connect: в Xcode откройте
    Product → Scheme → Edit Scheme → Options → StoreKit Configuration и
-   выберите `web/ios/App/Souldawn.storekit`. Этот файл собран из линейки, и
+   выберите `web/ios/App/Simp.storekit`. Этот файл собран из линейки, и
    его совпадение с ней стережёт `api/tests/test_appstore.py` — правьте
    тарифы в `plans.py`, а не в нём.
 
@@ -212,7 +239,7 @@ Information либо приложите свежий код, либо опиши
 - [x] Premium в iOS продаётся через StoreKit IAP с серверной проверкой чеков
 - [ ] Продукты подписки созданы в App Store Connect, `APPSTORE_APP_APPLE_ID` задан
 - [ ] Sign in with Apple добавлен или подготовлено обоснование
-- [ ] Домен `souldawn.app` работает, все юридические страницы открываются
+- [ ] Домен `simp.app` работает, все юридические страницы открываются
 - [ ] `VITE_API_URL` в сборке указывает на продакшен, не на localhost
 - [ ] `DEBUG=false` на бэкенде: `/docs` и гостевой вход недоступны
 - [ ] `ZHIPU_API_KEY` и ключи R2 заданы — модерация и фото работают

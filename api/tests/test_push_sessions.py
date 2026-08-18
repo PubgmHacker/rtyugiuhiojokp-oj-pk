@@ -84,7 +84,7 @@ def ключи_apns(monkeypatch):
         ("APNS_KEY_P8", "key"),
         ("APNS_KEY_ID", "ABC123"),
         ("APNS_TEAM_ID", "TEAM123"),
-        ("APNS_BUNDLE_ID", "com.souldawn.dating"),
+        ("APNS_BUNDLE_ID", "com.simp.dating"),
     ):
         monkeypatch.setattr(push.settings, имя, значение)
     return push

@@ -14,6 +14,7 @@ from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
 from services.chat_delivery import ДоставкаОтклонена, fan_out, save_message
 from services.token_revocation import is_revoked
+from services.quotas import open_match
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -85,6 +86,17 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
         if not match:
             await websocket.close(code=4004, reason="Match not found")
             return
+
+        # Суточный лимит открытых мэтчей: сокет — такой же вход в беседу, как
+        # `GET /matches/{id}/messages`, и незакрытый обнулял бы лимит целиком.
+        # Коммит здесь свой: сессия ручная, зависимость её не доведёт.
+        итог = await open_match(session, user_id, match_id)
+        if not итог.granted:
+            await session.rollback()
+            await websocket.close(code=4029, reason="Daily match limit")
+            return
+        await session.commit()
+
         partner_id = match.user2_id if match.user1_id == user_id else match.user1_id
 
     await manager.connect(match_id, websocket, user_id)

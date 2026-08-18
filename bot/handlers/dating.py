@@ -9,12 +9,12 @@ from aiogram.fsm.context import FSMContext
 from config import BANNERS, SITE_URL
 from database import (
     get_or_create_user, get_profile, get_deck_profiles,
-    like_and_match, get_user_by_id,
+    like_and_match, get_user_by_id, get_daily_limits,
     create_report, block_user,
 )
 from keyboards import (
-    dating_action_kb, like_locked_kb, main_kb, no_more_profiles_kb, profile_kb,
-    report_reasons_kb,
+    dating_action_kb, like_locked_kb, limit_reached_kb, main_kb,
+    no_more_profiles_kb, profile_kb, report_reasons_kb,
 )
 from services.moderation import moderate_text, humanize
 from services.plans import видно_кто_лайкнул
@@ -59,10 +59,16 @@ async def _show_next_profile(message: Message, tg_id: int, user_id: str, state: 
     profiles = await get_deck_profiles(user_id, limit=5)
 
     if not profiles:
+        # Клавиатура сама решает, есть ли чем открыть мини-апп; текст обязан
+        # говорить то же самое, иначе он обещает кнопку, которой в нём нет
+        клавиатура = no_more_profiles_kb()
+        есть_приложение = any(
+            btn.web_app or btn.url for row in клавиатура.inline_keyboard for btn in row
+        )
         await message.answer_photo(
             photo=BANNERS["menu"],
-            caption=no_more_profiles(),
-            reply_markup=no_more_profiles_kb(),
+            caption=no_more_profiles(есть_приложение),
+            reply_markup=клавиатура,
         )
         return
 
@@ -111,6 +117,21 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
     like_type = "pass" if action == "pass" else "like"
 
     if action == "message":
+        # Лимит проверяем ДО того, как просить текст: иначе человек напишет
+        # пару слов, а лайк уйдёт в отказ — мы приняли бы сообщение, которое
+        # некуда отправить. Проверка тут только предупредительная, настоящая
+        # (под локом) всё равно живёт в like_and_match.
+        лимиты = await get_daily_limits(db_user["id"])
+        if лимиты["likes"].exhausted:
+            await callback.answer(T.LIKES_LIMIT_SHORT, show_alert=True)
+            await callback.message.answer(
+                T.likes_limit_reached(
+                    лимиты["likes"].limit, лимиты["likes"].reset_at
+                ),
+                reply_markup=limit_reached_kb("dating:next"),
+            )
+            return
+
         # Текст уйдёт вместе с лайком, поэтому сначала спрашиваем его, а лайк
         # ставим уже после — иначе при отказе от ввода остался бы «немой» лайк
         await callback.answer()
@@ -128,6 +149,17 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
     # иначе два встречных лайка в один момент теряют мэтч
     like_result = await like_and_match(db_user["id"], target_id, like_type)
 
+    if like_result.get("limited"):
+        # Лайк НЕ записан: суточная квота бесплатного уровня исчерпана.
+        # Карточку оставляем на месте — 👎 лимит не тратит, листать можно
+        # дальше, и это единственная разница с обычным отказом
+        await callback.answer(T.LIKES_LIMIT_SHORT, show_alert=True)
+        await callback.message.answer(
+            T.likes_limit_reached(like_result["limit"], like_result["reset_at"]),
+            reply_markup=limit_reached_kb("dating:next"),
+        )
+        return
+
     if action == "pass":
         await callback.answer("👎 Пропущено")
         # Delete current profile message and show next
@@ -142,8 +174,10 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
     # Всплывающий ответ и снятие карточки — здесь: у ветки с сообщением
     # своего callback уже нет, а «живые» кнопки после решения оставлять
     # нельзя, повторные тапы это спам
-    await callback.answer("🎉 Это мэтч!" if like_result.get("matched") else "👍 Понравилось!",
-                          show_alert=like_result.get("matched", False))
+    await callback.answer(
+        _ответ_на_лайк(like_result),
+        show_alert=like_result.get("matched", False),
+    )
     try:
         await callback.message.delete()
     except Exception:
@@ -153,6 +187,27 @@ async def handle_like(callback: CallbackQuery, state: FSMContext):
         callback.message, callback.bot, db_user, target_id, like_result,
         state, in_registration,
     )
+
+
+def _ответ_на_лайк(like_result: dict) -> str:
+    """Текст всплывашки после лайка, с остатком суточной квоты.
+
+    Остаток показываем на последних лайках, а не всегда: постоянный счётчик
+    рядом с «Понравилось!» превращает свайпы в бухгалтерию. А вот молчание до
+    самого отказа хуже — первый отказ читается как поломка бота.
+
+    Остаток приходит из `like_and_match`, который посчитал его под локом:
+    отдельный запрос здесь означал бы лишний round-trip на каждый свайп.
+    """
+    if like_result.get("matched"):
+        return "🎉 Это мэтч!"
+    осталось = like_result.get("likes_left")
+    if осталось is not None and осталось <= 3:
+        if осталось == 0:
+            return "👍 Понравилось! Это был последний лайк на сегодня"
+        хвост = T.падеж(осталось, "лайк", "лайка", "лайков")
+        return f"👍 Понравилось! Осталось {осталось} {хвост}"
+    return "👍 Понравилось!"
 
 
 async def _after_like(
@@ -282,6 +337,17 @@ async def process_like_message(message: Message, state: FSMContext):
 
     await state.set_state(DatingStates.viewing_profile)
     await state.update_data(like_message_target=None)
+
+    if like_result.get("limited"):
+        # Квота кончилась между вопросом и ответом — например, человек лайкал
+        # из мини-аппа, пока писал здесь. Текст НЕ отправлен, и говорим об этом
+        # прямо: «Отправлено» с потерянным сообщением хуже отказа
+        await message.answer(
+            T.likes_limit_reached(like_result["limit"], like_result["reset_at"]),
+            reply_markup=limit_reached_kb("dating:next"),
+        )
+        return
+
     await message.answer(T.LIKE_MESSAGE_SENT)
 
     await _after_like(

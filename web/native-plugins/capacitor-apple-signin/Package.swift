@@ -2,15 +2,15 @@
 import PackageDescription
 
 // Имя продукта Capacitor CLI выводит из имени npm-пакета
-// (@souldawn/capacitor-apple-signin → SouldawnCapacitorAppleSignin) и
+// (@simp/capacitor-apple-signin → SimpCapacitorAppleSignin) и
 // подставляет в автогенерируемый ios/App/CapApp-SPM/Package.swift.
 // Переименуешь — сборка перестанет находить продукт.
 let package = Package(
-    name: "SouldawnCapacitorAppleSignin",
+    name: "SimpCapacitorAppleSignin",
     platforms: [.iOS(.v16)],
     products: [
         .library(
-            name: "SouldawnCapacitorAppleSignin",
+            name: "SimpCapacitorAppleSignin",
             targets: ["AppleSignInPlugin"])
     ],
     dependencies: [

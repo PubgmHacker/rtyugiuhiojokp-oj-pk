@@ -157,6 +157,14 @@ async def развернуть(me_key: str, только_снос: bool) -> None
             s.add(меня)
             await s.flush()
             log.info("создан аудит-аккаунт %s (%s)", me_key, меня.id)
+        else:
+            # Аудит-аккаунт — НЕ demo:*, снос выше его не касается, поэтому
+            # всё, что мы вешаем лично на него, надо снять руками. Иначе
+            # второй запуск падал на уникальном (user_id, code) наклеек, а
+            # задачи и своя история молча копились с каждым разом.
+            for модель in (StickerOwned, UserHabit, Story):
+                await s.execute(delete(модель).where(модель.user_id == меня.id))
+            log.info("сняты прежние наклейки, задачи и истории аудит-аккаунта")
 
         мой_профиль = await s.get(Profile, меня.id)
         if мой_профиль is None:
@@ -300,7 +308,7 @@ async def развернуть(me_key: str, только_снос: bool) -> None
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Демо-данные Souldawn для локальной разработки")
+    p = argparse.ArgumentParser(description="Демо-данные Симпа для локальной разработки")
     p.add_argument("--me", default="dev:audit-jax",
                    help="ключ phone аккаунта, вокруг которого строится демо (default: dev:audit-jax)")
     p.add_argument("--wipe", action="store_true", help="только удалить демо-данные")

@@ -1,4 +1,4 @@
-# Лендинг Souldawn
+# Лендинг Симп
 
 Статический сайт без сборки: чистый HTML, CSS и ванильный JS. Нет
 зависимостей, нет тулчейна — разворачивается копированием папки.
@@ -35,7 +35,7 @@ python3 -m http.server 8000
 **Cloudflare Pages** (рекомендуется — бесплатно, CDN, автоматический HTTPS):
 
 ```bash
-npx wrangler pages deploy landing --project-name souldawn
+npx wrangler pages deploy landing --project-name simp
 ```
 
 **Railway / любой статический хостинг:** отдавайте папку `landing`
@@ -45,8 +45,8 @@ npx wrangler pages deploy landing --project-name souldawn
 
 ```nginx
 server {
-    server_name souldawn.app;
-    root /var/www/souldawn/landing;
+    server_name simp.app;
+    root /var/www/simp/landing;
     index index.html;
     location / { try_files $uri $uri/ =404; }
 }
@@ -56,15 +56,15 @@ server {
 
 Значения-заглушки, которые нужно обновить на реальные:
 
-1. **Ссылка на бота** — `https://t.me/souldawn_dating_bot` встречается во всех
+1. **Ссылка на бота** — `https://t.me/simp_dating_bot` встречается во всех
    HTML-файлах. Замените на реальное имя бота:
    ```bash
    cd landing
-   sed -i '' 's|t.me/souldawn_dating_bot|t.me/ВАШ_БОТ|g' *.html
+   sed -i '' 's|t.me/simp_dating_bot|t.me/ВАШ_БОТ|g' *.html
    ```
-2. **Домен** — `https://souldawn.app` в `canonical`, Open Graph,
+2. **Домен** — `https://simp.app` в `canonical`, Open Graph,
    `sitemap.xml` и `robots.txt`.
-3. **Адреса почты** — `support@`, `privacy@`, `safety@souldawn.app`
+3. **Адреса почты** — `support@`, `privacy@`, `safety@simp.app`
    должны существовать и приниматься.
 4. **Ссылка в App Store** — на главной кнопка «Скачать в App Store»
    ведёт на секцию `#ios`. После публикации приложения замените на

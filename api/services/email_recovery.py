@@ -61,21 +61,24 @@ def почта_похожа_на_настоящую(email: str) -> bool:
     return bool(_EMAIL_RE.match(нормализовать(email))) and len(email) <= 254
 
 
-def _хеш(email: str) -> str:
-    """Ключ Redis по почте, а не сама почта.
+def хеш_почты(email: str) -> str:
+    """Как продукт называет адрес в ключах Redis и в логах — вместо самого адреса.
 
     В Redis нередко смотрят глазами и его дампят в логи; адреса — персональные
-    данные, и складывать их в ключи незачем.
+    данные, и складывать их в ключи незачем. Тем же хешем адрес обозначает
+    `services/mailer.py`, когда пишет в лог неудачную отправку: строки логов
+    сходятся между собой, а адрес не утекает ни в одну из них. Функция публичная
+    именно поэтому — второй такой формулы в проекте быть не должно.
     """
     return hashlib.sha256(нормализовать(email).encode()).hexdigest()[:32]
 
 
 def _код_ключ(email: str) -> str:
-    return f"dating:email:code:{_хеш(email)}"
+    return f"dating:email:code:{хеш_почты(email)}"
 
 
 def _попытки_ключ(email: str) -> str:
-    return f"dating:email:attempts:{_хеш(email)}"
+    return f"dating:email:attempts:{хеш_почты(email)}"
 
 
 def _отправки_ключ(user_id: str) -> str:
@@ -122,7 +125,7 @@ async def проверить_код(email: str, код: str) -> str | None:
     if попытки > MAX_ATTEMPTS:
         # Код сжигаем целиком: продолжать перебор бессмысленно
         await r.delete(_код_ключ(email))
-        logger.warning(f"Перебор кода почты, код погашен ({_хеш(email)})")
+        logger.warning(f"Перебор кода почты, код погашен ({хеш_почты(email)})")
         return None
 
     значение = await r.get(_код_ключ(email))

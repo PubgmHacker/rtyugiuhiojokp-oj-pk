@@ -38,6 +38,7 @@ const Tarot = lazy(() => import("./pages/Tarot"));
 const VoiceRoulette = lazy(() => import("./pages/VoiceRoulette"));
 const More = lazy(() => import("./pages/More"));
 const Habits = lazy(() => import("./pages/Habits"));
+const Banned = lazy(() => import("./pages/Banned"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
 // Пять вкладок, как в референсе: Лента, Лайки, Чаты, Ещё, Профиль.

@@ -6,33 +6,107 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardRemove,
+    WebAppInfo,
 )
 
-from config import SITE_URL
+from config import mini_app_openable, mini_app_url, webapp_https
 from services.plans import имя_уровня_для
+import texts as T
+
+
+def кнопка_приложения(text: str, path: str = "") -> InlineKeyboardButton | None:
+    """Кнопка в мини-апп — или None, если открывать его нечем.
+
+    Telegram отклоняет web_app не по HTTPS, и отклоняет СООБЩЕНИЕ ЦЕЛИКОМ, а не
+    одну кнопку: `Bad Request: BUTTON_TYPE_INVALID` — и человек не получает ни
+    меню, ни текста. Ровно на HTTP-конфигурации это и происходило, то есть на
+    той самой, где `start_app_kb` уводит человека в анкету бота, рассчитывая,
+    что меню придёт следом.
+
+    По HTTP без петли остаётся обычная url-кнопка: тот же адрес во внешнем
+    браузере. Хуже, чем внутри Telegram, но это работающий стенд.
+
+    Петлю не отдаём никому: `http://localhost:5173` в чужом Telegram — адрес
+    самого телефона получателя. Кнопки нет вовсе, и вызывающий строит клавиатуру
+    без неё, а не с мёртвой.
+    """
+    if webapp_https():
+        return InlineKeyboardButton(text=text, web_app=WebAppInfo(url=mini_app_url(path)))
+    if mini_app_openable():
+        return InlineKeyboardButton(text=text, url=mini_app_url(path))
+    return None
+
+# Сетка как у Mimolet: 2×3 + 中文 отдельной строкой. Нереализованные
+# локали всё равно показываем — тексты после выбора падают в en.
+ONBOARDING_LANGUAGES: tuple[tuple[str, str], ...] = (
+    ("ru", "🇷🇺 Русский"),
+    ("en", "🇬🇧 English"),
+    ("uz", "🇺🇿 O'zbekcha"),
+    ("es", "🇪🇸 Español"),
+    ("tr", "🇹🇷 Türkçe"),
+    ("id", "🇮🇩 Bahasa Indonesia"),
+    ("zh", "🇨🇳 中文"),
+)
+
+
+def language_kb() -> InlineKeyboardMarkup:
+    """Выбор языка — сетка флагов, как у Mimolet после /start."""
+    rows: list[list[InlineKeyboardButton]] = []
+    pair: list[InlineKeyboardButton] = []
+    for code, label in ONBOARDING_LANGUAGES:
+        pair.append(
+            InlineKeyboardButton(text=label, callback_data=f"onb:lang:{code}")
+        )
+        if len(pair) == 2:
+            rows.append(pair)
+            pair = []
+    if pair:
+        rows.append(pair)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def consent_kb(locale: str = "ru") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=T.onboarding_continue_label(locale),
+                    callback_data="onb:consent",
+                )
+            ]
+        ]
+    )
+
+
+def start_app_kb(locale: str = "ru") -> InlineKeyboardMarkup:
+    """«Начать» открывает мини-апп. Без HTTPS Telegram web_app не примет —
+    тогда кнопка ведёт в анкету бота, чтобы /start не заканчивался тупиком."""
+    label = T.onboarding_start_label(locale)
+    button = кнопка_приложения(label)
+    if button is None:
+        button = InlineKeyboardButton(text=label, callback_data="onb:start")
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 
 def main_kb() -> InlineKeyboardMarkup:
     """Главное меню. Держим коротким: смотреть анкеты — основное действие."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Смотреть анкеты", callback_data="dating:start")],
-            [
-                InlineKeyboardButton(text="👤 Моя анкета", callback_data="profile:view"),
-                InlineKeyboardButton(text="💕 Мэтчи", callback_data="matches:list"),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✨ Открыть приложение",
-                    web_app={"url": f"{SITE_URL}/discover"},
-                )
-            ],
-            [
-                InlineKeyboardButton(text="⭐ Premium", callback_data="premium"),
-                InlineKeyboardButton(text="🎁 Друзья", callback_data="referral"),
-            ],
+    rows = [
+        [InlineKeyboardButton(text="🔍 Смотреть анкеты", callback_data="dating:start")],
+        [
+            InlineKeyboardButton(text="👤 Моя анкета", callback_data="profile:view"),
+            InlineKeyboardButton(text="💕 Мэтчи", callback_data="matches:list"),
+        ],
+    ]
+    приложение = кнопка_приложения("✨ Открыть приложение", "/discover")
+    if приложение:
+        rows.append([приложение])
+    rows.append(
+        [
+            InlineKeyboardButton(text="⭐ Premium", callback_data="premium"),
+            InlineKeyboardButton(text="🎁 Друзья", callback_data="referral"),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ── Регистрация ─────────────────────────────────────────────────
@@ -180,18 +254,18 @@ def dating_action_kb(profile_user_id: str) -> InlineKeyboardMarkup:
 def no_more_profiles_kb() -> InlineKeyboardMarkup:
     """Анкеты закончились: настроек поиска (возраст, дистанция, нишевые
     фильтры) в самом боте нет — кнопка ведёт прямо в мини-апп, где они есть,
-    а не просто в главное меню."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✨ Открыть настройки поиска",
-                    web_app={"url": f"{SITE_URL}/discover"},
-                )
-            ],
-            [InlineKeyboardButton(text="← Меню", callback_data="menu")],
-        ]
-    )
+    а не просто в главное меню.
+
+    Если мини-апп открывать нечем, кнопки нет, и текст рядом не обещает
+    настройки (`texts.no_more_profiles`): обещание без кнопки читается как
+    поломка, а не как отсутствующая функция.
+    """
+    rows = []
+    приложение = кнопка_приложения("✨ Открыть настройки поиска", "/discover")
+    if приложение:
+        rows.append([приложение])
+    rows.append([InlineKeyboardButton(text="← Меню", callback_data="menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def like_locked_kb() -> InlineKeyboardMarkup:
@@ -211,6 +285,33 @@ def like_locked_kb() -> InlineKeyboardMarkup:
                 callback_data="premium",
             )],
             [InlineKeyboardButton(text="← Меню", callback_data="menu")],
+        ]
+    )
+
+
+def limit_reached_kb(back_to: str = "menu") -> InlineKeyboardMarkup:
+    """Суточный лимит исчерпан: витрина подписки и путь назад.
+
+    Кнопка ведёт на `premium` внутри бота, а не в мини-апп: лимит серверный и
+    там тот же (api/services/quotas.py), так что человек прошёл бы круг зря.
+
+    `back_to` — куда вернуться: из деки к следующей анкете, из мэтчей к списку.
+    Один и тот же «← Меню» после отказа выбрасывал бы человека из потока,
+    в котором он был.
+    """
+    подписи = {
+        "dating:next": "← Смотреть дальше",
+        "matches:list": "← К мэтчам",
+        "menu": "← Меню",
+    }
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="⭐ Открыть без лимитов", callback_data="premium",
+            )],
+            [InlineKeyboardButton(
+                text=подписи.get(back_to, "← Меню"), callback_data=back_to,
+            )],
         ]
     )
 
@@ -244,13 +345,10 @@ def report_reasons_kb(target_id: str) -> InlineKeyboardMarkup:
 def profile_kb(is_paused: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="✏️ Изменить анкету", callback_data="profile:edit")],
-        [
-            InlineKeyboardButton(
-                text="✨ Открыть в приложении",
-                web_app={"url": f"{SITE_URL}/profile"},
-            )
-        ],
     ]
+    приложение = кнопка_приложения("✨ Открыть в приложении", "/profile")
+    if приложение:
+        rows.append([приложение])
     if is_paused:
         rows.append(
             [InlineKeyboardButton(text="▶️ Вернуть в поиск", callback_data="profile:resume")]
@@ -274,8 +372,23 @@ def delete_confirm_kb() -> InlineKeyboardMarkup:
 # ── Мэтчи и чат ─────────────────────────────────────────────────
 
 def matches_list_kb(matches: list[dict]) -> InlineKeyboardMarkup:
+    """Список мэтчей. Закрытые суточным лимитом остаются в списке — они и есть
+    витрина подписки, — но под замком и без имени: имя закрытого сюда уже не
+    приходит (см. database/connection.get_user_matches).
+
+    Кнопка живая, а не выключенная: нажатие объясняет лимит и предлагает
+    подписку, а серая кнопка не объясняет ничего.
+    """
     rows = []
     for m in matches[:10]:
+        if m.get("locked"):
+            rows.append(
+                [InlineKeyboardButton(
+                    text="🔒 Мэтч — открыть по подписке",
+                    callback_data=f"chat:open:{m['id']}",
+                )]
+            )
+            continue
         label = m.get("partner_name") or "Мэтч"
         rows.append(
             [InlineKeyboardButton(text=f"💬 {label}", callback_data=f"chat:open:{m['id']}")]

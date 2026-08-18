@@ -23,7 +23,7 @@
 --dev-login берёт настоящий токен через /auth/dev (работает только при
 DEBUG=true) — экраны наполняются тем, что реально отдаёт API.
 
-Результат: PNG в /tmp/souldawn-shots/ + список элементов, выходящих за вьюпорт.
+Результат: PNG в /tmp/simp-shots/ + список элементов, выходящих за вьюпорт.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from pathlib import Path
 
 ПОРТ_ОТЛАДКИ = 9333
 БАЗА = "http://localhost:4180"
-ВЫХОД = Path("/tmp/souldawn-shots")
+ВЫХОД = Path("/tmp/simp-shots")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 #: Ширины, на которых продукт обязан выглядеть целым. 320 — iPhone SE, самый

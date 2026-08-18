@@ -23,7 +23,7 @@ import {
 import { useStore } from "../lib/store";
 import { Button, Card, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
 
 /** Уровни в порядке старшинства; бесплатный в витрине покупать нечего.
  *
@@ -214,7 +214,7 @@ export default function Plans() {
               <div className="flex items-center gap-2.5 mb-3">
                 <TierIcon tier={shown.tier} />
                 <span className="font-bold text-[16px]">
-                  Souldawn {shown.name}
+                  Симп {shown.name}
                 </span>
               </div>
 

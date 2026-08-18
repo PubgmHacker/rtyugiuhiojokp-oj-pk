@@ -20,8 +20,8 @@ let package = Package(
         .package(name: "CapacitorPushNotifications", path: "../../../node_modules/@capacitor/push-notifications"),
         .package(name: "CapacitorSplashScreen", path: "../../../node_modules/@capacitor/splash-screen"),
         .package(name: "CapacitorStatusBar", path: "../../../node_modules/@capacitor/status-bar"),
-        .package(name: "SouldawnCapacitorAppleSignin", path: "../../../native-plugins/capacitor-apple-signin"),
-        .package(name: "SouldawnCapacitorIap", path: "../../../native-plugins/capacitor-iap")
+        .package(name: "SimpCapacitorAppleSignin", path: "../../../native-plugins/capacitor-apple-signin"),
+        .package(name: "SimpCapacitorIap", path: "../../../native-plugins/capacitor-iap")
     ],
     targets: [
         .target(
@@ -37,8 +37,8 @@ let package = Package(
                 .product(name: "CapacitorPushNotifications", package: "CapacitorPushNotifications"),
                 .product(name: "CapacitorSplashScreen", package: "CapacitorSplashScreen"),
                 .product(name: "CapacitorStatusBar", package: "CapacitorStatusBar"),
-                .product(name: "SouldawnCapacitorAppleSignin", package: "SouldawnCapacitorAppleSignin"),
-                .product(name: "SouldawnCapacitorIap", package: "SouldawnCapacitorIap")
+                .product(name: "SimpCapacitorAppleSignin", package: "SimpCapacitorAppleSignin"),
+                .product(name: "SimpCapacitorIap", package: "SimpCapacitorIap")
             ]
         )
     ]

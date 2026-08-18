@@ -74,12 +74,13 @@ async def клиент(app, живая_база, monkeypatch):
     import routers.cases as cases_mod
     import routers.likes as likes_mod
     import services.chat_delivery as delivery
+    import services.quotas as quotas_mod
 
     Session = живая_база["Session"]
 
     # pg_advisory_xact_lock есть только в Postgres. Подменяем ровно его, а не
     # всю работу с БД: сами блокировки проверяются в test_http_behavior.py
-    for мод in (likes_mod, cases_mod, delivery):
+    for мод in (likes_mod, cases_mod, delivery, quotas_mod):
         настоящий = мод.sa_text
         монк = (lambda н: lambda sql: н("SELECT 1") if "advisory" in sql else н(sql))(настоящий)
         monkeypatch.setattr(мод, "sa_text", монк)

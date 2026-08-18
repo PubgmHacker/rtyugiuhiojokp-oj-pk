@@ -28,6 +28,7 @@ from services.plans import (
     tier_allows,
 )
 from services.premium import current_tier
+from services.quotas import match_views_state, open_match, opened_match_ids
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
@@ -48,6 +49,26 @@ async def _get_own_match(session: AsyncSession, match_id: str, user_id: str) -> 
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
     return match
+
+
+async def _открыть_мэтч(session: AsyncSession, match_id: str, user_id: str) -> None:
+    """Списать суточное открытие мэтча или отказать со ссылкой на подписку.
+
+    Зовётся из каждой точки, где человек реально попадает в беседу: история
+    сообщений, отправка, айсбрейкеры, восстановление стрика и WebSocket. Одна
+    незакрытая точка обнуляет лимит целиком — читать чат через `/messages`
+    ничем не хуже, чем через список.
+
+    Идемпотентно в пределах окна: открытый чат можно листать и обновлять
+    сколько угодно, слот тратится один раз на мэтч (см. services/quotas.py).
+    """
+    итог = await open_match(session, user_id, match_id)
+    if not итог.granted:
+        raise HTTPException(
+            status_code=429,
+            detail=f"На бесплатном уровне открыто {итог.state.limit} мэтча в "
+            "сутки. Оформите подписку, чтобы открыть все, или подождите.",
+        )
 
 
 async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> MatchResponse:
@@ -138,28 +159,46 @@ async def get_matches(
     )
     unread = dict(result.all())
 
+    # Суточный лимит открытых мэтчей (бесплатный уровень). Список отдаём
+    # целиком — он и есть витрина подписки, — но у закрытых вычищаем данные
+    # партнёра и превью переписки. Вычищаем на сервере: скрытие только в
+    # интерфейсе обходится вкладкой «сеть» за один клик.
+    #
+    # Показ списка НЕ тратит квоту: иначе один заход в чаты сжигал бы все
+    # суточные открытия сразу (см. services/quotas.py).
+    tier = await current_tier(session, user.id)
+    opened = await opened_match_ids(session, user.id)
+    лимит_исчерпан = (await match_views_state(session, user.id, tier)).exhausted
+
     responses = []
     for m in matches:
         partner_id = m.user2_id if m.user1_id == user.id else m.user1_id
         profile = profiles.get(partner_id)
+        locked = лимит_исчерпан and m.id not in opened
 
-        partner_profile = UserProfile(
-            id=partner_id,
-            display_name=profile.display_name if profile else "",
-            bio=profile.bio if profile else "",
-            # «Скрыть возраст» действует и в списке чатов: настройка обещает
-            # скрыть возраст от всех, а не только от тех, кто ещё не мэтч
-            age=публичный_возраст(profile),
-            city=profile.city if profile else "",
-            photos=as_list(profile.photos) if profile else [],
-            interests=as_list(profile.interests) if profile else [],
-            sticker=картинка_наклейки(profile.sticker if profile else None),
-            decor=безопасный_код(profile.decor if profile else None),
-        )
+        if locked:
+            # Ни имени, ни фото, ни города: закрытый мэтч — это «есть кто-то»,
+            # а не «вот кто». Счётчик непрочитанных оставляем — он честный и
+            # он же главный повод оформить подписку.
+            partner_profile = UserProfile(id=partner_id)
+        else:
+            partner_profile = UserProfile(
+                id=partner_id,
+                display_name=profile.display_name if profile else "",
+                bio=profile.bio if profile else "",
+                # «Скрыть возраст» действует и в списке чатов: настройка обещает
+                # скрыть возраст от всех, а не только от тех, кто ещё не мэтч
+                age=публичный_возраст(profile),
+                city=profile.city if profile else "",
+                photos=as_list(profile.photos) if profile else [],
+                interests=as_list(profile.interests) if profile else [],
+                sticker=картинка_наклейки(profile.sticker if profile else None),
+                decor=безопасный_код(profile.decor if profile else None),
+            )
 
         last = last_messages.get(m.id)
         preview = None
-        if last:
+        if last and not locked:
             preview = last.text or ("Фотография" if last.image_url else None)
 
         # Стрик: сознательно делается одну копию на пару, а не по каждому
@@ -193,6 +232,7 @@ async def get_matches(
                 streak_emoji=emoji,
                 streak_can_revive=can_revive,
                 streak_revives_left=revives_left,
+                locked=locked,
             )
         )
 
@@ -211,6 +251,7 @@ async def get_messages(
     session: AsyncSession = Depends(get_session),
 ):
     await _get_own_match(session, match_id, user.id)
+    await _открыть_мэтч(session, match_id, user.id)
 
     # Последние `limit` сообщений (desc + reverse), не первые
     result = await session.execute(
@@ -255,6 +296,7 @@ async def post_message(
     Здесь только перевод отказа в HTTP-код.
     """
     match = await _get_own_match(session, match_id, user.id)
+    await _открыть_мэтч(session, match_id, user.id)
     partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
 
     text = str(data.get("text", "")).strip()[:2000]
@@ -382,6 +424,7 @@ async def get_icebreakers(
 ):
     """AI-айсбрейкеры: 3 варианта первого сообщения под анкету партнёра."""
     match = await _get_own_match(session, match_id, user.id)
+    await _открыть_мэтч(session, match_id, user.id)
     partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
     icebreakers = await generate_icebreakers(session, user.id, partner_id)
     return {"icebreakers": icebreakers}
@@ -401,6 +444,7 @@ async def revive_streak_route(
     (3 revive/месяц), а её не взяли — это осознанный отказ, а не баг.
     """
     match = await _get_own_match(session, match_id, user.id)
+    await _открыть_мэтч(session, match_id, user.id)
     try:
         streak = await revive_streak(session, match.id)
     except ValueError as err:

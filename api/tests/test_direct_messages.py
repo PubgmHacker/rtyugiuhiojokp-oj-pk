@@ -104,6 +104,7 @@ async def клиент(app, три_человека, monkeypatch):
     import routers.matches as matches_mod
     import services.chat_delivery as delivery
     import services.direct_messages as dm_mod
+    import services.quotas as quotas_mod
 
     Session = три_человека["Session"]
 
@@ -118,7 +119,7 @@ async def клиент(app, три_человека, monkeypatch):
     # Слово «advisory» в тексте оставляем: по нему `_СессияСЖурналомЛоков`
     # отличает захват лока от обычного запроса, а без него журнал видел бы
     # безобидный «SELECT 1» и проверка порядка локов молча ничего не проверяла.
-    for мод in (likes_mod, dm_mod, delivery):
+    for мод in (likes_mod, dm_mod, delivery, quotas_mod):
         настоящий = мод.sa_text
         монк = (
             lambda н: lambda sql: н("SELECT 1 -- advisory") if "advisory" in sql else н(sql)
@@ -517,7 +518,7 @@ async def test_чужая_картинка_не_принимается_и_по_h
     from models.models import Match
 
     настройки = get_settings()
-    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
 
     аня, боря = три_человека["аня"], три_человека["боря"]
     Session = три_человека["Session"]
@@ -535,13 +536,13 @@ async def test_чужая_картинка_не_принимается_и_по_h
 
     r = await клиент.post(
         f"/api/matches/{match_id}/messages",
-        json={"text": "а вот наша", "image_url": "https://media.souldawn.test/photos/a/1.jpg"},
+        json={"text": "а вот наша", "image_url": "https://media.simp.test/photos/a/1.jpg"},
     )
     assert r.status_code == 200, f"своя картинка не прошла: {r.text}"
 
     r = await клиент.get(f"/api/matches/{match_id}/messages")
     ссылки = [m["image_url"] for m in r.json()]
-    assert ссылки == ["https://media.souldawn.test/photos/a/1.jpg"], ссылки
+    assert ссылки == ["https://media.simp.test/photos/a/1.jpg"], ссылки
 
 
 async def test_размэтч_не_даёт_написать_письмо_заново(клиент, три_человека):

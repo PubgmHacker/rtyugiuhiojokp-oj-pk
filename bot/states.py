@@ -1,6 +1,13 @@
 from aiogram.fsm.state import StatesGroup, State
 
 
+class OnboardingStates(StatesGroup):
+    """Старт как у Mimolet: язык → согласие → рассылки → Начать."""
+
+    waiting_language = State()
+    waiting_consent = State()
+
+
 class RegistrationStates(StatesGroup):
     """Анкета за минимум шагов, как в «Дайвинчике»:
     имя → возраст → пол → кого ищем → цель → тип связи → город → фото → о себе.

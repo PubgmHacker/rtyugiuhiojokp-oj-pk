@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     JWT_ACCESS_EXPIRE_HOURS: int = 72  # 3 дня
 
     # ── Database ────────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://souldawn:souldawn_dating_dev@localhost:5433/souldawn_dating"
+    DATABASE_URL: str = "postgresql+asyncpg://simp:simp_dating_dev@localhost:5433/simp_dating"
 
     # ── Redis ────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6380/0"
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
-    R2_BUCKET_NAME: str = "souldawn-dating"
+    R2_BUCKET_NAME: str = "simp-dating"
     R2_PUBLIC_URL: str = ""
 
     # ── Zhipu AI (GLM-5.2) ──────────────────────────────────────
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Идентификаторы продуктов и сроки живут в services/plans.py — там же,
     # где цены и уровни. Пока bundle id не задан вместе с корневым
     # сертификатом Apple, покупка в приложении не предлагается.
-    APPSTORE_BUNDLE_ID: str = "com.souldawn.dating"
+    APPSTORE_BUNDLE_ID: str = "com.simp.dating"
     # Числовой Apple ID приложения из App Store Connect — библиотека Apple
     # требует его для проверки в Production
     APPSTORE_APP_APPLE_ID: int = 0
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     APNS_KEY_P8: str = ""
     APNS_KEY_ID: str = ""
     APNS_TEAM_ID: str = ""
-    APNS_BUNDLE_ID: str = "com.souldawn.dating"
+    APNS_BUNDLE_ID: str = "com.simp.dating"
     # Сборки из Xcode и TestFlight регистрируются в песочнице APNs,
     # прод-хост для них возвращает BadDeviceToken
     APNS_USE_SANDBOX: bool = False

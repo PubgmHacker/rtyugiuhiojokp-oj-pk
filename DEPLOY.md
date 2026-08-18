@@ -1,4 +1,4 @@
-# 🚀 Деплой на Railway — Souldawn Dating
+# 🚀 Деплой на Railway — Симп Dating
 
 Пошаговое руководство для запуска всех 3 сервисов (API + Bot + Web) на Railway.
 
@@ -26,7 +26,7 @@ git commit -m "feat: initial dating app — api + bot + web"
 
 # Запушь на GitHub в отдельный репозиторий
 # (или можешь использовать monorepo — Railway умеет subdir)
-gh repo create souldawn-dating --private --source=. --push
+gh repo create simp-dating --private --source=. --push
 ```
 
 ---
@@ -75,8 +75,16 @@ gh repo create souldawn-dating --private --source=. --push
 | `R2_ACCOUNT_ID` | (опц.) Cloudflare account ID |
 | `R2_ACCESS_KEY_ID` | (опц.) R2 access key |
 | `R2_SECRET_ACCESS_KEY` | (опц.) R2 secret |
-| `R2_BUCKET_NAME` | `souldawn-dating` |
+| `R2_BUCKET_NAME` | `simp-dating` |
 | `R2_PUBLIC_URL` | `https://media.yourdomain.com` |
+| `CORS_ORIGINS` | `https://web.xxx.up.railway.app` (домены фронтенда через запятую) |
+
+**`CORS_ORIGINS` не опциональна.** Не задашь — останется дефолт из
+`api/config.py`, а это localhost: браузер отбросит каждый ответ API, и
+приложение покажет пустые экраны с «не удалось загрузить». В логах API при
+этом всё зелёное, запросы приходят и отвечаются — отладка уходит в сторону
+сети и токенов. Домен фронтенда известен только после шага 7, поэтому
+вернись сюда и допиши его (Railway перезапустит сервис сам).
 
 4. Railway задеплоит → проверь **Logs**, дождись `Application startup complete`
 5. **Settings → Networking → Generate Domain** → получишь `https://api.xxx.up.railway.app`
@@ -110,12 +118,16 @@ gh repo create souldawn-dating --private --source=. --push
 | `DATABASE_URL` | `postgresql+asyncpg://...` (то же что у API) |
 | `REDIS_URL` | `redis://...` |
 | `BOT_TOKEN` | токен бота |
-| `BOT_USERNAME` | `souldawn_dating_bot` (без @) |
+| `BOT_USERNAME` | `simp_dating_bot` (без @) |
 | `ADMIN_IDS` | твой Telegram ID |
-| `API_BASE_URL` | `https://api.xxx.up.railway.app` |
 | `SITE_URL` | `https://web.xxx.up.railway.app` (после шага 7) |
 
-4. Railway задеплоит → в логах должно быть: `Souldawn Dating Bot @xxx started!`
+Бот работает с базой и Redis напрямую, к API по HTTP не обращается — адрес
+API ему задавать не нужно. `SITE_URL` обязателен и обязан быть HTTPS: по
+HTTP Telegram не примет ни кнопку меню «Dating», ни `web_app`-кнопки внутри
+сообщений, и бот останется без входа в приложение (см. `bot/keyboards.py`).
+
+4. Railway задеплоит → в логах должно быть: `Симп Dating Bot @xxx started!`
 5. Напиши боту `/start` — должен ответить приветствием
 
 ---
@@ -129,10 +141,31 @@ gh repo create souldawn-dating --private --source=. --push
 | Variable | Value |
 |---|---|
 | `VITE_API_URL` | `https://api.xxx.up.railway.app` |
-| `VITE_BOT_USERNAME` | `souldawn_dating_bot` |
+| `VITE_BOT_USERNAME` | `simp_dating_bot` |
 
 4. Railway задеплоит → **Generate Domain** → `https://web.xxx.up.railway.app`
-5. Открой сайт — должен показать лендинг
+5. Открой корень — там **само приложение** (SPA), а не лендинг: образ отдаёт
+   `serve dist -s`, лендинг деплоится отдельно из `landing/`. Вне Telegram
+   приложение покажет экран входа — это норма.
+6. Открой `https://web.xxx.up.railway.app/terms.html` — обязана открыться
+   оферта **с вёрсткой**. Это не украшение: именно по этому адресу бот
+   отправляет человека на экране согласия (`SITE_URL` из шага 6 + имя файла,
+   см. `bot/config.py: legal_url`). Проверь заодно `/privacy.html`.
+
+Юридические страницы в `web/public` — производные от `landing/`: их порождает
+`web/scripts/sync-landing.mjs`, он же вызывается автоматически перед сборкой
+(`prebuild`). Правится только `landing/`, затем:
+
+```bash
+cd web
+npm run sync:landing     # обновить копии
+npm run check:landing    # проверить, что не разошлись (это же делает CI)
+```
+
+Копии отличаются от сайта двумя вещами намеренно: ссылки на разделы лендинга
+становятся абсолютными (в мини-аппе корень занят SPA, `/#how` увёл бы человека
+в его же деку) и кнопка «Открыть в Telegram» становится «Вернуться в
+приложение». Список различий закрыт и лежит в том же скрипте.
 
 ---
 
@@ -241,7 +274,9 @@ Free trial даёт $5 — хватит на первую неделю тест�
 - [ ] API задеплоен, `/health` отвечает
 - [ ] `seed_admin.py` запущен, админ создан
 - [ ] Bot задеплоен, отвечает на `/start`
-- [ ] Web задеплоен, лендинг открывается
+- [ ] Web задеплоен, корень открывает приложение (SPA)
+- [ ] `/terms.html` и `/privacy.html` открываются с вёрсткой — по ним бот
+      отправляет человека на экране согласия
 - [ ] `VITE_API_URL` указан для Web
 - [ ] Mini App кнопка настроена в BotFather
 - [ ] Telegram Login работает (автологин из TMA)

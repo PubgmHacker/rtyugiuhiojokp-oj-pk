@@ -13,7 +13,7 @@ import Foundation
 @objc(AppleSignInPlugin)
 public class AppleSignInPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "AppleSignInPlugin"
-    public let jsName = "SouldawnAppleSignIn"
+    public let jsName = "SimpAppleSignIn"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "signIn", returnType: CAPPluginReturnPromise),

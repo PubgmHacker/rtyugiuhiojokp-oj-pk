@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SOULDAWN DATING — Seed Admin Script
+SIMP DATING — Seed Admin Script
 ===================================
 Creates the first super-admin user in the database.
 Run once: python seed_admin.py --telegram-id <YOUR_TG_ID> --name "Your Name"
@@ -72,7 +72,7 @@ async def create_admin(telegram_id: int, name: str = "Admin", email: str | None 
                 profile = Profile(
                     user_id=user.id,
                     display_name=name,
-                    bio="Администратор Souldawn Dating",
+                    bio="Администратор Симпа",
                     gender="other",
                     city="",
                 )
@@ -100,7 +100,7 @@ async def create_admin(telegram_id: int, name: str = "Admin", email: str | None 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create super-admin for Souldawn Dating")
+    parser = argparse.ArgumentParser(description="Create super-admin for Simp Dating")
     parser.add_argument(
         "--telegram-id", "-t",
         type=int, required=True,
@@ -119,7 +119,7 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"SOULDAWN DATING — Seed Admin")
+    print(f"SIMP DATING — Seed Admin")
     print(f"Creating admin with Telegram ID: {args.telegram_id}")
     print()
 

@@ -19,6 +19,27 @@ from models.models import User
 settings = get_settings()
 security = HTTPBearer()
 
+#: Машинный код бана в теле ответа. Тот же литерал ждёт перехватчик в
+#: `web/src/lib/api.ts` — при правке менять оба места.
+BANNED_CODE = "account_banned"
+
+
+class AccountBannedError(HTTPException):
+    """403 для заблокированного аккаунта — с машинным кодом в теле ответа.
+
+    Отдельный класс, а не голый ``HTTPException``: в API десятки других 403
+    («доступно на Plus», «это не ваш ролик», «расклады доступны на Ultra»), и
+    клиент не должен отличать бан от гейта тарифа по тексту сообщения — иначе
+    любая правка формулировки уводит человека с апсейла на экран блокировки.
+
+    ``detail`` остаётся человеческой строкой: код добавляет обработчик в
+    ``main.py`` отдельным полем, поэтому форма ответа для тех, кто читает
+    только ``detail``, не меняется.
+    """
+
+    def __init__(self, detail: str = "User is banned") -> None:
+        super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
 
 def create_access_token(user_id: str, telegram_id: Optional[int] = None) -> str:
     """Выпустить access-токен.
@@ -112,7 +133,7 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     if user.is_banned:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is banned")
+        raise AccountBannedError()
 
     return user
 

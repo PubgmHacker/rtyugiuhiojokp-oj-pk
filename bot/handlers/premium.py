@@ -56,7 +56,7 @@ def _tier_pitch(tier: str) -> str:
     perks = "\n".join(TIER_PERKS[tier])
     cheapest = min(plans_for(tier), key=lambda p: p.price_per_month)
     return (
-        f"<b>Souldawn {TIER_NAMES[tier]}</b>\n\n{perks}\n\n"
+        f"<b>Симп {TIER_NAMES[tier]}</b>\n\n{perks}\n\n"
         f"<i>от {cheapest.price_per_month} ₽ в месяц</i>"
     )
 
@@ -234,7 +234,7 @@ async def pay_stars(callback: CallbackQuery):
     # Код тарифа уходит в payload: по нему при успешной оплате мы узнаем,
     # что именно куплено — сам платёж такой информации не несёт
     await callback.message.answer_invoice(
-        title=f"Souldawn {plan.title}",
+        title=f"Симп {plan.title}",
         description=", ".join(_без_значка(p) for p in TIER_PERKS[plan.tier]),
         payload=f"plan:{plan.code}",
         currency="XTR",  # Telegram Stars
@@ -319,7 +319,7 @@ async def pay_crypto(callback: CallbackQuery):
 
     amount = usdt_for(plan)
     invoice = await cryptobot.create_premium_invoice(
-        db_user["id"], amount=amount, title=f"Souldawn {plan.title}",
+        db_user["id"], amount=amount, title=f"Симп {plan.title}",
     )
     if not invoice:
         await callback.message.answer(

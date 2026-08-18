@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Heart, Star, SlidersHorizontal, MessageCircleHeart } from "lucide-react";
-import type { DeckProfile, MatchResponse } from "../lib/api";
+import type { DeckProfile, MatchResponse, DailyLimits } from "../lib/api";
 import {
   likeProfile,
   getDeck,
   resetDeck,
   getSuperlikeQuota,
+  getDailyLimits,
+  безлимит,
   recordVisit,
 } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -15,6 +17,7 @@ import { useIsMounted } from "../hooks/useSafeAsync";
 import SwipeCard, { type SwipeDirection } from "./SwipeCard";
 import MatchModal from "./MatchModal";
 import DirectMessageSheet from "./DirectMessageSheet";
+import LimitSheet from "./LimitSheet";
 import { Button, IconButton, EmptyState, Skeleton } from "./ui";
 
 interface MatchData {
@@ -40,6 +43,11 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   // Суперлайков на сутки конечное число — кнопка должна это показывать,
   // иначе отказ сервера выглядит как поломка
   const [superlikesLeft, setSuperlikesLeft] = useState<number | null>(null);
+  // Суточный лимит лайков бесплатного уровня. Держим остаток рядом с
+  // суперлайками, но показываем и упираемся в него отдельно: суперлайк —
+  // отдельная квота поверх обычного лимита, и путать их нельзя
+  const [limits, setLimits] = useState<DailyLimits | null>(null);
+  const [limitSheet, setLimitSheet] = useState(false);
   // Лайк с сообщением: пишем до отправки, потому что текст уходит вместе
   // с лайком и увидят его ещё до взаимности
   const [noteFor, setNoteFor] = useState<DeckProfile | null>(null);
@@ -109,6 +117,18 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
       .catch(() => {
         if (isMounted()) setSuperlikesLeft(null); // счётчик необязателен
       });
+    // Остаток лайков нужен ДО первого свайпа: счётчик на кнопке — это и
+    // предупреждение, и витрина подписки. Без него лимит выглядел бы как
+    // внезапная поломка на десятом свайпе
+    getDailyLimits()
+      .then((l) => {
+        if (isMounted()) setLimits(l);
+      })
+      .catch(() => {
+        // Не смогли узнать остаток — свайпать не мешаем: настоящий отказ
+        // всё равно придёт с сервера, и тогда покажем шторку
+        if (isMounted()) setLimits(null);
+      });
   }, [isMounted]);
 
   // Визит отмечаем для той анкеты, что реально оказалась сверху — не для всей
@@ -124,10 +144,26 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   const handleSwipe = useCallback(
     async (direction: SwipeDirection, profile: DeckProfile, note = "") => {
       if (busyRef.current) return;
-      busyRef.current = true;
 
       const type =
         direction === "left" ? "pass" : direction === "up" ? "superlike" : "like";
+
+      // Лимит проверяем ДО того, как убрать карточку и занять busyRef:
+      // иначе анкета уходит из деки за отказ сервера, и человек теряет
+      // человека, которого даже не успел оценить. Пропуск лимит не тратит,
+      // поэтому листать дальше можно и на исчерпанной квоте
+      if (
+        type !== "pass" &&
+        limits &&
+        !безлимит(limits.likes_total) &&
+        limits.likes_left <= 0
+      ) {
+        haptic("error");
+        setLimitSheet(true);
+        return;
+      }
+
+      busyRef.current = true;
 
       // Оптимистично убираем карточку — интерфейс не должен ждать сеть
       removeDeckProfile(profile.id);
@@ -136,6 +172,17 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         const result = await likeProfile(profile.id, type, note);
         if (type === "superlike") {
           setSuperlikesLeft((n) => (n === null ? n : Math.max(0, n - 1)));
+        }
+        if (type !== "pass") {
+          // Считаем локально, чтобы счётчик на кнопке шёл вниз сразу.
+          // Сервер — источник истины: повторный лайк того же человека он не
+          // считает, поэтому расхождение возможно, но он же и остановит на
+          // настоящем нуле
+          setLimits((l) =>
+            l && !безлимит(l.likes_total)
+              ? { ...l, likes_left: Math.max(0, l.likes_left - 1) }
+              : l
+          );
         }
         if (result.matched && result.match) {
           haptic("success");
@@ -154,10 +201,28 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         haptic("error");
         setDeck([profile, ...useStore.getState().deck]);
         if (e?.response?.status === 429) {
-          setSuperlikesLeft(0);
-          setError(
-            e?.response?.data?.detail ?? "Суперлайки на сегодня закончились"
-          );
+          // 429 приходит от двух разных квот: суточных лайков и суперлайков.
+          // Различаем по типу жеста — иначе обычный лайк гасил бы кнопку
+          // суперлайка, а суперлайк открывал бы шторку про лайки
+          if (type === "superlike") {
+            setSuperlikesLeft(0);
+            setError(
+              e?.response?.data?.detail ?? "Суперлайки на сегодня закончились"
+            );
+          } else {
+            // Берём настоящие остатки с сервера: локальный счётчик мог
+            // разойтись, а в шторке показываем реальное время возврата
+            getDailyLimits()
+              .then((l) => {
+                if (isMounted()) setLimits(l);
+              })
+              .catch(() => {
+                if (isMounted()) {
+                  setLimits((l) => (l ? { ...l, likes_left: 0 } : l));
+                }
+              });
+            setLimitSheet(true);
+          }
         } else {
           setError("Нет связи — попробуйте ещё раз");
         }
@@ -165,7 +230,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         busyRef.current = false;
       }
     },
-    [addMatch, removeDeckProfile, setDeck]
+    [addMatch, isMounted, limits, removeDeckProfile, setDeck]
   );
 
   const handleButton = useCallback(
@@ -227,6 +292,10 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   }
 
   const visible = deck.slice(0, VISIBLE_CARDS);
+  // null = лимита нет (подписка) или остаток ещё неизвестен — бейдж не рисуем.
+  // Показываем только когда счётчик реально ограничивает
+  const лайковОсталось =
+    limits && !безлимит(limits.likes_total) ? limits.likes_left : null;
 
   return (
     <div className="flex-1 flex flex-col px-4 pt-2 pb-3 max-w-[440px] mx-auto w-full min-h-0">
@@ -291,13 +360,24 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
 
           {/* Лайк крупнее остальных — главное действие экрана.
               Короткий тап = лайк, удержание ≈450 мс = лайк с сообщением.
-              Так на рейле не стоят два «написать» рядом */}
-          <div className="pointer-events-auto">
+              Так на рейле не стоят два «написать» рядом.
+              Кнопку не гасим на нуле: тап открывает шторку с подпиской —
+              это и есть момент продажи, а серая кнопка ничего не объясняет */}
+          <div className="relative pointer-events-auto">
             <IconButton
-              label="Лайк. Удерживайте, чтобы добавить сообщение"
+              label={
+                лайковОсталось === null
+                  ? "Лайк. Удерживайте, чтобы добавить сообщение"
+                  : лайковОсталось > 0
+                    ? `Лайк, осталось ${лайковОсталось} на сегодня. Удерживайте, чтобы добавить сообщение`
+                    : "Лайки на сегодня закончились"
+              }
               onPointerDown={() => {
                 const top = deck[0];
                 if (!top) return;
+                // На исчерпанном лимите удержание не открывает ввод
+                // сообщения: написали бы текст, который некуда отправить
+                if (лайковОсталось !== null && лайковОсталось <= 0) return;
                 likeNoteOpenedRef.current = false;
                 if (likeHoldRef.current) clearTimeout(likeHoldRef.current);
                 likeHoldRef.current = setTimeout(() => {
@@ -330,6 +410,20 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
             >
               <Heart size={28} fill="currentColor" />
             </IconButton>
+            {лайковОсталось !== null && (
+              <span
+                aria-hidden
+                className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
+                            rounded-full text-[10px] font-bold flex items-center
+                            justify-center ${
+                              лайковОсталось > 0
+                                ? "bg-bg-elevated border border-hairline text-text"
+                                : "bg-danger text-bg"
+                            }`}
+              >
+                {лайковОсталось}
+              </span>
+            )}
           </div>
 
           {/* Письмо без взаимного лайка — платный крючок на самом частом
@@ -396,6 +490,16 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
       <DirectMessageSheet
         profile={directFor}
         onClose={() => setDirectFor(null)}
+      />
+
+      {/* Суточный лимит лайков. Открывается и до запроса (когда остаток уже
+          известен), и по 429 от сервера — второе на случай, если счётчик
+          разошёлся: сервер считает по своим записям и он прав */}
+      <LimitSheet
+        kind="likes"
+        limits={limits}
+        open={limitSheet}
+        onClose={() => setLimitSheet(false)}
       />
     </div>
   );

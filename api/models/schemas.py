@@ -161,12 +161,34 @@ class SuperlikeQuota(BaseModel):
     is_premium: bool = False
 
 
+class DailyLimits(BaseModel):
+    """Суточные лимиты бесплатного уровня — для счётчиков и шторки подписки.
+
+    `-1` в `*_left` и `*_total` означает «без ограничения»: нулём безлимит
+    обозначать нельзя, клиент нарисовал бы «осталось 0» платящему человеку.
+    `reset_at` — когда вернётся первый израсходованный лайк или мэтч: окно
+    скользящее, поэтому «завтра» без точного времени было бы неправдой.
+    """
+
+    likes_left: int = -1
+    likes_total: int = -1
+    likes_reset_at: Optional[datetime] = None
+    matches_left: int = -1
+    matches_total: int = -1
+    matches_reset_at: Optional[datetime] = None
+    is_premium: bool = False
+
+
 class MatchResponse(BaseModel):
     id: str
     match_score: Optional[int] = None
     ai_reason: Optional[str] = None
     created_at: Optional[datetime] = None
     partner: UserProfile
+    #: Мэтч за пределами суточного лимита открытий: данные партнёра в ответе
+    #: вычищены, чат закрыт. Клиент рисует шторку подписки. Скрываем на
+    #: сервере, а не в интерфейсе, — иначе лимит обходится вкладкой «сеть».
+    locked: bool = False
     # Превью для списка чатов: иначе клиенту пришлось бы запрашивать
     # переписку отдельно по каждому мэтчу
     last_message: Optional[str] = None

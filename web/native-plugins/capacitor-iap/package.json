@@ -1,10 +1,10 @@
 {
-  "name": "@souldawn/capacitor-iap",
+  "name": "@simp/capacitor-iap",
   "version": "1.0.0",
-  "description": "Покупка Premium через StoreKit 2 в нативной сборке Souldawn",
+  "description": "Покупка Premium через StoreKit 2 в нативной сборке Симп",
   "license": "UNLICENSED",
   "private": true,
-  "author": "Souldawn",
+  "author": "Симп",
   "files": [
     "ios/Sources",
     "Package.swift"

@@ -78,7 +78,7 @@ export default function AdminDashboard() {
             </div>
             <div>
               <h1 className="font-bold text-sm">Admin Panel</h1>
-              <p className="text-xs text-text-muted">Souldawn Dating</p>
+              <p className="text-xs text-text-muted">Симп</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

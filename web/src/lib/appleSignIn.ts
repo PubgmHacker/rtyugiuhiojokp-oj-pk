@@ -27,7 +27,7 @@ interface AppleSignInPlugin {
   signIn(): Promise<AppleSignInResult>;
 }
 
-const Плагин = registerPlugin<AppleSignInPlugin>("SouldawnAppleSignIn");
+const Плагин = registerPlugin<AppleSignInPlugin>("SimpAppleSignIn");
 
 /** Отмена — не ошибка: человек сам закрыл окно. */
 export class ВходОтменён extends Error {}

@@ -662,7 +662,7 @@ async def export_my_data(
         ],
     }
 
-    filename = f"souldawn-data-{user.id[:8]}.json"
+    filename = f"simp-data-{user.id[:8]}.json"
     return JSONResponse(
         content=payload,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},

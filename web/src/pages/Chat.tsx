@@ -13,17 +13,20 @@ import {
   UserX,
   Check,
   CheckCheck,
+  Lock,
 } from "lucide-react";
 import {
   getMessages,
   getMatches,
   getIcebreakers,
   getChatTheme,
+  getDailyLimits,
   reportUser,
   blockUser,
   unmatch,
   type ChatMessage,
   type ChatTheme,
+  type DailyLimits,
   type MatchResponse,
 } from "../lib/api";
 import { ChatWebSocket, type ConnectionStatus } from "../lib/websocket";
@@ -34,6 +37,7 @@ import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
 import { ChatThemeSheet } from "../components/ChatThemeSheet";
 import { HabitsSheet } from "../components/HabitsSheet";
+import { когдаСлот } from "../components/LimitSheet";
 import { REPORT_REASONS } from "../lib/profileOptions";
 import { readableOn } from "../lib/aura";
 
@@ -57,6 +61,11 @@ export default function Chat() {
   const [theme, setTheme] = useState<ChatTheme | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [habitsOpen, setHabitsOpen] = useState(false);
+  // Мэтч за суточным лимитом бесплатного уровня. Сервер закрывает и историю
+  // (429), и сокет (код 4029) — тогда открывать переписку нечем, и вместо
+  // пустой ленты с «нет связи» показываем причину
+  const [лимитМэтчей, setЛимитМэтчей] = useState(false);
+  const [limits, setLimits] = useState<DailyLimits | null>(null);
 
   const wsRef = useRef<ChatWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -97,10 +106,22 @@ export default function Chat() {
           return [...msgs, ...prev.filter((m) => !seen.has(m.id))];
         });
         setMatch(matchList.find((m) => m.id === requestedMatchId) ?? null);
-      } catch {
-        // Сбой и «переписки ещё нет» выглядели одинаково: человек видел
-        // приглашение написать первым, хотя история просто не загрузилась
-        if (stillCurrent()) setИсторияНеЗагрузилась(true);
+      } catch (e: any) {
+        if (!stillCurrent()) return;
+        if (e?.response?.status === 429) {
+          // Суточный лимит открытых мэтчей: это не сбой, а закрытая дверь.
+          // Подтягиваем время возврата слота, чтобы не обещать «завтра»
+          setЛимитМэтчей(true);
+          getDailyLimits()
+            .then((l) => {
+              if (stillCurrent()) setLimits(l);
+            })
+            .catch(() => {});
+        } else {
+          // Сбой и «переписки ещё нет» выглядели одинаково: человек видел
+          // приглашение написать первым, хотя история просто не загрузилась
+          setИсторияНеЗагрузилась(true);
+        }
       } finally {
         if (stillCurrent()) setLoading(false);
       }
@@ -143,12 +164,26 @@ export default function Chat() {
     // При открытии чата отмечаем входящие прочитанными
     const offOpen = ws.onOpen(() => ws.sendRaw({ type: "read" }));
 
+    // Сокет тоже упирается в суточный лимит — и закрывается кодом 4029.
+    // Без этой ветки экран показывал бы «нет связи»: сообщение о лимите
+    // приходит только кодом закрытия, тела у него нет
+    const offFatal = ws.onFatalClose((info) => {
+      if (!stillCurrent() || info.code !== 4029) return;
+      setЛимитМэтчей(true);
+      getDailyLimits()
+        .then((l) => {
+          if (stillCurrent()) setLimits(l);
+        })
+        .catch(() => {});
+    });
+
     ws.connect();
 
     return () => {
       offStatus();
       offMessage();
       offOpen();
+      offFatal();
       ws.close();
       wsRef.current = null;
       if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -302,6 +337,72 @@ export default function Chat() {
 
   const partnerName = match?.partner.display_name || "Чат";
   const partnerPhoto = match?.partner.photos?.[0];
+
+  /* ── Мэтч закрыт суточным лимитом ────────────────────────── */
+  // Отдельным экраном, а не шторкой поверх чата: под шторкой всё равно
+  // пусто — ни истории, ни сокета сервер не даст, — и закрыв её человек
+  // остался бы на мёртвой странице. Здесь единственный выход осмысленный:
+  // подписка или назад к списку
+  if (лимитМэтчей) {
+    return (
+      <div className="flex flex-col h-screen-safe">
+        <header className="chrome safe-top border-b border-hairline/70 shrink-0">
+          <div className="flex items-center gap-2.5 px-3 pb-2.5 min-h-[52px]">
+            <button
+              aria-label="Назад"
+              onClick={() => navigate(-1)}
+              className="tap-target flex items-center justify-center text-text-secondary"
+            >
+              <ArrowLeft size={22} />
+            </button>
+            <span className="font-semibold text-[15px]">Мэтч закрыт</span>
+          </div>
+        </header>
+
+        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+          <span
+            className="w-16 h-16 rounded-full bg-accent/12 flex items-center
+                       justify-center mb-5"
+          >
+            <Lock size={26} className="text-accent" />
+          </span>
+          <h2 className="text-heading font-bold mb-2">Лимит мэтчей на сегодня</h2>
+          <p className="text-[14px] leading-snug text-text-secondary mb-1.5">
+            На бесплатном уровне открыто{" "}
+            {limits && limits.matches_total > 0 ? limits.matches_total : 3} мэтча в
+            сутки. Уже открытые переписки остаются доступны.
+          </p>
+          {limits?.matches_reset_at && (
+            <p className="text-caption text-text-muted mb-6">
+              Следующий слот вернётся {когдаСлот(limits.matches_reset_at)}.
+            </p>
+          )}
+          {!limits?.matches_reset_at && <div className="mb-6" />}
+
+          <div className="flex flex-col gap-2.5 w-full max-w-[280px]">
+            <Button
+              size="lg"
+              fullWidth
+              onClick={() => {
+                haptic("light");
+                navigate("/plans");
+              }}
+            >
+              Открыть без лимитов
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              fullWidth
+              onClick={() => navigate("/matches")}
+            >
+              К списку чатов
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen-safe">

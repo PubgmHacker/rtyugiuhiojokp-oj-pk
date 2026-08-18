@@ -13,6 +13,7 @@ from database.connection import async_session_factory, get_session
 from middleware.auth import get_current_user
 from models.models import User, Profile, Like, Match
 from models.schemas import (
+    DailyLimits,
     LikeRequest,
     LikeResponse,
     MatchResponse,
@@ -27,6 +28,7 @@ from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
 from services.premium import current_tier
 from services.plans import superlikes_for, tier_allows
+from services.quotas import likes_state, match_views_state
 from services.push import is_configured, notify_new_match
 from utils import as_list
 
@@ -157,6 +159,31 @@ async def get_superlike_quota(
     )
 
 
+@router.get("/limits", response_model=DailyLimits)
+async def get_daily_limits(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Остаток суточных лимитов: лайки и открытия мэтчей.
+
+    Отдельная ручка, а не поля в ответе на лайк: счётчик нужен деке ещё до
+    первого свайпа, а шторке лимита — точное время возврата. Клиент зовёт её
+    после 429, чтобы показать, сколько ждать, вместо голого «попробуйте позже».
+    """
+    tier = await current_tier(session, user.id)
+    likes = await likes_state(session, user.id, tier)
+    views = await match_views_state(session, user.id, tier)
+    return DailyLimits(
+        likes_left=likes.left,
+        likes_total=likes.limit,
+        likes_reset_at=likes.reset_at,
+        matches_left=views.left,
+        matches_total=views.limit,
+        matches_reset_at=views.reset_at,
+        is_premium=tier != "free",
+    )
+
+
 @router.post("", response_model=LikeResponse)
 async def create_like(
     data: LikeRequest,
@@ -199,6 +226,23 @@ async def create_like(
         select(Like).where(and_(Like.liker_id == user.id, Like.liked_id == data.target_id))
     )
     existing = result.scalar_one_or_none()
+
+    # Суточный лимит лайков — под тем же личным локом и по тем же причинам,
+    # что квота суперлайков ниже. Тратят его только НОВЫЕ лайки:
+    #
+    #  • пропуск не тратит ничего — иначе лимит запрещал бы листать деку;
+    #  • повторный лайк той же анкеты (смена типа, повтор после обрыва сети)
+    #    уже лежит в подсчёте, и отказ по нему отобрал бы израсходованное.
+    #
+    # Суперлайк лимит тратит: это тоже лайк, просто с отдельной квотой сверху.
+    if data.type != "pass" and (existing is None or existing.type == "pass"):
+        лимит = await likes_state(session, user.id)
+        if лимит.exhausted:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Лайки на сегодня закончились — {лимит.limit} в сутки "
+                "на бесплатном уровне. Оформите подписку или подождите.",
+            )
 
     # Квота суперлайков — уже под локом, и только для НОВОГО суперлайка:
     # повторный запрос с тем же типом ничего не тратит, а его суперлайк уже

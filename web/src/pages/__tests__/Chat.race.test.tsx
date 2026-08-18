@@ -11,12 +11,23 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, waitFor, cleanup } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import Chat from "../Chat";
+// Исходник экрана — сравнить вызовы сокета с двойником ниже. `?raw` вместо
+// node:fs: у .tsx-файлов Vitest включает веб-режим трансформации, и там
+// `import.meta.url` не file://, читать от него путь нечем.
+import исходник_Chat from "../Chat.tsx?raw";
 import * as api from "../../lib/api";
 import { useStore } from "../../lib/store";
+import { ChatWebSocket } from "../../lib/websocket";
 
 // Сокет-часть эффекта уже покрыта существующим поведением (offStatus/offMessage/
 // ws.close() и т.д.) и не является предметом этого теста — подменяем класс,
 // чтобы тест не зависел от реального WebSocket в jsdom.
+//
+// Двойник обязан отвечать на всё, что экран вызывает у сокета. Иначе тест падает
+// не на своём утверждении, а внутри React: отсутствующий `onFatalClose` уронил
+// монтирование Chat, и оба теста гонки развалились с «ws.onFatalClose is not a
+// function» — то есть гонку они уже не проверяли. Ниже есть отдельный тест,
+// который сверяет двойник с вызовами в Chat.tsx.
 vi.mock("../../lib/websocket", () => {
   class FakeChatWebSocket {
     onStatusChange() {
@@ -26,6 +37,9 @@ vi.mock("../../lib/websocket", () => {
       return () => {};
     }
     onOpen() {
+      return () => {};
+    }
+    onFatalClose() {
       return () => {};
     }
     connect() {}
@@ -158,5 +172,30 @@ describe("Chat — сбой загрузки истории", () => {
     );
     // Приглашение написать первым тут неуместно — оно врёт про состояние
     expect(screen.queryByText("Вы понравились друг другу")).not.toBeInTheDocument();
+  });
+});
+
+describe("двойник сокета в этом файле", () => {
+  it("отвечает на все вызовы, которые Chat делает у сокета", () => {
+    // Тест про тест — и он нужен. Экран получил обработку кода 4029, у сокета
+    // появился onFatalClose, а двойник остался прежним: оба теста гонки падали
+    // при монтировании с «ws.onFatalClose is not a function». Проверки гонки при
+    // этом не выполнялись вовсе, а красный CI списывали на «тесты чата
+    // сломались». Здесь недостающий метод называется по имени.
+    const код = исходник_Chat;
+    const вызовы = [...new Set([...код.matchAll(/\bws\.([A-Za-z]\w*)\(/g)].map((m) => m[1]))].sort();
+
+    expect(вызовы.length, "в Chat.tsx больше нет обращений к сокету через ws.* — " +
+      "значит эта проверка смотрит не туда").toBeGreaterThan(0);
+
+    // Подменённый модуль: тот самый класс, с которым идут тесты выше
+    const двойник = new ChatWebSocket("match-a", "test-token") as unknown as Record<string, unknown>;
+    const нет = вызовы.filter((имя) => typeof двойник[имя] !== "function");
+
+    expect(
+      нет,
+      `двойник сокета не умеет: ${нет.join(", ")} — Chat вызовет это при ` +
+        `монтировании и упадёт до первой проверки этого файла`
+    ).toEqual([]);
   });
 });

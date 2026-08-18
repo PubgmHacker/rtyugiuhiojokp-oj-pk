@@ -9,6 +9,12 @@
 Поэтому здесь считаются реальные обращения к базе через `before_cursor_execute`
 и проверяется, что имя партнёра пришло вместе с мэтчем.
 
+Сам вызов делается ДВАЖДЫ, на разном числе мэтчей: закреплять точное число
+запросов константой нельзя — суточный лимит открытий добавил к выборке пару
+своих обращений, и тест бы просто сломался, ничего не поймав. Настоящее
+свойство — что число запросов НЕ ЗАВИСИТ от числа мэтчей; именно оно и
+отличает джойн от N+1.
+
 Запускается интерпретатором бота из `tests/test_query_scale.py`.
 Ответ — JSON на последней строке stdout.
 """
@@ -26,12 +32,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import database.connection as c
 from database.models import Match, Profile, User
 
-#: Сколько мэтчей заводим. Число нарочно больше пары: при N+1 счётчик
-#: запросов растёт вместе с ним, при джойне остаётся единицей.
-СКОЛЬКО = 12
+#: На скольких мэтчах прогоняем. Разница между прогонами и есть проверка:
+#: при N+1 счётчик растёт вместе с числом мэтчей, при джойне стоит на месте.
+МАЛО = 12
+МНОГО = 40
 
 
-async def main() -> None:
+async def прогнать(сколько: int) -> tuple[list[dict], list[str]]:
+    """Собрать базу с `сколько` мэтчами и вернуть (мэтчи, запросы вызова)."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(User.metadata.create_all)
@@ -42,7 +50,7 @@ async def main() -> None:
     async with session_cls() as session:
         session.add(User(id="U0", telegram_id=100))
         session.add(Profile(user_id="U0", display_name="Я", gender="male"))
-        for i in range(1, СКОЛЬКО + 1):
+        for i in range(1, сколько + 1):
             uid = f"U{i}"
             session.add(User(id=uid, telegram_id=100 + i))
             session.add(Profile(user_id=uid, display_name=f"Партнёр {i}", gender="female"))
@@ -81,13 +89,22 @@ async def main() -> None:
         запросы.append(statement)
 
     мэтчи = await c.get_user_matches("U0")
+    await engine.dispose()
+    return мэтчи, запросы
+
+
+async def main() -> None:
+    мэтчи, запросы = await прогнать(МАЛО)
+    _, запросы_много = await прогнать(МНОГО)
 
     имена = {м["id"]: м.get("partner_name") for м in мэтчи}
     партнёры = {м["id"]: м["partner_id"] for м in мэтчи}
 
     print(json.dumps({
         "запросов": len(запросы),
+        "запросов_на_многих": len(запросы_много),
         "мэтчей": len(мэтчи),
+        "мэтчей_много": МНОГО + 1,
         # Ключи есть у всех, и ни один не пустой: «Аноним» для брошенной
         # анкеты — тоже имя
         "все_с_именами": all(м.get("partner_name") for м in мэтчи),
@@ -101,9 +118,10 @@ async def main() -> None:
         # Свежие сверху — список открывается ради последних бесед
         "порядок_по_убыванию": [м["id"] for м in мэтчи][:3],
         "себя_в_партнёрах_нет": "U0" not in партнёры.values(),
+        # Пока суточные открытия не потрачены, скрывать нечего: список
+        # редактируется только после исчерпания квоты (см. лимиты_мэтчей.py)
+        "закрытых": sum(1 for м in мэтчи if м.get("locked")),
     }, ensure_ascii=False))
-
-    await engine.dispose()
 
 
 asyncio.run(main())

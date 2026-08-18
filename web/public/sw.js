@@ -1,6 +1,6 @@
-// Souldawn Dating — Service Worker (PWA offline cache)
+// Симп — Service Worker (PWA offline cache)
 // Network-first: свежий бандл всегда приоритетен, кеш — только офлайн-фолбэк.
-const CACHE_NAME = "souldawn-dating-v2";
+const CACHE_NAME = "simp-dating-v2";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();

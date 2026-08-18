@@ -28,7 +28,7 @@ def test_storekit_повторяет_линейку_один_в_один():
 
     from services.plans import PLANS
 
-    путь = Path(__file__).resolve().parents[2] / "web/ios/App/Souldawn.storekit"
+    путь = Path(__file__).resolve().parents[2] / "web/ios/App/Simp.storekit"
     документ = json.loads(путь.read_text(encoding="utf-8"))
 
     в_файле = {
@@ -58,7 +58,7 @@ def test_переход_на_старший_уровень_считается_п
 
     from services.plans import PLANS_BY_APPSTORE_ID, tier_rank
 
-    путь = Path(__file__).resolve().parents[2] / "web/ios/App/Souldawn.storekit"
+    путь = Path(__file__).resolve().parents[2] / "web/ios/App/Simp.storekit"
     документ = json.loads(путь.read_text(encoding="utf-8"))
 
     номера: dict[str, set[int]] = {}
@@ -86,7 +86,7 @@ def test_цена_и_название_в_storekit_взяты_из_линейки
 
     from services.plans import PLANS_BY_APPSTORE_ID
 
-    путь = Path(__file__).resolve().parents[2] / "web/ios/App/Souldawn.storekit"
+    путь = Path(__file__).resolve().parents[2] / "web/ios/App/Simp.storekit"
     документ = json.loads(путь.read_text(encoding="utf-8"))
 
     for группа in документ["subscriptionGroups"]:

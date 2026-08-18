@@ -4,6 +4,22 @@ const WS_URL = API_URL.replace(/^http/, "ws");
 type MessageHandler = (data: any) => void;
 export type ConnectionStatus = "connecting" | "open" | "closed";
 type StatusHandler = (status: ConnectionStatus) => void;
+/** Соединение закрыто окончательно — переподключаться бессмысленно. */
+export interface FatalClose {
+  code: number;
+  reason: string;
+}
+type CloseHandler = (info: FatalClose) => void;
+
+/**
+ * Коды, после которых сервер не примет и десятую попытку: нет токена, чужой
+ * чат, мэтч удалён, исчерпан суточный лимит открытых мэтчей. Раньше на все
+ * четыре клиент честно ломился восемь раз с нарастающей паузой — впустую
+ * гонял сервер по базе и держал баннер «переподключение…» вместо причины.
+ * 1000 сюда не входит: это наше собственное закрытие, оно и так не
+ * переподключается и слушателей не будит.
+ */
+const FATAL_CLOSE_CODES = new Set([4001, 4003, 4004, 4029]);
 
 /** Держим соединение живым сквозь таймауты прокси/балансировщиков. */
 const HEARTBEAT_INTERVAL = 25_000;
@@ -20,6 +36,7 @@ export class ChatWebSocket {
   private handlers: Set<MessageHandler> = new Set();
   private openHandlers: Set<() => void> = new Set();
   private statusHandlers: Set<StatusHandler> = new Set();
+  private closeHandlers: Set<CloseHandler> = new Set();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -98,6 +115,16 @@ export class ChatWebSocket {
       if (this.ws !== socket) return;
       this.stopHeartbeat();
       this.statusHandlers.forEach((h) => h("closed"));
+      if (FATAL_CLOSE_CODES.has(event.code)) {
+        // Причину знает только сервер — передаём её наверх и больше не
+        // пытаемся: интерфейс покажет объяснение вместо «нет связи»
+        this.closed = true;
+        this.clearReconnectTimer();
+        this.closeHandlers.forEach((h) =>
+          h({ code: event.code, reason: event.reason })
+        );
+        return;
+      }
       if (!this.closed && event.code !== 1000) {
         this.scheduleReconnect();
       }
@@ -188,6 +215,16 @@ export class ChatWebSocket {
     return () => this.statusHandlers.delete(handler);
   }
 
+  /**
+   * Окончательное закрытие с кодом сервера — 4001/4003/4004/4029.
+   * Вызывается один раз; после него сокет не переподключается.
+   * @returns функция отписки
+   */
+  onFatalClose(handler: CloseHandler): () => void {
+    this.closeHandlers.add(handler);
+    return () => this.closeHandlers.delete(handler);
+  }
+
   close() {
     this.closed = true;
     this.clearReconnectTimer();
@@ -206,6 +243,7 @@ export class ChatWebSocket {
     this.handlers.clear();
     this.openHandlers.clear();
     this.statusHandlers.clear();
+    this.closeHandlers.clear();
     this.seenIds.clear();
     this.seenOrder = [];
   }

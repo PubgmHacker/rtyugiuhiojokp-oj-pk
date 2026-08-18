@@ -10,6 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from config import DATABASE_URL
 from services.plans import tier_rank
+
+# Модулем, а не именами: `services/quotas.py` импортирует `database.models`, а
+# это поднимает пакет `database` целиком — то есть нас же. `from ... import
+# likes_state` требует атрибут в момент импорта и падает на полупустом модуле;
+# `import ... as` привязывает сам модуль, а имена берёт при вызове.
+import services.quotas as quotas
+
 from database.models import (
     Base,
     Block,
@@ -552,12 +559,27 @@ async def like_and_match(
     сериализуются между собой.
 
     Возвращает: matched — создан/подтверждён мэтч, match — данные мэтча,
-    upgraded — прежний pass заменён на лайк.
+    upgraded — прежний pass заменён на лайк, limited — суточный лимит лайков
+    исчерпан и лайк НЕ записан (см. services/quotas.py), likes_left — сколько
+    лайков осталось после этого (None на платном уровне и на пропуске).
     """
     u1, u2 = (liker_id, liked_id) if liker_id < liked_id else (liked_id, liker_id)
     cls = _session_cls()
     async with cls() as session:
         async with session.begin():
+            # Два лока, и всегда в этом порядке: сначала личный, потом парный.
+            # Тот же порядок в api/routers/likes.py — обратный порядок в одном
+            # из двух сервисов это классический дедлок: встречные лайк из бота
+            # и лайк из мини-аппа упёрлись бы друг в друга насмерть.
+            #
+            # Личный нужен суточной квоте: она считается по всем целям сразу, и
+            # парный ключ её не защищает — два одновременных лайка РАЗНЫМ людям
+            # берут разные парные ключи, оба читают «использовано 9 из 10» и
+            # оба проходят.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+                {"k": f"dating:likes:{liker_id}"},
+            )
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
                 {"k": f"dating:pair:{u1}:{u2}"},
@@ -567,6 +589,33 @@ async def like_and_match(
                 select(Like).where(Like.liker_id == liker_id, Like.liked_id == liked_id)
             )
             existing = result.scalar_one_or_none()
+
+            # Суточный лимит — под тем же личным локом и с той же поправкой,
+            # что в API: тратят его только НОВЫЕ лайки. Пропуск не тратит
+            # ничего (иначе лимит запрещал бы листать деку), а повторный лайк
+            # той же анкеты уже лежит в подсчёте — отказ по нему отобрал бы
+            # израсходованное. Суперлайк тратит: это тоже лайк, просто с
+            # отдельной квотой сверху.
+            осталось: int | None = None
+            if like_type != "pass" and (existing is None or existing.type == "pass"):
+                лимит = await quotas.likes_state(session, liker_id)
+                if лимит.exhausted:
+                    # Ничего не записываем: лайка не было. Ключи matched/match
+                    # оставляем на месте, чтобы вызывающий код без проверки
+                    # `limited` падал не по KeyError, а просто не показывал мэтч
+                    return {
+                        "matched": False,
+                        "match": None,
+                        "upgraded": False,
+                        "limited": True,
+                        "limit": лимит.limit,
+                        "reset_at": лимит.reset_at,
+                    }
+                if not лимит.unlimited:
+                    # Остаток ПОСЛЕ этого лайка — считаем здесь, пока состояние
+                    # под рукой: отдельный запрос из хендлера на каждую карточку
+                    # означал бы лишний round-trip на каждый свайп
+                    осталось = max(0, лимит.left - 1)
 
             upgraded = False
             if existing:
@@ -599,7 +648,12 @@ async def like_and_match(
                 )
             )
             if not result.scalar_one_or_none():
-                return {"matched": False, "match": None, "upgraded": upgraded}
+                return {
+                    "matched": False,
+                    "match": None,
+                    "upgraded": upgraded,
+                    "likes_left": осталось,
+                }
 
             result = await session.execute(
                 select(Match).where(Match.user1_id == u1, Match.user2_id == u2)
@@ -619,6 +673,7 @@ async def like_and_match(
                 "matched": True,
                 "is_new": is_new,
                 "upgraded": upgraded,
+                "likes_left": осталось,
                 "match": {
                     "id": match.id,
                     "user1_id": match.user1_id,
@@ -818,25 +873,72 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         return profiles[:limit]
 
 
-async def get_match_partner(match_id: str, user_id: str) -> dict | None:
+async def get_match_partner(
+    match_id: str, user_id: str, spend: bool = False
+) -> dict | None:
     """Get the other user in a match.
 
     Возвращает None, если мэтч не существует, разорван или user_id
     не является его участником (защита от подстановки чужого match_id).
+
+    Суточный лимит открытых мэтчей (бесплатный уровень): у закрытого мэтча
+    возвращаем маркер `{"locked": True, ...}` вместо анкеты. Вычищаем здесь, а
+    не в хендлере: путей к партнёру четыре (открыть чат, отправить сообщение,
+    подсказка, пуш о мэтче), и «замок только на кнопке» протекал бы в трёх
+    оставшихся.
+
+    `spend=True` — это ОТКРЫТИЕ мэтча, оно тратит суточный слот. По умолчанию
+    False: проверка участия при отправке сообщения, подсказка и пуш о новом
+    мэтче не должны сжигать квоту — иначе пришедшее сообщение молча съедало бы
+    открытие, которого человек не делал.
     """
     cls = _session_cls()
     async with cls() as session:
-        result = await session.execute(
-            select(Match).where(Match.id == match_id)
-        )
-        match = result.scalar_one_or_none()
-        if not match or not match.is_active:
-            return None
-        if user_id not in (match.user1_id, match.user2_id):
-            return None
+        # Вся работа — одной транзакцией, открытой ДО первого запроса. Так
+        # нужно из-за `open_match`: он берёт advisory-lock, а тот живёт до
+        # конца транзакции, и без явного begin() автокоммит закрыл бы её сразу
+        # после SELECT, оставив вставку без защиты.
+        #
+        # Открыть транзакцию позже нельзя: SQLAlchemy начинает её сама на
+        # первом же запросе (autobegin), и `session.begin()` после SELECT
+        # падает с InvalidRequestError «A transaction is already begun».
+        # Здесь так и было — открытие чата с `spend=True` не работало вовсе.
+        async with session.begin():
+            result = await session.execute(
+                select(Match).where(Match.id == match_id)
+            )
+            match = result.scalar_one_or_none()
+            if not match or not match.is_active:
+                return None
+            if user_id not in (match.user1_id, match.user2_id):
+                return None
 
-        partner_id = match.user2_id if match.user1_id == user_id else match.user1_id
-        return await get_profile(partner_id)
+            partner_id = match.user2_id if match.user1_id == user_id else match.user1_id
+
+            if spend:
+                итог = await quotas.open_match(session, user_id, match_id)
+                if not итог.granted:
+                    return _закрытый_мэтч(partner_id, итог.state)
+            elif await quotas.match_locked(session, user_id, match_id):
+                состояние = await quotas.match_views_state(session, user_id)
+                return _закрытый_мэтч(partner_id, состояние)
+
+    return await get_profile(partner_id)
+
+
+def _закрытый_мэтч(partner_id: str, состояние) -> dict:
+    """Мэтч за суточным лимитом: «есть кто-то», но не «вот кто».
+
+    Ни имени, ни фото, ни города — ровно как `api/routers/matches.py` отдаёт
+    закрытую строку списка. `user_id` оставляем: он нужен самому боту (кому
+    слать, кого проверять), а человеку не показывается.
+    """
+    return {
+        "locked": True,
+        "user_id": partner_id,
+        "limit": состояние.limit,
+        "reset_at": состояние.reset_at,
+    }
 
 
 async def get_user_matches(user_id: str) -> list[dict]:
@@ -855,6 +957,10 @@ async def get_user_matches(user_id: str) -> list[dict]:
     LEFT JOIN, а не INNER: анкета партнёра может быть не создана (регистрацию
     бросили на полпути), и такой мэтч всё равно должен остаться в списке —
     иначе чат просто исчезает из интерфейса, хотя он существует.
+
+    Список отдаём целиком — он и есть витрина подписки, — но у закрытых
+    суточным лимитом строк вычищаем имя. Показ списка квоту НЕ тратит: иначе
+    один заход в «Мои мэтчи» сжигал бы все суточные открытия сразу.
     """
     партнёр = case(
         (Match.user1_id == user_id, Match.user2_id), else_=Match.user1_id
@@ -877,24 +983,57 @@ async def get_user_matches(user_id: str) -> list[dict]:
             )
             .order_by(Match.created_at.desc())
         )
-        return [
-            {
-                "id": строка.id,
-                "partner_id": строка.partner_id,
-                "match_score": строка.match_score,
-                "ai_reason": строка.ai_reason,
-                "created_at": (
-                    строка.created_at.isoformat() if строка.created_at else None
-                ),
-                "partner_name": строка.display_name or "Аноним",
-            }
-            for строка in result.all()
-        ]
+        строки = result.all()
+
+        # Два запроса на весь список, а не по одному на строку: `match_locked`
+        # в цикле означал бы 50 пар запросов на 50 мэтчей — ровно то, от чего
+        # этот метод и избавлялся (см. выше).
+        открытые = await quotas.opened_match_ids(session, user_id)
+        лимит = await quotas.match_views_state(session, user_id)
+
+        мэтчи = []
+        for строка in строки:
+            закрыт = лимит.exhausted and строка.id not in открытые
+            мэтчи.append(
+                {
+                    "id": строка.id,
+                    "partner_id": строка.partner_id,
+                    "match_score": строка.match_score,
+                    "ai_reason": строка.ai_reason,
+                    "created_at": (
+                        строка.created_at.isoformat() if строка.created_at else None
+                    ),
+                    # Имя закрытого не отдаём наружу вообще: скрыть его только
+                    # в тексте кнопки значит всё равно передать его в процесс,
+                    # где следующая правка его и напечатает
+                    "partner_name": (
+                        "Скрыто" if закрыт else (строка.display_name or "Аноним")
+                    ),
+                    "locked": закрыт,
+                }
+            )
+        return мэтчи
 
 
 # ════════════════════════════════════════════════════════════════
 #  HELPERS
 # ════════════════════════════════════════════════════════════════
+
+async def get_daily_limits(user_id: str) -> dict:
+    """Остатки суточных лимитов — для текстов бота.
+
+    Обёртка над `services/quotas.py`, открывающая сессию: хендлеры не должны
+    знать про сессии, а прямой импорт квот в каждый хендлер расползся бы по
+    файлам вместе с ошибками в приведении времени.
+
+    Возвращает `likes` и `matches` как `QuotaState` (см. services/quotas.py) —
+    у них есть `left`, `limit`, `unlimited` и `reset_at`, — а также `tier` и
+    флаг `free`.
+    """
+    cls = _session_cls()
+    async with cls() as session:
+        return await quotas.limits_summary(session, user_id)
+
 
 def _user_to_dict(user: User) -> dict:
     return {

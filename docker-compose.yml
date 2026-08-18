@@ -1,4 +1,4 @@
-# SOULDAWN DATING — локальная разработка
+# SIMP DATING — локальная разработка
 # Запуск: docker compose up -d
 # Перед запуском: cp .env.example .env
 
@@ -10,15 +10,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       souldawn_dating
-      POSTGRES_USER:     souldawn
-      POSTGRES_PASSWORD: souldawn_dating_dev
+      POSTGRES_DB:       simp_dating
+      POSTGRES_USER:     simp
+      POSTGRES_PASSWORD: simp_dating_dev
     ports:
       - "5433:5432"
     volumes:
       - dating_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U souldawn"]
+      test: ["CMD-SHELL", "pg_isready -U simp"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -48,7 +48,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://souldawn:souldawn_dating_dev@postgres:5432/souldawn_dating
+      DATABASE_URL: postgresql+asyncpg://simp:simp_dating_dev@postgres:5432/simp_dating
       REDIS_URL: redis://redis:6379/0
       API_HOST: 0.0.0.0
       API_PORT: 8000
@@ -70,9 +70,8 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://souldawn:souldawn_dating_dev@postgres:5432/souldawn_dating
+      DATABASE_URL: postgresql+asyncpg://simp:simp_dating_dev@postgres:5432/simp_dating
       REDIS_URL: redis://redis:6379/0
-      API_BASE_URL: http://api:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,7 +95,7 @@ services:
       - "5173:5173"
     environment:
       VITE_API_URL: http://localhost:8000
-      VITE_BOT_USERNAME: souldawn_dating_bot
+      VITE_BOT_USERNAME: simp_dating_bot
     depends_on:
       api:
         condition: service_started

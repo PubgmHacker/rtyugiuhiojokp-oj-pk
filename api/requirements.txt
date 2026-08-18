@@ -1,4 +1,4 @@
-# ── SOULDAWN DATING API — Dependencies ──────────────────────────
+# ── SIMP DATING API — Dependencies ──────────────────────────────
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 sqlalchemy[asyncio]>=2.0.0

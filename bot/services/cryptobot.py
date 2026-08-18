@@ -35,7 +35,7 @@ async def _call(method: str, payload: dict | None = None) -> dict | None:
 
 
 async def create_premium_invoice(
-    user_id: str, amount: str, title: str = "Souldawn Premium",
+    user_id: str, amount: str, title: str = "Симп Premium",
 ) -> dict | None:
     """Создать счёт в USDT. Возвращает {'invoice_id': int, 'url': str} или None.
 

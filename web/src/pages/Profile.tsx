@@ -42,12 +42,12 @@ import { useStore } from "../lib/store";
 import { AppearanceSheet } from "../components/AppearanceSheet";
 import { appearanceByKey, loadAppearance } from "../lib/appearance";
 import { haptic } from "../lib/haptics";
+import { legalUrl } from "../lib/legal";
 import { getCurrentPosition, openExternal } from "../lib/native";
 import { Button, Card, Chip, Skeleton, VerifiedBadge, Spinner } from "../components/ui";
 import EmailRecovery from "../components/EmailRecovery";
 
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
-const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -126,7 +126,7 @@ export default function Profile() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "souldawn-my-data.json";
+      a.download = "simp-my-data.json";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -432,7 +432,7 @@ export default function Profile() {
         >
           <Crown size={20} className="text-accent shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-[15px]">Souldawn Plus и Ultra</p>
+            <p className="font-bold text-[15px]">Симп Plus и Ultra</p>
             <p className="text-caption text-text-muted">
               Кто вас лайкнул, инкогнито и приоритет в выдаче
             </p>
@@ -627,17 +627,23 @@ export default function Profile() {
 
       {/* ── Документы и правила ───────────────────────────────── */}
       <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
-        {[
-          { label: "Правила сообщества", path: "/guidelines.html" },
-          { label: "Политика конфиденциальности", path: "/privacy.html" },
-          { label: "Условия использования", path: "/terms.html" },
-          { label: "Поддержка", path: "/support.html" },
-        ].map((item, i) => (
+        {(
+          [
+            { label: "Правила сообщества", page: "guidelines" },
+            { label: "Политика конфиденциальности", page: "privacy" },
+            { label: "Условия использования", page: "terms" },
+            { label: "Поддержка", page: "support" },
+          ] as const
+        ).map((item, i) => (
           <button
-            key={item.path}
+            key={item.page}
             onClick={() => {
               haptic("light");
-              openExternal(`${SITE_URL}${item.path}`);
+              // legalUrl, а не window.location.origin: в нативной сборке origin —
+              // `capacitor://localhost`, и такую схему openExternal открыть не может
+              // (Browser отбрасывает не-http, система про неё не знает). Кнопка
+              // нажималась и не делала ничего.
+              openExternal(legalUrl(item.page));
             }}
             className={`w-full flex items-center gap-3 px-4 py-3.5 bg-surface
                         active:bg-surface-2 transition-colors
@@ -976,7 +982,7 @@ function TgChannelCard({
       </div>
       <p className="text-caption text-text-muted mb-3">
         Покажется ссылкой в вашей карточке. Юзернейм без @ — например,
-        souldawn_channel.
+        simp_channel.
       </p>
       <div className="flex gap-2">
         <input

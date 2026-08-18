@@ -153,12 +153,33 @@ async def _notify_user_about_match(bot, user_id: str, match_id: str):
         if not user or not user.get("telegram_id"):
             return
 
+        # Слот НЕ тратим (`spend` по умолчанию False): пуш — не открытие мэтча,
+        # и суточная квота не должна утекать от прилетевшего события
         partner = await get_match_partner(match_id, user_id)
         if not partner:
             return
 
-        from texts import match_notification
+        from keyboards import limit_reached_kb
+        from texts import match_locked_notification, match_notification
         from config import BANNERS
+
+        if partner.get("locked"):
+            # Суточные открытия исчерпаны: про мэтч говорим, кто это — нет.
+            # Иначе пуш выдавал бы даром именно то, что скрывает список
+            try:
+                await bot.send_message(
+                    chat_id=user["telegram_id"],
+                    text=match_locked_notification(
+                        partner["limit"], partner["reset_at"]
+                    ),
+                    reply_markup=limit_reached_kb("matches:list"),
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to send locked match notification to %s: %s",
+                    user["telegram_id"], e,
+                )
+            return
 
         text = match_notification(partner)
 

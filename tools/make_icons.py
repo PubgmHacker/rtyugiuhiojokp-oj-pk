@@ -2,10 +2,9 @@
 """
 Генератор иконки, splash-экрана и favicon.
 
-Знак марки — факел рассвета с nested гнездом и тёмным сердцем
-(dating-бейдж, см. tools/brandmark.py). Иконка — тёмный квадрат
-в цвете фона приложения со знаком по центру: на домашнем экране
-читается «огонь + знакомства».
+Знак марки — плоский факел-колодец r3-06 (tools/brandmark.py).
+Без 3D, без сердца, без искры. Иконка — тёмный квадрат в цвете
+фона приложения со знаком по центру.
 
 Цвета берутся из дизайн-системы (web/src/styles/globals.css), чтобы
 иконка, splash и интерфейс выглядели одним продуктом.
@@ -43,11 +42,11 @@ def make_icon(size: int = 1024) -> Image.Image:
     Углы не скругляем — iOS и Android накладывают собственную маску,
     а предварительное скругление дало бы двойную обводку.
 
-    Радиус описанной окружности 0.36 стороны: габарит знака = 2R ≈ 72%
-    ширины — крупно для узнавания и с запасом до маски скругления.
+    Радиус 0.267 стороны — тот же канон, что BotFather-аватар:
+    габарит знака ≈ 54% ширины, поля ~23% с каждой стороны.
     """
     img = Image.new("RGB", (size, size), BG)
-    нарисовать_знак(img, size * 0.5, size * 0.5, size * 0.36)
+    нарисовать_знак(img, size * 0.5, size * 0.5, size * 0.267)
     return img
 
 
@@ -65,15 +64,11 @@ def make_splash(w: int = 2732, h: int = 2732) -> Image.Image:
 def make_telegram_avatar(size: int = 640) -> Image.Image:
     """Аватар бота для BotFather /setuserpic.
 
-    Квадрат 640×640, сплошной #0a0b0f без прозрачности. Знак ~50%
-    высоты кадра (целевой коридор 48–52%) — safe margin в круглой
-    маске Telegram, ушки не режутся. Оптический центр чуть ниже
-    геометрического (cy≈0.515): асимметрия ушей компенсируется
-    COM-якорем в brandmark, не bbox.
+    Квадрат 640×640, сплошной #0a0b0f без прозрачности.
+    Канон сессии BotFather: 0.267 → ~54% стороны, поля под круглую маску.
     """
     img = Image.new("RGB", (size, size), BG)
-    # 2R/size ≈ 0.50 → r = 0.25; было 0.267 (~54%).
-    нарисовать_знак(img, size * 0.5, size * 0.515, size * 0.25)
+    нарисовать_знак(img, size * 0.5, size * 0.5, size * 0.267)
     return img
 
 
@@ -83,57 +78,91 @@ def _write_text(path: Path, text: str) -> None:
     print(f"✓ {path}")
 
 
-def sync_vector_carriers() -> None:
-    """Подтягивает path из brandmark в BrandMark.tsx / landing SVG."""
-    path = ФАКЕЛ_PATH_100
-
-    # BrandMark.tsx — константа ФАКЕЛ
-    bm = ROOT / "web" / "src" / "components" / "BrandMark.tsx"
-    bm_src = bm.read_text(encoding="utf-8")
+def _sync_path(src: str, pattern: str, path: str, label: str) -> str:
     import re
 
-    bm_new, n = re.subn(
-        r'(const ФАКЕЛ =\n  ")([^"]+)(";)',
-        rf"\g<1>{path}\g<3>",
-        bm_src,
-        count=1,
-    )
+    new, n = re.subn(pattern, rf"\g<1>{path}\g<3>", src, count=1)
     if n != 1:
-        raise RuntimeError("BrandMark.tsx: не нашёл const ФАКЕЛ")
-    bm.write_text(bm_new, encoding="utf-8")
+        raise RuntimeError(label)
+    return new
+
+
+def sync_html_carriers() -> None:
+    """Подтягивает nested path в шапки лендинга и копий в web/public."""
+    import re
+
+    torch = ФАКЕЛ_PATH_100
+    pattern = r'(<path fill-rule="evenodd" d=")([^"]+)(")'
+    names = (
+        "index.html",
+        "terms.html",
+        "support.html",
+        "privacy.html",
+        "moderation.html",
+        "guidelines.html",
+    )
+    for folder in (ROOT / "landing", WEB_PUBLIC):
+        for name in names:
+            path = folder / name
+            if not path.exists():
+                continue
+            src = path.read_text(encoding="utf-8")
+            new, n = re.subn(pattern, rf"\g<1>{torch}\g<3>", src)
+            if n == 0:
+                print(f"⚠ {path}: нет path знака")
+                continue
+            if new != src:
+                path.write_text(new, encoding="utf-8")
+            print(f"✓ {path} (html path ×{n})")
+
+
+def sync_vector_carriers() -> None:
+    """Подтягивает path из brandmark в BrandMark.tsx / landing SVG / HTML."""
+    import re
+
+    torch = ФАКЕЛ_PATH_100
+
+    bm = ROOT / "web" / "src" / "components" / "BrandMark.tsx"
+    bm_src = _sync_path(
+        bm.read_text(encoding="utf-8"),
+        r'(const ФАКЕЛ =\n  ")([^"]+)(";)',
+        torch,
+        "BrandMark.tsx: не нашёл const ФАКЕЛ",
+    )
+    bm.write_text(bm_src, encoding="utf-8")
     print(f"✓ {bm} (path sync)")
 
-    # landing/icon.svg — path в <g>
     icon = ROOT / "landing" / "icon.svg"
-    icon_src = icon.read_text(encoding="utf-8")
-    icon_new, n = re.subn(
+    icon_src = _sync_path(
+        icon.read_text(encoding="utf-8"),
         r'(fill-rule="evenodd" d=")([^"]+)(")',
-        rf"\g<1>{path}\g<3>",
-        icon_src,
-        count=1,
+        torch,
+        "landing/icon.svg: не нашёл факел",
     )
-    if n != 1:
-        raise RuntimeError("landing/icon.svg: не нашёл path")
-    icon.write_text(icon_new, encoding="utf-8")
+    icon.write_text(icon_src, encoding="utf-8")
     print(f"✓ {icon} (path sync)")
 
-    # landing/og-image.svg
+    WEB_PUBLIC.mkdir(parents=True, exist_ok=True)
+    public_icon = WEB_PUBLIC / "icon.svg"
+    public_icon.write_text(icon_src, encoding="utf-8")
+    print(f"✓ {public_icon} (copy)")
+
     og = ROOT / "landing" / "og-image.svg"
-    og_src = og.read_text(encoding="utf-8")
-    og_new, n = re.subn(
+    og_src = _sync_path(
+        og.read_text(encoding="utf-8"),
         r'(fill-rule="evenodd" d=")([^"]+)(")',
-        rf"\g<1>{path}\g<3>",
-        og_src,
-        count=1,
+        torch,
+        "landing/og-image.svg: не нашёл факел",
     )
-    if n != 1:
-        raise RuntimeError("landing/og-image.svg: не нашёл path")
-    og.write_text(og_new, encoding="utf-8")
+    og_src = re.sub(r'\n\s*<path data-spark="1" d="[^"]+" fill="#fff4e8"/>', "", og_src)
+    og.write_text(og_src, encoding="utf-8")
     print(f"✓ {og} (path sync)")
+
+    sync_html_carriers()
 
 
 def write_mono_and_variants() -> None:
-    """Белый mono master + цветной SVG + reference nest-heart PNG."""
+    """Белый mono master + цветной SVG + reference torch PNG."""
     brand = WEB_PUBLIC / "brand"
     brand.mkdir(parents=True, exist_ok=True)
 
@@ -149,14 +178,14 @@ def write_mono_and_variants() -> None:
     mark_svg = brand / "mark.svg"
     _write_text(mark_svg, svg_знак(mono_white=False))
 
-    # Reference PNG того же канона (раньше A/B; теперь = default).
+    # Reference PNG того же канона.
     variants = WEB_PUBLIC / "logo-variants"
     variants.mkdir(parents=True, exist_ok=True)
-    heart_svg = variants / "r3-06-dawn-nest-heart.svg"
-    _write_text(heart_svg, svg_знак(mono_white=False))
-    heart_png = variants / "r3-06-dawn-nest-heart.png"
-    сделать_знак(512, BG).save(heart_png, "PNG")
-    print(f"✓ {heart_png}")
+    torch_svg = variants / "r3-06-torch.svg"
+    _write_text(torch_svg, svg_знак(mono_white=False))
+    torch_png = variants / "r3-06-torch.png"
+    сделать_знак(512, BG).save(torch_png, "PNG")
+    print(f"✓ {torch_png}")
 
 
 def write_circle_preview(tg: Image.Image, out: Path) -> None:
@@ -209,8 +238,7 @@ def main() -> None:
     )
     print(f"✓ {WEB_PUBLIC / 'apple-touch-icon.png'}")
 
-    # Favicon: на 16px знак рисуем заново крупнее, а не сжимаем иконку —
-    # у уменьшенной копии гнездо внутри пламени замыливается
+    # Favicon: на 16px знак рисуем заново крупнее, а не сжимаем иконку.
     fav_sizes = [(16, 16), (32, 32), (48, 48), (64, 64)]
     fav = Image.new("RGB", (64, 64), BG)
     нарисовать_знак(fav, 32, 32, 64 * 0.40)
@@ -228,7 +256,7 @@ def main() -> None:
     print(f"✓ {tg_brand}")
     print(f"✓ {tg_public}")
 
-    write_circle_preview(tg, Path("/tmp/souldawn-tg-circle-preview.png"))
+    write_circle_preview(tg, Path("/tmp/simp-tg-circle-preview.png"))
     write_mono_and_variants()
 
     # Превью ссылки в соцсетях и мессенджерах.

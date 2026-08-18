@@ -8,11 +8,23 @@ import "./styles/globals.css";
 // До первого кадра: применение после рендера даёт вспышку базовой темы
 initAppearance();
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// Telegram-SDK подгружается из index.html асинхронно и может не приехать
+// вовсе (см. комментарий там). Рендер ждёт его исхода, а не сам файл: внутри
+// Telegram авторизация читает initData сразу при монтировании, и рендер до
+// загрузки SDK показал бы вход по коду человеку, который уже вошёл. Ожидание
+// ограничено тремя секундами в index.html, поэтому повиснуть здесь нельзя.
+const готовностьTelegram: Promise<unknown> =
+  (window as unknown as { __telegramSdkReady?: Promise<boolean> })
+    .__telegramSdkReady ?? Promise.resolve(false);
+
+// Отказ ожидания не должен стоить приложения: рендер идёт в любом случае
+void готовностьTelegram.catch(() => false).then(() => {
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+});
 
 // PWA SW — только в браузерном проде. В Capacitor SW ломает локальные ассеты.
 if (

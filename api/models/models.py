@@ -304,6 +304,37 @@ class Match(Base):
     messages: Mapped[List["Message"]] = relationship(back_populates="match", cascade="all, delete-orphan")
 
 
+class MatchView(Base):
+    """Какие мэтчи человек открывал — для суточного лимита бесплатного уровня.
+
+    Строка на пару (кто смотрит, что открыл), а не запись на каждое открытие:
+    лимит стоит на РАЗНЫХ мэтчах, поэтому повторный вход в уже открытый чат
+    обязан быть бесплатным, а для этого достаточно одной отметки времени.
+    Журнал всех открытий тут был бы и лишним объёмом, и лишним смыслом.
+
+    Своя таблица, а не поле в `Match`: смотрят двое, и лимиты у них разные —
+    один может платить, другой нет.
+    """
+
+    __tablename__ = "dating_match_views"
+    __table_args__ = (
+        UniqueConstraint("user_id", "match_id", name="uq_match_view"),
+        # Квота считается как «сколько разных мэтчей я открыл за окно» —
+        # это ровно (user_id, viewed_at)
+        Index("ix_match_view_user_seen", "user_id", "viewed_at"),
+        # Нужен для FK: без него удаление мэтча сканирует таблицу целиком
+        Index("ix_match_view_match", "match_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
+    #: Когда открыт в последний раз. Обновляется, а не дублируется: окно
+    #: скользящее, и запись старше окна должна продлеваться на месте.
+    viewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
 
 class Message(Base):
     __tablename__ = "dating_messages"

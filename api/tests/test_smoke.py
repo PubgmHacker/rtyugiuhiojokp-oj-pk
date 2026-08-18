@@ -46,9 +46,9 @@ def test_account_deletion_available(openapi):
 def test_cors_rejects_wildcard_in_production():
     from config import Settings
 
-    prod = Settings(DEBUG=False, CORS_ORIGINS="*,https://souldawn.app")
+    prod = Settings(DEBUG=False, CORS_ORIGINS="*,https://simp.app")
     assert "*" not in prod.cors_origin_list
-    assert "https://souldawn.app" in prod.cors_origin_list
+    assert "https://simp.app" in prod.cors_origin_list
 
 
 def test_cors_never_empty():

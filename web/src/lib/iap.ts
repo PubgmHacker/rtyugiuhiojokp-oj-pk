@@ -43,7 +43,7 @@ interface IAPPlugin {
   ): Promise<{ remove: () => Promise<void> }>;
 }
 
-const SouldawnIAP = registerPlugin<IAPPlugin>("SouldawnIAP");
+const SimpIAP = registerPlugin<IAPPlugin>("SimpIAP");
 
 export type PurchaseOutcome =
   | { status: "success"; expiresAt: string; giftCode?: string }
@@ -67,7 +67,7 @@ export async function isPurchaseAvailable(): Promise<boolean> {
   if (!isNative()) return false;
   try {
     const [{ available }, ids] = await Promise.all([
-      SouldawnIAP.isAvailable(),
+      SimpIAP.isAvailable(),
       serverProductIds(),
     ]);
     return available && ids.length > 0;
@@ -82,7 +82,7 @@ export async function loadProducts(): Promise<IAPProduct[]> {
   try {
     const productIds = await serverProductIds();
     if (!productIds.length) return [];
-    const { products } = await SouldawnIAP.getProducts({ productIds });
+    const { products } = await SimpIAP.getProducts({ productIds });
     return products.sort((a, b) => a.priceValue - b.priceValue);
   } catch {
     return [];
@@ -106,7 +106,7 @@ async function redeem(
       : (await api.post("/iap/verify", { jws: tx.jws })).data;
   // Подтверждаем чек именем Apple, как в документации: иначе сервер
   // не подпишет ту же транзакцию, и мы спишем деньги без начисления
-  await SouldawnIAP.finishTransaction({ transactionId: tx.transactionId });
+  await SimpIAP.finishTransaction({ transactionId: tx.transactionId });
   return {
     expiresAt: data.expires_at || "",
     giftCode: data.gift_code || undefined,
@@ -129,7 +129,7 @@ export async function purchasePremium(
   }
 
   try {
-    const tx = await SouldawnIAP.purchase({ productId, appAccountToken: userId });
+    const tx = await SimpIAP.purchase({ productId, appAccountToken: userId });
     const { expiresAt, giftCode } = await redeem(tx);
     return { status: "success", expiresAt, giftCode };
   } catch (e: any) {
@@ -153,7 +153,7 @@ export async function restorePurchases(): Promise<PurchaseOutcome> {
   }
 
   try {
-    const { entitlements } = await SouldawnIAP.getCurrentEntitlements({ force: true });
+    const { entitlements } = await SimpIAP.getCurrentEntitlements({ force: true });
     if (!entitlements.length) {
       return { status: "error", message: "Активных покупок не найдено" };
     }
@@ -186,7 +186,7 @@ export async function startTransactionListener(
 ): Promise<void> {
   if (!isNative()) return;
   try {
-    await SouldawnIAP.addListener("transactionUpdate", async (tx) => {
+    await SimpIAP.addListener("transactionUpdate", async (tx) => {
       try {
         const result = await redeem(tx);
         if (result.expiresAt) onPremiumChanged?.(result.expiresAt);
@@ -194,7 +194,7 @@ export async function startTransactionListener(
         // Не подтверждаем транзакцию: StoreKit принесёт её снова
       }
     })
-    await SouldawnIAP.startListening();
+    await SimpIAP.startListening();
   } catch {
     // Плагин недоступен — покупки просто не работают
   }
@@ -220,7 +220,7 @@ export async function purchaseGift(
     return { status: "error", message: "Доступно только в приложении" };
   }
   try {
-    const tx = await SouldawnIAP.purchase({ productId, appAccountToken: userId });
+    const tx = await SimpIAP.purchase({ productId, appAccountToken: userId });
     const { expiresAt, giftCode, alreadyProcessed } = await redeem(tx, "gift");
     if (alreadyProcessed && !giftCode) {
       return {

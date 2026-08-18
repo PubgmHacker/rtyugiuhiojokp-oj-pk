@@ -8,18 +8,18 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import BotCommand, ErrorEvent
+from aiogram.types import BotCommand, ErrorEvent, MenuButtonWebApp, WebAppInfo
 from aiohttp import web
 
-from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, BANNERS, REDIS_URL
-from database import init_db, get_or_create_user, record_referral, get_user_by_id
-from handlers import registration, dating, matches, premium, referral, account
+from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, REDIS_URL, SITE_URL, webapp_https, mini_app_url
+from database import init_db, get_or_create_user, get_profile, record_referral, get_user_by_id
+from handlers import registration, dating, matches, premium, referral, account, onboarding
+from handlers.onboarding import send_language_picker
 from keyboards import main_kb
 from middlewares.registration import RegistrationMiddleware
 from middlewares.throttle import ThrottleMiddleware
 from services.redis_subscriber import close_redis, supervise_redis_subscriber
 import texts as T
-from texts import welcome
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,9 +27,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+#: Список команд в интерфейсе Telegram — единственная витрина, по которой человек
+#: узнаёт, что бот умеет: меню «/» в поле ввода собирается ровно из него.
+#: Незаявленная команда существует только для тех, кому её назвали словами, а
+#: заявленная без обработчика молча ничего не делает. Список сверяется с
+#: настоящим `Dispatcher` и с текстом `/help` (api/tests/test_bot_commands.py):
+#: разъехаться этим трём местам нельзя незаметно.
+КОМАНДЫ: list[BotCommand] = [
+    BotCommand(command="start", description="Запустить бота"),
+    BotCommand(command="menu", description="Главное меню"),
+    BotCommand(command="profile", description="Моя анкета"),
+    BotCommand(command="premium", description="Premium-подписка"),
+    BotCommand(command="invite", description="Пригласить друзей"),
+    BotCommand(command="link", description="Код для входа в приложение"),
+    BotCommand(command="pause", description="Скрыть анкету из поиска"),
+    BotCommand(command="resume", description="Вернуть анкету в поиск"),
+    BotCommand(command="cancel", description="Отменить текущее действие"),
+    BotCommand(command="delete", description="Удалить аккаунт"),
+    BotCommand(command="help", description="Помощь"),
+]
+
 
 async def cmd_start(message, state):
-    """Обработчик /start — приветствие и главное меню (+ deep-link аргументы)."""
+    """Обработчик /start — язык, политика, рассылки (как у Mimolet).
+
+    Тому, кто уже прошёл онбординг и заполнил анкету, /start отдаёт меню, а не
+    спрашивает язык заново. Иначе самая частая команда в Telegram превращалась в
+    повторный опрос: язык → политика → «Начать», четыре сообщения ради того, что
+    человек хотел сделать одним нажатием. У Mimolet выбор языка тоже разовый.
+    """
     await state.clear()
 
     db_user = await get_or_create_user(
@@ -51,11 +77,21 @@ async def cmd_start(message, state):
     if arg.startswith("ref_"):
         await _handle_referral(message, db_user, arg[4:])
 
-    await message.answer_photo(
-        photo=BANNERS["welcome"],
-        caption=welcome(message.from_user.first_name),
-        reply_markup=main_kb(),
-    )
+    await _ensure_dating_menu(message.bot, chat_id=message.chat.id)
+
+    # Анкета готова — человек здесь не впервые. Сбой чтения профиля не должен
+    # стоить ему входа: онбординг проходится и повторно, а пустой ответ на
+    # /start не оставляет вообще ничего.
+    try:
+        profile = await get_profile(db_user["id"])
+    except Exception as e:
+        logger.warning("не прочитали профиль для /start: %s", e)
+        profile = None
+    if profile and profile.get("display_name") and profile.get("photos"):
+        await message.answer(T.menu_text(is_ready=True), reply_markup=main_kb())
+        return
+
+    await send_language_picker(message, state)
 
 
 async def _handle_referral(message, db_user: dict, referrer_id: str):
@@ -87,6 +123,29 @@ async def _handle_referral(message, db_user: dict, referrer_id: str):
         await message.bot.send_message(chat_id=referrer["telegram_id"], text=text)
     except Exception as e:
         logger.warning(f"Referral processing error: {e}")
+
+
+async def _ensure_dating_menu(bot: Bot, chat_id: int | None = None) -> None:
+    """Кнопка меню Telegram «Dating» — открывает Mini App, как у Mimolet.
+
+    Без HTTPS Bot API отклоняет MenuButtonWebApp: локальный http://localhost
+    кнопку не поставит, и это не молчаливый успех.
+    """
+    if not webapp_https():
+        logger.warning(
+            "SITE_URL=%s is not HTTPS — Dating menu button skipped", SITE_URL
+        )
+        return
+    try:
+        await bot.set_chat_menu_button(
+            chat_id=chat_id,
+            menu_button=MenuButtonWebApp(
+                text="Dating",
+                web_app=WebAppInfo(url=mini_app_url()),
+            ),
+        )
+    except Exception as e:
+        logger.warning("Failed to set Dating menu button: %s", e)
 
 
 async def on_error(event: ErrorEvent) -> bool:
@@ -121,7 +180,7 @@ async def health_handler(request):
     """HTTP health endpoint for Railway."""
     return web.json_response({
         "status": "ok",
-        "service": "souldawn-dating-bot",
+        "service": "simp-dating-bot",
         "username": BOT_USERNAME,
     })
 
@@ -159,6 +218,39 @@ async def get_fsm_storage():
         return MemoryStorage()
 
 
+def собрать_dispatcher(storage) -> Dispatcher:
+    """Готовый `Dispatcher`: мидлвари, обработчик ошибок, роутеры по порядку.
+
+    Отдельной функцией, чтобы тесты собирали ровно то, что работает в проде.
+    Копия этой сборки в тестах разъехалась бы с продакшеном молча, а порядок
+    здесь существенный: `account` перехватывает /menu, /cancel и /delete раньше
+    шагов анкеты, а заглушка устаревших тапов живёт в первом роутере.
+    """
+    dp = Dispatcher(storage=storage)
+
+    # Троттлинг стоит первым: отсекает флуд до любой работы с БД
+    dp.message.outer_middleware(ThrottleMiddleware())
+    dp.callback_query.outer_middleware(ThrottleMiddleware())
+    dp.message.outer_middleware(RegistrationMiddleware())
+    dp.callback_query.outer_middleware(RegistrationMiddleware())
+
+    # Ошибка в одном обработчике не должна оставлять человека без ответа
+    dp.errors.register(on_error)
+
+    # /start работает из любого состояния FSM, иначе можно застрять
+    dp.message.register(cmd_start, StateFilter("*"), Command("start"))
+    # account держим до остальных роутеров: его команды (/menu, /cancel,
+    # /delete) должны перехватываться раньше шагов анкеты
+    dp.include_router(onboarding.router)
+    dp.include_router(account.router)
+    dp.include_router(premium.router)
+    dp.include_router(referral.router)
+    dp.include_router(registration.router)
+    dp.include_router(dating.router)
+    dp.include_router(matches.router)
+    return dp
+
+
 async def main():
     """Точка входа."""
     if not BOT_TOKEN:
@@ -172,44 +264,11 @@ async def main():
     # Bot setup
     storage = await get_fsm_storage()
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-    dp = Dispatcher(storage=storage)
-
-    # Middleware
-    # Троттлинг стоит первым: отсекает флуд до любой работы с БД
-    dp.message.outer_middleware(ThrottleMiddleware())
-    dp.callback_query.outer_middleware(ThrottleMiddleware())
-    dp.message.outer_middleware(RegistrationMiddleware())
-    dp.callback_query.outer_middleware(RegistrationMiddleware())
-
-    # Ошибка в одном обработчике не должна оставлять человека без ответа
-    dp.errors.register(on_error)
-
-    # Handlers
-    # /start работает из любого состояния FSM, иначе можно застрять
-    dp.message.register(cmd_start, StateFilter("*"), Command("start"))
-    # account держим до остальных роутеров: его команды (/menu, /cancel,
-    # /delete) должны перехватываться раньше шагов анкеты
-    dp.include_router(account.router)
-    dp.include_router(premium.router)
-    dp.include_router(referral.router)
-    dp.include_router(registration.router)
-    dp.include_router(dating.router)
-    dp.include_router(matches.router)
+    dp = собрать_dispatcher(storage)
 
     # Set bot commands
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Главное меню"),
-            BotCommand(command="profile", description="Моя анкета"),
-            BotCommand(command="premium", description="Premium-подписка"),
-            BotCommand(command="invite", description="Пригласить друзей"),
-            BotCommand(command="link", description="Код для входа в приложение"),
-            BotCommand(command="pause", description="Скрыть анкету из поиска"),
-            BotCommand(command="resume", description="Вернуть анкету в поиск"),
-            BotCommand(command="delete", description="Удалить аккаунт"),
-            BotCommand(command="help", description="Помощь"),
-        ]
-    )
+    await bot.set_my_commands(КОМАНДЫ)
+    await _ensure_dating_menu(bot)
     if ADMIN_IDS:
         for admin_id in ADMIN_IDS:
             try:
@@ -229,7 +288,7 @@ async def main():
     redis_task = asyncio.create_task(supervise_redis_subscriber(bot))
 
     # Start polling
-    logger.info(f"Souldawn Dating Bot @{BOT_USERNAME} started!")
+    logger.info(f"Simp Dating Bot @{BOT_USERNAME} started!")
     try:
         # pre_checkout_query обязателен для платежей Telegram Stars
         await dp.start_polling(

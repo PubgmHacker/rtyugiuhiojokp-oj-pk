@@ -1,14 +1,14 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
- * Конфигурация нативной обёртки Souldawn.
+ * Конфигурация нативной обёртки Симп.
  * Цвета синхронизированы с дизайн-системой (web/src/styles/globals.css):
  * фон #0a0b0f, акцент #ff2d6f. Сплэш — первый экран, который видит
  * человек: расхождение с палитрой приложения читается как подмена.
  */
 const config: CapacitorConfig = {
-  appId: "com.souldawn.dating",
-  appName: "Souldawn",
+  appId: "com.simp.dating",
+  appName: "Симп",
   webDir: "dist",
 
   server: {

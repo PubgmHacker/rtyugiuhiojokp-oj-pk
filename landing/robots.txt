@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://souldawn.app/sitemap.xml
+Sitemap: https://simp.app/sitemap.xml

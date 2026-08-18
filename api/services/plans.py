@@ -22,9 +22,8 @@ from dataclasses import dataclass, field
 TIER_FREE = "free"
 TIER_PLUS = "plus"
 TIER_ULTRA = "ultra"
-#: Верхний уровень. Название из той же истории, что и марка: Souldawn —
-#: рассвет, Aurora — заря; латиницей, как и соседи, чтобы линейка читалась
-#: одним рядом.
+#: Верхний уровень. Латиницей, как и соседи, чтобы линейка Plus — Ultra —
+#: Aurora читалась одним рядом.
 TIER_AURORA = "aurora"
 
 TIER_ORDER: tuple[str, ...] = (TIER_FREE, TIER_PLUS, TIER_ULTRA, TIER_AURORA)
@@ -76,15 +75,15 @@ class Plan:
 #: что «пусть будет дороже»: у трёх вариантов средний выбирают чаще, чем
 #: старший из двух, — Ultra продаётся лучше именно на фоне Aurora.
 PLANS: tuple[Plan, ...] = (
-    Plan("plus_1m", TIER_PLUS, 1, 30, 149, "com.souldawn.dating.plus.monthly"),
-    Plan("plus_3m", TIER_PLUS, 3, 90, 379, "com.souldawn.dating.plus.quarterly"),
-    Plan("plus_12m", TIER_PLUS, 12, 365, 1290, "com.souldawn.dating.plus.yearly"),
-    Plan("ultra_1m", TIER_ULTRA, 1, 30, 299, "com.souldawn.dating.ultra.monthly"),
-    Plan("ultra_3m", TIER_ULTRA, 3, 90, 749, "com.souldawn.dating.ultra.quarterly"),
-    Plan("ultra_12m", TIER_ULTRA, 12, 365, 2590, "com.souldawn.dating.ultra.yearly"),
-    Plan("aurora_1m", TIER_AURORA, 1, 30, 599, "com.souldawn.dating.aurora.monthly"),
-    Plan("aurora_3m", TIER_AURORA, 3, 90, 1490, "com.souldawn.dating.aurora.quarterly"),
-    Plan("aurora_12m", TIER_AURORA, 12, 365, 4990, "com.souldawn.dating.aurora.yearly"),
+    Plan("plus_1m", TIER_PLUS, 1, 30, 149, "com.simp.dating.plus.monthly"),
+    Plan("plus_3m", TIER_PLUS, 3, 90, 379, "com.simp.dating.plus.quarterly"),
+    Plan("plus_12m", TIER_PLUS, 12, 365, 1290, "com.simp.dating.plus.yearly"),
+    Plan("ultra_1m", TIER_ULTRA, 1, 30, 299, "com.simp.dating.ultra.monthly"),
+    Plan("ultra_3m", TIER_ULTRA, 3, 90, 749, "com.simp.dating.ultra.quarterly"),
+    Plan("ultra_12m", TIER_ULTRA, 12, 365, 2590, "com.simp.dating.ultra.yearly"),
+    Plan("aurora_1m", TIER_AURORA, 1, 30, 599, "com.simp.dating.aurora.monthly"),
+    Plan("aurora_3m", TIER_AURORA, 3, 90, 1490, "com.simp.dating.aurora.quarterly"),
+    Plan("aurora_12m", TIER_AURORA, 12, 365, 4990, "com.simp.dating.aurora.yearly"),
 )
 
 PLANS_BY_CODE: dict[str, Plan] = {p.code: p for p in PLANS}
@@ -108,13 +107,15 @@ TIERS: dict[str, TierInfo] = {
         TIER_FREE,
         "Бесплатно",
         superlikes=1,
-        perks=("Свайпы без ограничений", "Чат с мэтчами", "1 суперлайк в день"),
+        perks=("10 лайков в день", "3 мэтча в день", "1 суперлайк в день"),
     ),
     TIER_PLUS: TierInfo(
         TIER_PLUS,
         "Plus",
         superlikes=5,
         perks=(
+            "Лайки без ограничений",
+            "Все мэтчи открыты, без суточного лимита",
             "Видно, кто вас лайкнул",
             "Режим инкогнито",
             "5 суперлайков в день вместо 1",
@@ -213,6 +214,58 @@ def tier_allows(tier: str, feature: str) -> bool:
     return tier_rank(tier) >= tier_rank(required)
 
 
+#: Сентинел «без ограничения». Ноль здесь занят смыслом «нельзя совсем» —
+#: так его читает соседняя `DIRECT_MESSAGES_PER_DAY`, где 0 закрывает фичу.
+#: Если бы безлимит тоже был нулём, одна опечатка в таблице открыла бы
+#: бесплатному уровню то, что ему не продано, и наоборот.
+UNLIMITED = -1
+
+
+def is_unlimited(limit: int) -> bool:
+    return limit < 0
+
+
+#: Сколько лайков в сутки. Бесплатный уровень — 10: это главный рычаг
+#: конверсии, потому что лимит упирается ровно в тот момент, когда человек
+#: уже втянулся в свайпы. Пропуск (👎) НЕ считается — иначе лимит превращался
+#: бы в запрет смотреть анкеты, а нам нужно, чтобы смотрели дальше и видели,
+#: кого не могут лайкнуть.
+LIKES_PER_DAY: dict[str, int] = {
+    TIER_FREE: 10,
+    TIER_PLUS: UNLIMITED,
+    TIER_ULTRA: UNLIMITED,
+    TIER_AURORA: UNLIMITED,
+}
+
+#: Сколько мэтчей в сутки можно открыть на бесплатном уровне. Лимит на
+#: РАЗНЫЕ мэтчи, а не на открытия: повторный вход в уже открытый чат в
+#: пределах суток бесплатный, иначе человек тратил бы квоту на то, что уже
+#: прочитал.
+MATCH_VIEWS_PER_DAY: dict[str, int] = {
+    TIER_FREE: 3,
+    TIER_PLUS: UNLIMITED,
+    TIER_ULTRA: UNLIMITED,
+    TIER_AURORA: UNLIMITED,
+}
+
+#: Окно суточных лимитов — скользящие 24 часа, а не календарный день.
+#: Причина та же, по которой так считается квота суперлайков: у нас нет
+#: часового пояса пользователя, а полночь по UTC для половины аудитории
+#: приходится на середину вечера. Скользящее окно ещё и возвращает лайки
+#: постепенно, вместо давки в 00:00.
+LIMIT_WINDOW_HOURS = 24
+
+
+def likes_per_day(tier: str) -> int:
+    """Лимит лайков уровня. `UNLIMITED` — без ограничения."""
+    return LIKES_PER_DAY[TIER_ORDER[tier_rank(tier)]]
+
+
+def match_views_per_day(tier: str) -> int:
+    """Сколько разных мэтчей в сутки можно открыть. `UNLIMITED` — все."""
+    return MATCH_VIEWS_PER_DAY[TIER_ORDER[tier_rank(tier)]]
+
+
 #: Сколько раз в сутки можно включить буст на каждом уровне. Ноль — нельзя.
 BOOSTS_PER_DAY: dict[str, int] = {
     TIER_FREE: 0,
@@ -265,6 +318,14 @@ def tier_from_plan(plan: str | None) -> str:
     if plan == "premium":
         # Записи до появления линейки: тогда продавалось ровно то, что сейчас Plus
         return TIER_PLUS
+    план = PLANS_BY_CODE.get(plan)
+    if план is not None:
+        # В колонке лежит код тарифа, а не уровень («plus_1m» вместо «plus»).
+        # Сейчас так не пишет никто, но словари стоят рядом и путаются в одну
+        # букву, а цена ошибки односторонняя: код — это оплаченный продукт, и
+        # прочитать его как `free` значит молча отобрать купленное. Обратное
+        # невозможно — неизвестное значение по-прежнему ниже.
+        return план.tier
     # Неизвестное значение не должно открывать платное
     return plan if tier_rank(plan) > 0 else TIER_FREE
 

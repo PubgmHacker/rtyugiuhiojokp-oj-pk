@@ -400,7 +400,7 @@ async def test_без_sentry_dsn_приложение_поднимается_и_
         r = await client.get("/health")
 
     assert r.status_code in (200, 503)
-    assert r.json()["service"] == "souldawn-dating-api"
+    assert r.json()["service"] == "simp-dating-api"
 
 
 # ── Пересыл ролика в чат и в комнату ────────────────────────────
@@ -817,9 +817,9 @@ async def test_чужую_ссылку_нельзя_подставить_в_фо
     from config import get_settings
 
     настройки = get_settings()
-    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
 
-    анкета = _profile("u-me", photos=["https://media.souldawn.test/photos/u-me/1.jpg"])
+    анкета = _profile("u-me", photos=["https://media.simp.test/photos/u-me/1.jpg"])
     session = _Session([_Result(scalar=анкета)])
 
     async with await _client(app, session, _user()) as client:
@@ -829,7 +829,7 @@ async def test_чужую_ссылку_нельзя_подставить_в_фо
         )
 
     assert r.status_code == 400, "чужая ссылка принята в анкету"
-    assert анкета.photos == ["https://media.souldawn.test/photos/u-me/1.jpg"], (
+    assert анкета.photos == ["https://media.simp.test/photos/u-me/1.jpg"], (
         "анкета изменена, несмотря на отказ"
     )
 
@@ -839,12 +839,12 @@ async def test_своё_загруженное_фото_в_анкету_прин
     from config import get_settings
 
     настройки = get_settings()
-    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
 
     анкета = _profile("u-me", photos=[])
     session = _Session([_Result(scalar=анкета)])
 
-    новое = "https://media.souldawn.test/photos/u-me/2.jpg"
+    новое = "https://media.simp.test/photos/u-me/2.jpg"
     async with await _client(app, session, _user()) as client:
         r = await client.patch("/api/profiles/me", json={"photos": [новое]})
 
@@ -862,7 +862,7 @@ async def test_фото_из_бота_переживают_обновление_
     from config import get_settings
 
     настройки = get_settings()
-    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
 
     анкета = _profile("u-me", photos=["AgACAgIAAxkBAAI-старое"])
     session = _Session([_Result(scalar=анкета)])

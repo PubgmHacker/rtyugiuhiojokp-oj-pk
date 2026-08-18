@@ -190,6 +190,31 @@ class Match(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MatchView(Base):
+    """Какие мэтчи человек открывал — суточный лимит бесплатного уровня.
+
+    Схема ДОЛЖНА совпадать с api/models/models.py::MatchView. Бот пишет сюда
+    сам (открытие чата из списка мэтчей — такое же открытие, как в мини-аппе),
+    поэтому таблица здесь не «на всякий случай», а рабочая.
+    """
+
+    __tablename__ = "dating_match_views"
+    __table_args__ = (
+        UniqueConstraint("user_id", "match_id", name="uq_match_view"),
+        Index("ix_match_view_user_seen", "user_id", "viewed_at"),
+        Index("ix_match_view_match", "match_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    match_id: Mapped[str] = mapped_column(String, ForeignKey("dating_matches.id", ondelete="CASCADE"))
+    #: Когда открыт в последний раз. Обновляется на месте, а не дублируется:
+    #: окно скользящее, и запись старше окна должна продлеваться.
+    viewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Referral(Base):
     __tablename__ = "dating_referrals"
 

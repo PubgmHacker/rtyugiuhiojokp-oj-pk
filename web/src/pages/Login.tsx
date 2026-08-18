@@ -12,15 +12,15 @@ import {
 import { getInitData, initTelegram, isInTelegram } from "../lib/telegram";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
+import { legalUrl } from "../lib/legal";
 import { openExternal, isNative } from "../lib/native";
 import { appleSignInAvailable, signInWithApple, ВходОтменён } from "../lib/appleSignIn";
 import { Button, Spinner } from "../components/ui";
 import BrandMark from "../components/BrandMark";
 
-const SITE_URL = import.meta.env.VITE_SITE_URL || "https://souldawn.app";
 // Дефолт — рабочий юзернейм: с неверным весь канал привлечения обрывался на
 // первом клике, и это уже ловил аудит на лендинге
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "souldawn_dating_bot";
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
 const CODE_LENGTH = 6;
 
 function getDeviceId(): string {
@@ -226,8 +226,8 @@ export default function Login() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background: [
-            "radial-gradient(52% 34% at 22% 8%, rgb(255 122 26 / 0.20), transparent 72%)",
-            "radial-gradient(44% 30% at 78% 4%, rgb(255 45 111 / 0.14), transparent 70%)",
+            "radial-gradient(52% 34% at 22% 8%, rgb(255 45 111 / 0.12), transparent 72%)",
+            "radial-gradient(44% 30% at 78% 4%, rgb(184 22 72 / 0.10), transparent 70%)",
           ].join(","),
         }}
       />
@@ -244,7 +244,7 @@ export default function Login() {
           <Logo animated />
           <div className="min-w-0">
             <h1 className="text-[28px] font-bold text-text tracking-[-0.03em] leading-none">
-              Souldawn
+              Симп
             </h1>
             <p className="mt-1.5 text-[14px] text-text-muted leading-none">
               знакомства
@@ -459,8 +459,12 @@ export default function Login() {
 
         <p className="mt-2 text-[11.5px] text-text-faint text-center leading-relaxed">
           Сервис только для лиц старше 16 лет. Продолжая, вы принимаете{" "}
+          {/* Абсолютный адрес обязателен: `target="_blank"` в нативной сборке уходит
+              в системный браузер, а `/terms.html` разворачивается там от
+              `capacitor://localhost` — открыть такое нечем, ссылка молча мертва.
+              Мертва она именно на экране, где человека просят принять документ. */}
           <a
-            href={`${SITE_URL}/terms.html`}
+            href={legalUrl("terms")}
             target="_blank"
             rel="noopener noreferrer"
             className="text-text-muted underline underline-offset-2"
@@ -469,7 +473,7 @@ export default function Login() {
           </a>{" "}
           и{" "}
           <a
-            href={`${SITE_URL}/privacy.html`}
+            href={legalUrl("privacy")}
             target="_blank"
             rel="noopener noreferrer"
             className="text-text-muted underline underline-offset-2"
@@ -489,17 +493,9 @@ function Logo({ animated }: { animated?: boolean }) {
       initial={animated ? { scale: 0.9, opacity: 0 } : false}
       animate={animated ? { scale: 1, opacity: 1 } : undefined}
       transition={{ type: "spring", stiffness: 300, damping: 24 }}
-      className="relative shrink-0 w-12 h-12 flex items-center justify-center"
+      className="shrink-0"
     >
-      <div
-        aria-hidden
-        className="absolute inset-[4%] rounded-[28%] opacity-55"
-        style={{
-          background:
-            "radial-gradient(circle at 40% 35%, rgb(255 122 26 / 0.28), rgb(255 45 111 / 0.16) 50%, transparent 70%)",
-        }}
-      />
-      <BrandMark size={44} className="relative" />
+      <BrandMark size={48} />
     </motion.div>
   );
 }

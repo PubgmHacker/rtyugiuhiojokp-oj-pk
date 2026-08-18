@@ -17,11 +17,11 @@
       "localizations": [
         {
           "description": "",
-          "displayName": "Souldawn",
+          "displayName": "Симп",
           "locale": "ru_RU"
         }
       ],
-      "name": "Souldawn",
+      "name": "Симп",
       "subscriptions": [
         {
           "adHocOffers": [],
@@ -38,7 +38,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.aurora.monthly",
+          "productID": "com.simp.dating.aurora.monthly",
           "recurringSubscriptionPeriod": "P1M",
           "referenceName": "Aurora P1M",
           "subscriptionGroupID": "21390971",
@@ -59,7 +59,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.aurora.quarterly",
+          "productID": "com.simp.dating.aurora.quarterly",
           "recurringSubscriptionPeriod": "P3M",
           "referenceName": "Aurora P3M",
           "subscriptionGroupID": "21390971",
@@ -80,7 +80,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.aurora.yearly",
+          "productID": "com.simp.dating.aurora.yearly",
           "recurringSubscriptionPeriod": "P1Y",
           "referenceName": "Aurora P1Y",
           "subscriptionGroupID": "21390971",
@@ -101,7 +101,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.ultra.monthly",
+          "productID": "com.simp.dating.ultra.monthly",
           "recurringSubscriptionPeriod": "P1M",
           "referenceName": "Ultra P1M",
           "subscriptionGroupID": "21390971",
@@ -122,7 +122,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.ultra.quarterly",
+          "productID": "com.simp.dating.ultra.quarterly",
           "recurringSubscriptionPeriod": "P3M",
           "referenceName": "Ultra P3M",
           "subscriptionGroupID": "21390971",
@@ -143,7 +143,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.ultra.yearly",
+          "productID": "com.simp.dating.ultra.yearly",
           "recurringSubscriptionPeriod": "P1Y",
           "referenceName": "Ultra P1Y",
           "subscriptionGroupID": "21390971",
@@ -164,7 +164,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.plus.monthly",
+          "productID": "com.simp.dating.plus.monthly",
           "recurringSubscriptionPeriod": "P1M",
           "referenceName": "Plus P1M",
           "subscriptionGroupID": "21390971",
@@ -185,7 +185,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.plus.quarterly",
+          "productID": "com.simp.dating.plus.quarterly",
           "recurringSubscriptionPeriod": "P3M",
           "referenceName": "Plus P3M",
           "subscriptionGroupID": "21390971",
@@ -206,7 +206,7 @@
               "locale": "ru_RU"
             }
           ],
-          "productID": "com.souldawn.dating.plus.yearly",
+          "productID": "com.simp.dating.plus.yearly",
           "recurringSubscriptionPeriod": "P1Y",
           "referenceName": "Plus P1Y",
           "subscriptionGroupID": "21390971",

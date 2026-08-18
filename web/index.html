@@ -7,10 +7,10 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
 
-    <title>Souldawn — знакомства по интересам</title>
+    <title>Симп — знакомства по интересам</title>
     <meta
       name="description"
-      content="Souldawn — знакомства по интересам, а не только по фото. Telegram и iPhone. С 16 лет."
+      content="Симп — знакомства по интересам, а не только по фото. Telegram и iPhone. С 16 лет."
     />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -22,14 +22,14 @@
     <meta name="color-scheme" content="dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Souldawn" />
+    <meta name="apple-mobile-web-app-title" content="Симп" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="format-detection" content="telephone=no" />
 
     <!-- Превью ссылки в мессенджерах и соцсетях -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Souldawn" />
-    <meta property="og:title" content="Souldawn — люди интереснее, чем их фото" />
+    <meta property="og:site_name" content="Симп" />
+    <meta property="og:title" content="Симп — люди интереснее, чем их фото" />
     <meta
       property="og:description"
       content="Знакомства по интересам. Telegram и iPhone. С 16 лет."
@@ -45,10 +45,149 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
     />
 
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!--
+      Telegram-SDK грузится только там, где он вообще существует, и никогда не
+      блокирует разбор страницы.
+
+      Синхронный <script src="https://telegram.org/…"> в <head> останавливает
+      парсер до ответа сервера. У части аудитории telegram.org недоступен на
+      уровне провайдера, и соединение не отвергается, а висит до таймаута
+      WebKit — всё это время <body> не разобран, DOM пуст, и на экране нет
+      ничего, даже стража загрузки ниже: он живёт в <body> и не успевает
+      появиться. В нативной сборке (capacitor://localhost) это выглядело как
+      мёртвое приложение — чёрный экран без единого слова. Проверено на
+      симуляторе: с той строкой не рисовалось ни пикселя, без неё сразу
+      открывается экран входа.
+
+      Вне Telegram SDK не нужен вовсе: в нативном приложении и в обычном
+      браузере window.Telegram не появится ни при каком ответе telegram.org, так
+      что запрос туда там — единственная причина не открыться.
+    -->
+    <script>
+      window.__telegramSdkReady = (function () {
+        // Признаки контейнера Telegram до загрузки SDK: мост в WebView и
+        // параметры, которые Telegram сам дописывает в адрес мини-аппа
+        var вТелеграме =
+          typeof window.TelegramWebviewProxy !== "undefined" ||
+          /tgWebApp/.test(window.location.hash + window.location.search);
+        if (!вТелеграме) return Promise.resolve(false);
+
+        return new Promise(function (готово) {
+          var решено = false;
+          function решить(есть) {
+            if (решено) return;
+            решено = true;
+            готово(есть);
+          }
+          // Ждём, но не бесконечно: без initData человек увидит вход по коду из
+          // бота — это несравнимо лучше пустого экрана
+          setTimeout(function () {
+            решить(false);
+          }, 3000);
+          var тег = document.createElement("script");
+          тег.src = "https://telegram.org/js/telegram-web-app.js";
+          тег.async = true;
+          тег.onload = function () {
+            решить(!!(window.Telegram && window.Telegram.WebApp));
+          };
+          тег.onerror = function () {
+            решить(false);
+          };
+          document.head.appendChild(тег);
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Страж загрузки. Если бандл падает на верхнем уровне (модуль не догрузился,
+      исключение до первого рендера), #root остаётся пустым, и в нативной сборке
+      это чёрный экран без единого слова: ни консоли, ни адресной строки, ни
+      кнопки перезагрузки у человека нет. Отчёт «просто не открывается» ничем не
+      отличается от «нет сети», и разбирать нечего.
+
+      Скрипт inline и без зависимостей намеренно: он обязан работать ровно в тот
+      момент, когда всё остальное не загрузилось.
+    -->
+    <script>
+      (function () {
+        var КОРЕНЬ = document.getElementById("root");
+        var ЗАДЕРЖКА = 4000; // меньше — успеет сработать на медленной сети
+        var сбой = null;
+        var показано = false;
+
+        function запомнить(текст, где) {
+          if (сбой) return; // первая ошибка причина, остальные — следствия
+          сбой = { текст: String(текст || "неизвестная ошибка"), где: где || "" };
+        }
+
+        window.addEventListener("error", function (e) {
+          if (e && e.target && e.target !== window && e.target.tagName) {
+            // Не загрузился внешний файл: шрифты и telegram-web-app.js
+            // необязательны, но если это модуль приложения — причина в нём
+            var адрес = e.target.src || e.target.href || "";
+            if (/\.js(\?|$)/.test(адрес)) запомнить("не загрузился скрипт", адрес);
+            return;
+          }
+          var er = e && e.error;
+          запомнить(
+            er && er.message ? er.message : e && e.message,
+            er && er.stack ? String(er.stack).split("\n").slice(0, 3).join(" ← ") : ""
+          );
+        }, true);
+
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e && e.reason;
+          запомнить(
+            r && r.message ? r.message : r,
+            r && r.stack ? String(r.stack).split("\n").slice(0, 3).join(" ← ") : ""
+          );
+        });
+
+        function экран() {
+          if (показано || !КОРЕНЬ || КОРЕНЬ.childNodes.length) return;
+          показано = true;
+          var причина = сбой
+            ? сбой.текст + (сбой.где ? "\n" + сбой.где : "")
+            : "Код приложения не начал работу за " +
+              Math.round(ЗАДЕРЖКА / 1000) +
+              " с. Обычно это обрыв загрузки.";
+          КОРЕНЬ.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
+            'padding:24px;background:#0a0b0f;color:#e6e7ea;' +
+            "font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif\">" +
+            '<div style="max-width:420px;width:100%">' +
+            '<div style="font-size:19px;font-weight:700;margin-bottom:8px">Приложение не запустилось</div>' +
+            '<div style="opacity:.72;margin-bottom:16px">Это ошибка в приложении, а не в вашем ' +
+            "устройстве. Перезапуск иногда помогает; если нет — покажите текст ниже поддержке.</div>" +
+            '<pre id="boot-fail-text" style="white-space:pre-wrap;word-break:break-word;margin:0 0 18px;' +
+            'padding:12px;border-radius:12px;background:#151720;color:#ff9db8;font-size:12px"></pre>' +
+            '<button id="boot-fail-retry" style="width:100%;padding:14px;border:0;border-radius:14px;' +
+            'background:#ff2d6f;color:#fff;font-size:16px;font-weight:600">Перезапустить</button>' +
+            "</div></div>";
+          // Текст ошибки — через textContent: в сообщении бывает разметка,
+          // и склеивать её в innerHTML нельзя
+          document.getElementById("boot-fail-text").textContent = причина;
+          document.getElementById("boot-fail-retry").onclick = function () {
+            window.location.reload();
+          };
+        }
+
+        var таймер = setTimeout(экран, ЗАДЕРЖКА);
+
+        // Приложение смонтировалось — стража не должно быть видно никогда
+        if (КОРЕНЬ && window.MutationObserver) {
+          var наблюдатель = new MutationObserver(function () {
+            if (КОРЕНЬ.childNodes.length && !показано) {
+              clearTimeout(таймер);
+              наблюдатель.disconnect();
+            }
+          });
+          наблюдатель.observe(КОРЕНЬ, { childList: true });
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

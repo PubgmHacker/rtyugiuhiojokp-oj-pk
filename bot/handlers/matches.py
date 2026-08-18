@@ -19,10 +19,10 @@ from database import (
     get_user_matches,
     get_match_partner,
 )
-from keyboards import matches_list_kb, chat_kb, main_kb
+from keyboards import matches_list_kb, chat_kb, main_kb, limit_reached_kb
 from services.moderation import moderate_text, humanize
 from states import ChatStates
-from texts import chat_header
+from texts import MATCH_LOCKED_SHORT, chat_header, match_limit_reached
 from utils import safe_edit_text
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,12 @@ async def list_matches(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("chat:open:"))
 async def open_chat(callback: CallbackQuery, state: FSMContext):
-    """Открыть чат с мэтчем."""
+    """Открыть чат с мэтчем.
+
+    Это и есть «открытие мэтча» в смысле суточного лимита — здесь тратится
+    слот (`spend=True`). Именно открытие, а не показ списка: заход в «Мои
+    мэтчи» иначе сжигал бы всю квоту сразу.
+    """
     match_id = callback.data.split(":")[-1]
     db_user = await get_or_create_user(
         callback.from_user.id,
@@ -67,7 +72,22 @@ async def open_chat(callback: CallbackQuery, state: FSMContext):
         callback.from_user.first_name or "",
     )
 
-    partner_profile = await get_match_partner(match_id, db_user["id"])
+    partner_profile = await get_match_partner(match_id, db_user["id"], spend=True)
+
+    if partner_profile and partner_profile.get("locked"):
+        # Состояние чата не ставим: писать в закрытый мэтч нельзя, а
+        # оставленный ChatStates.in_chat пустил бы туда следующее сообщение
+        await state.clear()
+        await callback.answer(MATCH_LOCKED_SHORT, show_alert=False)
+        await safe_edit_text(
+            callback.message,
+            match_limit_reached(
+                partner_profile["limit"], partner_profile["reset_at"]
+            ),
+            reply_markup=limit_reached_kb("matches:list"),
+        )
+        return
+
     partner_name = partner_profile.get("display_name", "Партнёр") if partner_profile else "Партнёр"
 
     await state.set_state(ChatStates.in_chat)
@@ -131,6 +151,20 @@ async def send_message(message: Message, state: FSMContext):
         await message.answer("⚠️ Этот чат недоступен.", reply_markup=main_kb())
         return
 
+    if partner_profile.get("locked"):
+        # Состояние могло остаться с прошлого сеанса — до того, как квота
+        # кончилась. Проверяем и здесь: без этого сообщение уходило бы в
+        # закрытый чат, то есть лимит обходился бы одним старым состоянием.
+        # Слот не тратим (`spend` по умолчанию False): отправка — не открытие.
+        await state.clear()
+        await message.answer(
+            match_limit_reached(
+                partner_profile["limit"], partner_profile["reset_at"]
+            ),
+            reply_markup=limit_reached_kb("matches:list"),
+        )
+        return
+
     cls = _session_cls()
     async with cls() as session:
         async with session.begin():
@@ -180,6 +214,17 @@ async def chat_hint(callback: CallbackQuery):
 
     partner = await get_match_partner(match_id, db_user["id"])
     me = await get_profile(db_user["id"])
+
+    if partner and partner.get("locked"):
+        # Подсказка строится по интересам и био партнёра — для закрытого мэтча
+        # это тот же слив, что и имя. Кнопка достижима со старого сообщения,
+        # поэтому проверка нужна и здесь, а не только на открытии чата.
+        await callback.answer(MATCH_LOCKED_SHORT, show_alert=False)
+        await callback.message.answer(
+            match_limit_reached(partner["limit"], partner["reset_at"]),
+            reply_markup=limit_reached_kb("matches:list"),
+        )
+        return
 
     common = []
     if partner and me:

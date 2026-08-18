@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config import get_settings
+from middleware.auth import BANNED_CODE, AccountBannedError
 from middleware.rate_limit import RateLimitMiddleware
 from routers import (
     auth, profiles, likes, matches, chat, upload, report, admin, blocks, iap, reels,
@@ -110,7 +111,7 @@ async def _уборка_историй(интервал: int = 3600) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup + shutdown hooks."""
-    logger.info("SOULDAWN DATING API starting up...")
+    logger.info("SIMP DATING API starting up...")
 
     # Без SENTRY_DSN — no-op, поведение не меняется (см. services/alerting.py)
     from services.alerting import init as init_alerting
@@ -176,7 +177,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    logger.info("SOULDAWN DATING API shutting down...")
+    logger.info("SIMP DATING API shutting down...")
 
     # Гасим уборщика первым: он берёт сессию из того же пула и лезет в R2,
     # а закрывать пул под работающим запросом — способ получить ошибку
@@ -202,7 +203,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Souldawn Dating API",
+    title="Simp Dating API",
     description="API для сервиса знакомств с AI-мэтчами на базе GLM-5.2",
     version="0.1.0",
     lifespan=lifespan,
@@ -249,6 +250,21 @@ app.include_router(chat_themes.router, prefix="/api")
 app.include_router(stories.router, prefix="/api")
 app.include_router(badges.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+
+
+@app.exception_handler(AccountBannedError)
+async def account_banned_handler(request: Request, exc: AccountBannedError):
+    """Бан — единственный 403, под который у клиента есть отдельный экран.
+
+    Код кладём рядом с ``detail``, а не внутрь него: ``detail`` остаётся
+    строкой, и ни один клиент, который просто её показывает, не ломается.
+    Обработчик подобранного класса имеет приоритет над обработчиком
+    ``HTTPException`` — Starlette ищет по MRO исключения.
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "code": BANNED_CODE},
+    )
 
 
 @app.exception_handler(Exception)
@@ -334,11 +350,11 @@ async def health(response: Response):
 
     return {
         "status": "ok" if healthy else "unhealthy",
-        "service": "souldawn-dating-api",
+        "service": "simp-dating-api",
         "checks": checks,
     }
 
 
 @app.get("/")
 async def root():
-    return {"service": "Souldawn Dating API", "version": "0.1.0"}
+    return {"service": "Simp Dating API", "version": "0.1.0"}

@@ -2,15 +2,15 @@
 import PackageDescription
 
 // Имя продукта выводится Capacitor CLI из имени npm-пакета
-// (@souldawn/capacitor-iap → SouldawnCapacitorIap) и подставляется в
+// (@simp/capacitor-iap → SimpCapacitorIap) и подставляется в
 // автогенерируемый ios/App/CapApp-SPM/Package.swift. Переименуешь —
 // сборка перестанет находить продукт.
 let package = Package(
-    name: "SouldawnCapacitorIap",
+    name: "SimpCapacitorIap",
     platforms: [.iOS(.v16)],
     products: [
         .library(
-            name: "SouldawnCapacitorIap",
+            name: "SimpCapacitorIap",
             targets: ["IAPPlugin"])
     ],
     dependencies: [

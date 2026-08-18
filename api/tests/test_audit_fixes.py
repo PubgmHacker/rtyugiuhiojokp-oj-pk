@@ -713,7 +713,7 @@ def test_пуши_включаются_когда_ключи_заданы(monkey
         ("APNS_KEY_P8", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----"),
         ("APNS_KEY_ID", "ABC123"),
         ("APNS_TEAM_ID", "TEAM123"),
-        ("APNS_BUNDLE_ID", "com.souldawn.dating"),
+        ("APNS_BUNDLE_ID", "com.simp.dating"),
     ):
         monkeypatch.setattr(push.settings, name, value)
 
@@ -1042,8 +1042,8 @@ def test_имя_продукта_плагина_совпадает_с_ios_про
     )
     spm = (web / "ios" / "App" / "CapApp-SPM" / "Package.swift").read_text(encoding="utf-8")
 
-    assert 'name: "SouldawnCapacitorIap"' in plugin_manifest
-    assert 'product(name: "SouldawnCapacitorIap"' in spm
+    assert 'name: "SimpCapacitorIap"' in plugin_manifest
+    assert 'product(name: "SimpCapacitorIap"' in spm
 
 
 def test_клиент_покупки_подключён_к_витрине():
@@ -2613,12 +2613,12 @@ def test_картинка_в_личку_только_из_нашего_хран�
     from services.public_profile import наша_картинка
 
     настройки = get_settings()
-    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.souldawn.test", raising=False)
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
 
-    assert наша_картинка("https://media.souldawn.test/photos/u/1.jpg") is True
+    assert наша_картинка("https://media.simp.test/photos/u/1.jpg") is True
     assert наша_картинка("https://evil.test/1.jpg") is False, "чужая ссылка принята"
     # http вместо https на нашем же домене — тоже чужая: подмена схемы
-    assert наша_картинка("http://media.souldawn.test/photos/u/1.jpg") is False
+    assert наша_картинка("http://media.simp.test/photos/u/1.jpg") is False
     # file_id Telegram — не ссылка, его кладёт бот без R2
     assert наша_картинка("AgACAgIAAxkBAAI-file-id") is True
     # Пустое значение — картинки нет, проверять нечего
@@ -3240,7 +3240,7 @@ def test_текстовая_модерация_имеет_запасной_фи�
 # ════════════════════════════════════════════════════════════════
 
 def test_лендинг_ведёт_на_тот_же_бот_что_и_приложение():
-    """Лендинг вёл на t.me/souldawn_bot, а приложение — на souldawn_dating_bot.
+    """Лендинг вёл на t.me/simp_bot, а приложение — на simp_dating_bot.
     Единственный канал привлечения обрывался на первом клике, и это не видно
     ниоткуда, кроме как открыть ссылку руками."""
     import re
@@ -3605,7 +3605,7 @@ def test_цвета_интерфейса_читаемы_и_различимы():
 
     Три вещи, на которых уже обжигались: `text-faint` был 3.74:1 и не проходил
     AA, хотя им набраны таймстемпы и дисклеймеры; акцент был холодным индиго
-    при названии Souldawn; а после перехода на тёплый акцент «ошибка»
+    при названии Симп; а после перехода на тёплый акцент «ошибка»
     расходилась с ним всего на 12° по тону и читалась как главное действие.
     """
     import colorsys
@@ -4107,7 +4107,7 @@ def test_вход_через_apple_собран_целиком():
 
     # Плагин должен быть в сборке, иначе на устройстве его просто нет
     spm = (web / "ios" / "App" / "CapApp-SPM" / "Package.swift").read_text(encoding="utf-8")
-    assert "SouldawnCapacitorAppleSignin" in spm, "плагин не подключён к сборке iOS"
+    assert "SimpCapacitorAppleSignin" in spm, "плагин не подключён к сборке iOS"
 
     # Право обязательно: без него ASAuthorization падает в рантайме
     ent = web / "ios" / "App" / "App" / "App.entitlements"

@@ -13,7 +13,7 @@ from database import get_or_create_user, get_referral_count
 logger = logging.getLogger(__name__)
 router = Router()
 
-SHARE_TEXT = "Залетай в Souldawn Dating — знакомства с AI-подбором 💕"
+SHARE_TEXT = "Залетай в Симп — знакомства с AI-подбором 💕"
 
 
 def referral_link(user_id: str) -> str:

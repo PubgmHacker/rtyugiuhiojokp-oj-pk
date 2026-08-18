@@ -7,7 +7,7 @@ import Foundation
 @objc(IAPPlugin)
 public class IAPPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "IAPPlugin"
-    public let jsName = "SouldawnIAP"
+    public let jsName = "SimpIAP"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getProducts", returnType: CAPPluginReturnPromise),

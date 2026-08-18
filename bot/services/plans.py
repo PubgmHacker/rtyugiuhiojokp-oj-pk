@@ -78,11 +78,57 @@ DIRECT_MESSAGES_PER_DAY: dict[str, int] = {
 def direct_messages_per_day(tier: str) -> int:
     return DIRECT_MESSAGES_PER_DAY.get(TIER_ORDER[tier_rank(tier)], 0)
 
+
+#: Копия api/services/plans.py::UNLIMITED. Ноль занят смыслом «нельзя совсем»
+#: (см. DIRECT_MESSAGES_PER_DAY выше), поэтому безлимит — отрицательный.
+UNLIMITED = -1
+
+
+def is_unlimited(limit: int) -> bool:
+    return limit < 0
+
+
+#: Копия api/services/plans.py::LIKES_PER_DAY. Бот пишет лайки напрямую через
+#: `database/connection.like_and_match`, минуя API, поэтому лимит обязан жить и
+#: здесь: иначе бесплатный аккаунт обходил бы его, просто свайпая в боте.
+LIKES_PER_DAY: dict[str, int] = {
+    TIER_FREE: 10,
+    TIER_PLUS: UNLIMITED,
+    TIER_ULTRA: UNLIMITED,
+    TIER_AURORA: UNLIMITED,
+}
+
+#: Копия api/services/plans.py::MATCH_VIEWS_PER_DAY — сколько РАЗНЫХ мэтчей в
+#: сутки можно открыть. Повторный вход в уже открытый чат бесплатный.
+MATCH_VIEWS_PER_DAY: dict[str, int] = {
+    TIER_FREE: 3,
+    TIER_PLUS: UNLIMITED,
+    TIER_ULTRA: UNLIMITED,
+    TIER_AURORA: UNLIMITED,
+}
+
+#: Копия api/services/plans.py::LIMIT_WINDOW_HOURS — окно скользящее, а не
+#: календарные сутки: часового пояса пользователя у нас нет.
+LIMIT_WINDOW_HOURS = 24
+
+
+def likes_per_day(tier: str) -> int:
+    """Лимит лайков уровня. `UNLIMITED` — без ограничения."""
+    return LIKES_PER_DAY[TIER_ORDER[tier_rank(tier)]]
+
+
+def match_views_per_day(tier: str) -> int:
+    """Сколько разных мэтчей в сутки можно открыть. `UNLIMITED` — все."""
+    return MATCH_VIEWS_PER_DAY[TIER_ORDER[tier_rank(tier)]]
+
+
 #: Что даёт уровень — для витрины в боте. Держим в том же порядке и тем же
 #: смыслом, что `TIERS[...].perks` в API: человек сравнивает уровни в боте, а
 #: покупает в мини-аппе, и расхождение читается как обман.
 TIER_PERKS: dict[str, tuple[str, ...]] = {
     TIER_PLUS: (
+        "💞 Лайки без ограничений",
+        "💌 Все мэтчи открыты, без суточного лимита",
         "👀 Видно, кто вас лайкнул",
         "🥷 Режим инкогнито",
         "⭐ 5 суперлайков в день вместо 1",
@@ -150,6 +196,32 @@ def tier_rank(tier: str) -> int:
         return TIER_ORDER.index(tier)
     except ValueError:
         return 0
+
+
+def tier_from_plan(plan: str | None) -> str:
+    """Уровень по значению `Subscription.plan`. Копия api/services/plans.py.
+
+    Понадобилась вместе с суточными лимитами: их считает
+    `services/quotas.py`, и он обязан читать `plan` ровно так же, как API.
+    Иначе подписчик со старой записью `plan="premium"` получал бы в боте
+    десять лайков в сутки, а в мини-аппе — безлимит: одна и та же оплата, два
+    разных лимита, и виноват выглядит продукт.
+    """
+    if not plan or plan == TIER_FREE:
+        return TIER_FREE
+    if plan == "premium":
+        # Записи до появления линейки: тогда продавалось ровно то, что сейчас Plus
+        return TIER_PLUS
+    план = PLANS_BY_CODE.get(plan)
+    if план is not None:
+        # В колонке лежит код тарифа, а не уровень («plus_1m» вместо «plus»).
+        # Сейчас так не пишет никто, но словари стоят рядом и путаются в одну
+        # букву, а цена ошибки односторонняя: код — это оплаченный продукт, и
+        # прочитать его как `free` значит молча отобрать купленное. Обратное
+        # невозможно — неизвестное значение по-прежнему ниже.
+        return план.tier
+    # Неизвестное значение не должно открывать платное
+    return plan if tier_rank(plan) > 0 else TIER_FREE
 
 
 def tier_allows(tier: str, feature: str) -> bool:

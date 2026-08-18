@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useId } from "react";
+import { useState, useCallback, useMemo, useId, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
@@ -12,7 +12,14 @@ import {
 } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
+import { legalUrl } from "../lib/legal";
 import { getCurrentPosition } from "../lib/native";
+import {
+  loadDraft,
+  saveDraft,
+  clearDraft,
+  type DraftFields,
+} from "../lib/onboardingDraft";
 import { Button, Chip, Spinner } from "../components/ui";
 import {
   GOALS,
@@ -77,43 +84,66 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const { user, setUser } = useStore();
 
-  const [index, setIndex] = useState(0);
+  // Черновик читаем ровно один раз, при монтировании: повторное чтение на
+  // рендере затирало бы то, что человек набрал в этой сессии.
+  const [draft] = useState(loadDraft);
+  const [restored, setRestored] = useState(() => !!draft);
+
+  const [index, setIndex] = useState(() =>
+    draft ? Math.min(draft.index, STEPS.length - 1) : 0
+  );
   const [direction, setDirection] = useState(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // Экран используется и для правки анкеты — подставляем, что уже есть
-  const [name, setName] = useState(user?.display_name ?? "");
-  const [age, setAge] = useState(user?.age ? String(user.age) : "");
-  const [gender, setGender] = useState(user?.gender ?? "");
-  const [lookingFor, setLookingFor] = useState(user?.looking_for ?? "");
-  const [city, setCity] = useState(user?.city ?? "");
-  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
-  const [geoBusy, setGeoBusy] = useState(false);
-  const [photos, setPhotos] = useState<PhotoSlot[]>(
-    (user?.photos ?? []).map((url) => ({ id: `init-${photoSeq++}`, url }))
+  // Экран используется и для правки анкеты — подставляем, что уже есть.
+  // Черновик приоритетнее профиля: он новее, и именно его человек не докончил.
+  const [name, setName] = useState(draft?.name ?? user?.display_name ?? "");
+  const [age, setAge] = useState(
+    draft?.age ?? (user?.age ? String(user.age) : "")
   );
-  const [interests, setInterests] = useState<string[]>(user?.interests ?? []);
+  const [gender, setGender] = useState(draft?.gender ?? user?.gender ?? "");
+  const [lookingFor, setLookingFor] = useState(
+    draft?.lookingFor ?? user?.looking_for ?? ""
+  );
+  const [city, setCity] = useState(draft?.city ?? user?.city ?? "");
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(
+    draft?.coords ?? null
+  );
+  const [geoBusy, setGeoBusy] = useState(false);
+  const [photos, setPhotos] = useState<PhotoSlot[]>(() =>
+    (draft?.photos ?? user?.photos ?? []).map((url) => ({
+      id: `init-${photoSeq++}`,
+      url,
+    }))
+  );
+  const [interests, setInterests] = useState<string[]>(
+    draft?.interests ?? user?.interests ?? []
+  );
   // Категории интересов сворачиваемые: на экране 320px список из ~110 тегов
   // одной простыней не читается. Открытые по умолчанию — те, где у человека
   // уже есть выбранный тег (правка анкеты), плюс первая категория для новых.
   const [openCategories, setOpenCategories] = useState<Set<string>>(() => {
     const initial = new Set<string>();
-    const mine = new Set(user?.interests ?? []);
+    const mine = new Set(interests);
     for (const [cat, tags] of Object.entries(INTEREST_CATEGORIES)) {
       if (tags.some((t) => mine.has(t))) initial.add(cat);
     }
     if (initial.size === 0) initial.add(Object.keys(INTEREST_CATEGORIES)[0]);
     return initial;
   });
-  const [goal, setGoal] = useState(user?.goal ?? "");
-  const [relationType, setRelationType] = useState(user?.relation_type ?? "");
-  const [subculture, setSubculture] = useState(user?.subculture ?? "");
-  const [mbti, setMbti] = useState(user?.mbti ?? "");
-  const [height, setHeight] = useState(
-    user?.height_cm != null ? String(user.height_cm) : ""
+  const [goal, setGoal] = useState(draft?.goal ?? user?.goal ?? "");
+  const [relationType, setRelationType] = useState(
+    draft?.relationType ?? user?.relation_type ?? ""
   );
-  const [bio, setBio] = useState(user?.bio ?? "");
+  const [subculture, setSubculture] = useState(
+    draft?.subculture ?? user?.subculture ?? ""
+  );
+  const [mbti, setMbti] = useState(draft?.mbti ?? user?.mbti ?? "");
+  const [height, setHeight] = useState(
+    draft?.height ?? (user?.height_cm != null ? String(user.height_cm) : "")
+  );
+  const [bio, setBio] = useState(draft?.bio ?? user?.bio ?? "");
 
   const step = STEPS[index];
   const ageNum = Number(age);
@@ -149,6 +179,115 @@ export default function Onboarding() {
     setIndex((i) => Math.min(STEPS.length - 1, Math.max(0, i + delta)));
     haptic("light");
   }, []);
+
+  /* ── Черновик ────────────────────────────────────────────────
+     Пишем при любом изменении, а не «на следующем шаге»: потерять можно
+     ровно тот шаг, который человек заполняет прямо сейчас. */
+
+  const черновик = useMemo<DraftFields>(
+    () => ({
+      index,
+      name,
+      age,
+      gender,
+      lookingFor,
+      city,
+      coords,
+      photos: photos.filter((p) => p.url).map((p) => p.url as string),
+      interests,
+      goal,
+      relationType,
+      subculture,
+      mbti,
+      height,
+      bio,
+    }),
+    [
+      index,
+      name,
+      age,
+      gender,
+      lookingFor,
+      city,
+      coords,
+      photos,
+      interests,
+      goal,
+      relationType,
+      subculture,
+      mbti,
+      height,
+      bio,
+    ]
+  );
+
+  // Свежий снимок для обработчика выгрузки: он навешивается один раз и иначе
+  // видел бы значения на момент монтирования
+  const черновикRef = useRef(черновик);
+  черновикRef.current = черновик;
+  // Первый прогон эффекта — это монтирование. Запись на нём создала бы
+  // черновик из подставленных значений профиля там, где человек ничего не
+  // трогал, и в следующий раз ему показали бы плашку «продолжаем» на пустом
+  // месте.
+  const монтирование = useRef(true);
+  const завершено = useRef(false);
+
+  useEffect(() => {
+    if (монтирование.current) {
+      монтирование.current = false;
+      return;
+    }
+    if (завершено.current) return;
+    const t = setTimeout(() => saveDraft(черновик), 400);
+    return () => clearTimeout(t);
+  }, [черновик]);
+
+  // Telegram на iOS выгружает мини-апп при переключении чата и не обещает, что
+  // отложенная запись успеет сработать. `pagehide` и переход в hidden —
+  // единственные события, которые приходят до выгрузки; без них задержка в
+  // 400 мс означала бы потерю последнего введённого шага.
+  useEffect(() => {
+    const сбросить = () => {
+      if (!монтирование.current && !завершено.current) {
+        saveDraft(черновикRef.current);
+      }
+    };
+    const наСкрытие = () => {
+      if (document.visibilityState === "hidden") сбросить();
+    };
+    window.addEventListener("pagehide", сбросить);
+    document.addEventListener("visibilitychange", наСкрытие);
+    return () => {
+      window.removeEventListener("pagehide", сбросить);
+      document.removeEventListener("visibilitychange", наСкрытие);
+    };
+  }, []);
+
+  /** Отказаться от восстановленного черновика и начать анкету с нуля. */
+  const начатьЗаново = useCallback(() => {
+    clearDraft();
+    // Следующий прогон эффекта — не ввод человека, а этот сброс: иначе он
+    // тут же записал бы черновик заново
+    монтирование.current = true;
+    setRestored(false);
+    setDirection(-1);
+    setIndex(0);
+    setName(user?.display_name ?? "");
+    setAge(user?.age ? String(user.age) : "");
+    setGender(user?.gender ?? "");
+    setLookingFor(user?.looking_for ?? "");
+    setCity(user?.city ?? "");
+    setCoords(null);
+    setPhotos((user?.photos ?? []).map((url) => ({ id: `init-${photoSeq++}`, url })));
+    setInterests(user?.interests ?? []);
+    setGoal(user?.goal ?? "");
+    setRelationType(user?.relation_type ?? "");
+    setSubculture(user?.subculture ?? "");
+    setMbti(user?.mbti ?? "");
+    setHeight(user?.height_cm != null ? String(user.height_cm) : "");
+    setBio(user?.bio ?? "");
+    haptic("light");
+  }, [user]);
 
   /* ── Геопозиция ──────────────────────────────────────────── */
   const detectLocation = useCallback(async () => {
@@ -240,6 +379,12 @@ export default function Onboarding() {
         patch.longitude = coords.lon;
       }
       await updateMyProfile(patch);
+      // Анкета на сервере — черновик больше не нужен и не должен всплыть
+      // плашкой «продолжаем» при следующей правке профиля. Чистим сразу после
+      // успешного PATCH, а не после перехода: если следующий запрос упадёт,
+      // данные всё равно уже сохранены.
+      завершено.current = true;
+      clearDraft();
       const fresh: UserProfile = await getMyProfile();
       setUser(fresh);
       haptic("success");
@@ -299,6 +444,34 @@ export default function Onboarding() {
         </div>
       </header>
 
+      {/* Восстановленный черновик: без этой строки человек не понимает, почему
+          анкета уже заполнена и открыта на середине — и подозревает, что видит
+          чужие данные */}
+      {restored && (
+        <div
+          className="mx-5 mb-1 flex items-center gap-1 shrink-0
+                     rounded-[var(--radius-tile)] border border-hairline
+                     bg-surface pl-3.5 pr-1 py-2"
+        >
+          <p className="flex-1 text-[13px] leading-snug text-text-muted">
+            Продолжаем с того места, где вы остановились
+          </p>
+          <button
+            onClick={начатьЗаново}
+            className="tap-target px-2 text-[13px] font-semibold text-accent"
+          >
+            Заново
+          </button>
+          <button
+            aria-label="Скрыть подсказку"
+            onClick={() => setRestored(false)}
+            className="tap-target px-1.5 text-text-faint"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       {/* ── Шаги ────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-5">
         <AnimatePresence mode="wait" custom={direction}>
@@ -326,7 +499,7 @@ export default function Onboarding() {
             {step === "age" && (
               <StepShell
                 title="Сколько вам лет?"
-                hint="Souldawn — сервис с 16 лет"
+                hint="Симп — сервис с 16 лет"
               >
                 <TextField
                   value={age}
@@ -616,8 +789,13 @@ export default function Onboarding() {
                   <p>
                     Нажимая «Принимаю», вы подтверждаете, что вам 16 лет или
                     больше, и принимаете{" "}
+                    {/* Адрес абсолютный не для красоты: в нативной сборке origin —
+                        `capacitor://localhost`, и относительная ссылка с
+                        `target="_blank"` не открывается ничем. Экран согласия без
+                        читаемого документа — это и претензия ревью App Store, и
+                        человек, принимающий то, чего не видел. */}
                     <a
-                      href="https://souldawn.app/terms.html"
+                      href={legalUrl("terms")}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-text underline underline-offset-2"
@@ -626,7 +804,7 @@ export default function Onboarding() {
                     </a>{" "}
                     и{" "}
                     <a
-                      href="https://souldawn.app/privacy.html"
+                      href={legalUrl("privacy")}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-text underline underline-offset-2"

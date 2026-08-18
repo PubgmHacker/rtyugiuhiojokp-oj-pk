@@ -1,4 +1,4 @@
-// ── SOULDAWN DATING — Database Schema ──────────────────────────
+// ── SIMP DATING — Database Schema ──────────────────────────────
 // Source of truth для всех сервисов (bot, api, web)
 
 generator client {

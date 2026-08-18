@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SoulDawn logo variants — round 2 (превью, не app icon).
+"""Simp logo variants — round 2 (превью, не app icon).
 
 Палитра globals.css (НЕ Mimolet purple):
   #0a0b0f фон · #ff2d6f акцент · #d61e5a deep · #fafbfc глиф
@@ -382,7 +382,7 @@ def render_one(svg_fn, size: int = SIZE) -> Image.Image:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="SoulDawn logo variants round 2 (SVG)")
+    ap = argparse.ArgumentParser(description="Simp logo variants round 2 (SVG)")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--size", type=int, default=SIZE)
     ap.add_argument("--only", type=str, default=None)
@@ -393,7 +393,7 @@ def main() -> None:
         [args.out]
         if args.out
         else [
-            Path("/tmp/souldawn-logo-variants"),
+            Path("/tmp/simp-logo-variants"),
             root / "web" / "public" / "logo-variants" / "round2",
         ]
     )

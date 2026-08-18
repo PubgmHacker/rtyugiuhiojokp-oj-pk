@@ -66,15 +66,15 @@ async def клиент(app, живая_база, monkeypatch):
     from middleware.auth import get_current_user
     from models.models import User
     import routers.profiles as profiles_mod
+    import services.quotas as quotas_mod
 
     Session = живая_база["Session"]
 
     # pg_advisory_xact_lock есть только в Postgres, а тест идёт на SQLite
-    настоящий = profiles_mod.sa_text
-    monkeypatch.setattr(
-        profiles_mod, "sa_text",
-        lambda sql: настоящий("SELECT 1") if "advisory" in sql else настоящий(sql),
-    )
+    for мод in (profiles_mod, quotas_mod):
+        настоящий = мод.sa_text
+        монк = (lambda н: lambda sql: н("SELECT 1") if "advisory" in sql else н(sql))(настоящий)
+        monkeypatch.setattr(мод, "sa_text", монк)
 
     текущий = {"id": живая_база["боря"]}
 
@@ -507,6 +507,33 @@ def _таблица_бота(имя: str) -> dict[str, object]:
     файл = Path(__file__).resolve().parents[2] / "bot" / "services" / "plans.py"
     дерево = ast.parse(файл.read_text(encoding="utf-8"))
 
+    #: Значение в таблице может быть не литералом, а ссылкой на константу того
+    #: же файла (`UNLIMITED`), — на имени `literal_eval` падает. Собираем
+    #: простые константы модуля и подставляем их: сверять надо настоящее число
+    #: бота, а не факт, что оно записано цифрой.
+    константы: dict[str, object] = {}
+    for узел in дерево.body:
+        цели: list[ast.expr] = []
+        if isinstance(узел, ast.Assign):
+            цели = list(узел.targets)
+        elif isinstance(узел, ast.AnnAssign) and узел.value is not None:
+            цели = [узел.target]
+        for цель in цели:
+            if isinstance(цель, ast.Name):
+                try:
+                    константы[цель.id] = ast.literal_eval(узел.value)
+                except (ValueError, TypeError):
+                    pass
+
+    def значение(узел_значения: ast.expr) -> object:
+        if isinstance(узел_значения, ast.Name):
+            assert узел_значения.id in константы, (
+                f"{имя}: значение ссылается на {узел_значения.id}, а такой "
+                "константы в bot/services/plans.py нет"
+            )
+            return константы[узел_значения.id]
+        return ast.literal_eval(узел_значения)
+
     for узел in ast.walk(дерево):
         if not isinstance(узел, ast.AnnAssign):
             continue
@@ -515,8 +542,8 @@ def _таблица_бота(имя: str) -> dict[str, object]:
         assert isinstance(узел.value, ast.Dict), f"{имя} в боте — не словарь"
         # Ключи — константы уровней (TIER_PLUS), значения — числа или кортежи
         return {
-            ключ.id.removeprefix("TIER_").lower(): ast.literal_eval(значение)
-            for ключ, значение in zip(узел.value.keys, узел.value.values)
+            ключ.id.removeprefix("TIER_").lower(): значение(знач)
+            for ключ, знач in zip(узел.value.keys, узел.value.values)
         }
     raise AssertionError(f"в bot/services/plans.py нет {имя}")
 
@@ -562,6 +589,41 @@ def test_перки_в_витрине_бота_дословно_равны_пе�
         )
 
 
+def test_суточные_лимиты_лайков_и_мэтчей_совпадают_в_боте_и_api():
+    """Копии `LIKES_PER_DAY` и `MATCH_VIEWS_PER_DAY` в боте равны оригиналам.
+
+    Это два самых чувствительных числа в продукте: ими продаётся подписка. Бот
+    пишет лайки и открывает чаты напрямую через `database/connection.py`, минуя
+    API, поэтому у него своя копия лимита. Разойдись копии — бесплатный аккаунт
+    получил бы в боте больше, чем в мини-аппе, то есть купленное отдавалось бы
+    бесплатно тому, кто просто свайпает в другом клиенте.
+    """
+    from pathlib import Path
+
+    from services.plans import LIKES_PER_DAY, MATCH_VIEWS_PER_DAY, UNLIMITED
+
+    for имя, оригинал in (
+        ("LIKES_PER_DAY", LIKES_PER_DAY),
+        ("MATCH_VIEWS_PER_DAY", MATCH_VIEWS_PER_DAY),
+    ):
+        у_бота = _таблица_бота(имя)
+        assert у_бота == оригинал, (
+            f"{имя} расходится: {set(у_бота.items()) ^ set(оригинал.items())}"
+        )
+
+    # Сентинел безлимита обязан быть отрицательным в обоих сервисах: ноль в
+    # этих таблицах читался бы как «нельзя совсем» (так его понимает
+    # DIRECT_MESSAGES_PER_DAY), и платный уровень остался бы без лайков
+    assert UNLIMITED < 0, "безлимит перестал быть отрицательным"
+    текст_бота = (
+        Path(__file__).resolve().parents[2] / "bot" / "services" / "plans.py"
+    ).read_text(encoding="utf-8")
+    assert f"UNLIMITED = {UNLIMITED}" in текст_бота, (
+        "в боте другой сентинел безлимита — таблицы совпадут числами, "
+        "а смысл разойдётся"
+    )
+
+
 def test_числа_в_витрине_отвечают_настоящим_лимитам():
     """«5 суперлайков в день» в тексте — это ровно то, что отдаёт код.
 
@@ -580,6 +642,9 @@ def test_числа_в_витрине_отвечают_настоящим_лим
         TIERS,
         boosts_per_day,
         direct_messages_per_day,
+        is_unlimited,
+        likes_per_day,
+        match_views_per_day,
         superlikes_for,
         tier_allows,
         tier_rank,
@@ -622,6 +687,42 @@ def test_числа_в_витрине_отвечают_настоящим_лим
                     f"{уровень}: витрина обещает {числа[0]} писем, "
                     f"код даёт {direct_messages_per_day(уровень)} — {перк!r}"
                 )
+
+            elif "лайк" in перк.lower() and ("в день" in перк or "ограничени" in перк):
+                # Ветка про суперлайки стоит выше, поэтому здесь остаются
+                # только перки про обычный суточный лимит лайков
+                лимит = likes_per_day(уровень)
+                if числа:
+                    assert not is_unlimited(лимит), (
+                        f"{уровень}: витрина обещает ровно {числа[0]} лайков, "
+                        f"а в коде лимита нет вовсе — {перк!r}"
+                    )
+                    assert числа[0] == лимит, (
+                        f"{уровень}: витрина обещает {числа[0]} лайков в сутки, "
+                        f"код даёт {лимит} — {перк!r}"
+                    )
+                else:
+                    assert is_unlimited(лимит), (
+                        f"{уровень}: витрина обещает лайки без ограничений, "
+                        f"а код даёт {лимит} в сутки — {перк!r}"
+                    )
+
+            elif "мэтч" in перк.lower():
+                лимит = match_views_per_day(уровень)
+                if числа:
+                    assert not is_unlimited(лимит), (
+                        f"{уровень}: витрина обещает ровно {числа[0]} мэтчей, "
+                        f"а в коде лимита нет вовсе — {перк!r}"
+                    )
+                    assert числа[0] == лимит, (
+                        f"{уровень}: витрина обещает {числа[0]} мэтчей в сутки, "
+                        f"код даёт {лимит} — {перк!r}"
+                    )
+                else:
+                    assert is_unlimited(лимит), (
+                        f"{уровень}: витрина обещает все мэтчи, а код даёт "
+                        f"{лимит} в сутки — {перк!r}"
+                    )
 
             elif числа:
                 неразобранные.append((уровень, перк))
