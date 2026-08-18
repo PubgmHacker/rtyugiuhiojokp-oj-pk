@@ -235,7 +235,7 @@ Information либо приложите свежий код, либо опиши
 
 ## 6. Перед отправкой — чек-лист
 
-- [ ] `./tools/ios-build.sh simulator` проходит
+- [x] `./tools/ios-build.sh simulator` проходит
 - [x] Premium в iOS продаётся через StoreKit IAP с серверной проверкой чеков
 - [ ] Продукты подписки созданы в App Store Connect, `APPSTORE_APP_APPLE_ID` задан
 - [ ] Sign in with Apple добавлен или подготовлено обоснование
