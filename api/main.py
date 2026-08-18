@@ -215,7 +215,7 @@ async def lifespan(app: FastAPI):
     await room_manager.aclose()
 
     if _redis:
-        await _redis.close()
+        await _redis.aclose()
     await close_push()
 
 

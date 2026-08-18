@@ -364,5 +364,5 @@ def test_lifespan_гасит_комнаты_до_закрытия_redis():
         "остановку приложения"
     )
     assert после_yield.index("room_manager.aclose()") < после_yield.index(
-        "_redis.close()"
+        "_redis.aclose()"
     ), "Redis закрывается раньше читателя комнат"
