@@ -30,11 +30,20 @@ def _get_s3_client():
 
 
 async def upload_photo_to_r2(object_key: str, data: bytes, content_type: str) -> Optional[str]:
-    """Загрузить фото в Cloudflare R2. Возвращает публичный URL."""
+    """Загрузить фото в Cloudflare R2. Возвращает публичный URL.
+
+    Без настроенного R2 загрузка ПАДАЕТ (None → 5xx в роутерах), а не
+    подменяется заглушкой: молчаливый placehold.co в проде записывал бы в
+    профиль чужую картинку, а настоящий снимок пользователя просто исчезал.
+    Заглушка остаётся только в DEBUG — локальная разработка без ключей.
+    """
     client = _get_s3_client()
     if not client:
-        logger.warning("R2 not configured — returning placeholder URL")
-        return f"https://placehold.co/600x800/1a1a2e/e0e0e0?text=Photo"
+        if settings.DEBUG:
+            logger.warning("R2 not configured — returning placeholder URL (DEBUG)")
+            return "https://placehold.co/600x800/1a1a2e/e0e0e0?text=Photo"
+        logger.error("R2 is not configured — refusing upload (fail-closed)")
+        return None
 
     try:
         # boto3 синхронный — не блокируем event loop
