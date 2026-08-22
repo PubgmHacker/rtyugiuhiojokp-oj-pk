@@ -14,6 +14,7 @@ import { Crown, Heart, MessageSquareLock } from "lucide-react";
 import { Sheet } from "./Sheet";
 import { Button } from "./ui";
 import { haptic } from "../lib/haptics";
+import { useЯзык, перевести, форматВремени, форматДаты, type Язык } from "../lib/i18n";
 import type { DailyLimits } from "../lib/api";
 
 export type LimitKind = "likes" | "matches";
@@ -49,6 +50,7 @@ export default function LimitSheet({
   onClose: () => void;
 }) {
   const тексты = ТЕКСТЫ[kind];
+  const язык = useЯзык();
   const лимит = kind === "likes" ? limits?.likes_total : limits?.matches_total;
   const сброс = kind === "likes" ? limits?.likes_reset_at : limits?.matches_reset_at;
   const Значок = kind === "likes" ? Heart : MessageSquareLock;
@@ -71,7 +73,7 @@ export default function LimitSheet({
           через 24 часа после того, как был потрачен */}
       {сброс && (
         <p className="text-caption text-text-muted mb-4">
-          Следующий слот вернётся {когдаСлот(сброс)}.
+          Следующий слот вернётся {когдаСлот(сброс, язык)}.
         </p>
       )}
 
@@ -94,20 +96,25 @@ export default function LimitSheet({
  *
  * Экспортируется: тот же текст показывает закрытый чат (pages/Chat.tsx), и
  * две копии формата разъехались бы — одна сказала бы «завтра», другая дату.
+ *
+ * Язык передаётся, а не читается из store: функция модульная, хуки здесь
+ * недоступны, а вызывают её компоненты, у которых язык уже есть.
  */
-export function когдаСлот(iso: string): string {
+export function когдаСлот(iso: string, язык: Язык): string {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "в течение суток";
+  if (Number.isNaN(d.getTime())) return перевести(язык, "slot.withinDay");
 
-  const время = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const время = форматВремени(d, язык);
   const сегодня = new Date();
-  if (d.toDateString() === сегодня.toDateString()) return `сегодня в ${время}`;
+  if (d.toDateString() === сегодня.toDateString())
+    return перевести(язык, "slot.today", { time: время });
 
   const завтра = new Date(сегодня);
   завтра.setDate(сегодня.getDate() + 1);
-  if (d.toDateString() === завтра.toDateString()) return `завтра в ${время}`;
+  if (d.toDateString() === завтра.toDateString())
+    return перевести(язык, "slot.tomorrow", { time: время });
 
-  return `${d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} в ${время}`;
+  return перевести(язык, "slot.onDate", { date: форматДаты(d, язык), time: время });
 }
 
 function падеж(n: number, one: string, few: string, many: string): string {

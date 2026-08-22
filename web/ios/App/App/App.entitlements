@@ -9,5 +9,16 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!-- Пуши APNs. Без этого права PushNotifications.register() уходит в
+	     registrationError, токен устройства не приходит, и уведомления о
+	     мэтчах и сообщениях на iOS не работают вообще (фича заявлена в
+	     Info.plist через UIBackgroundModes=remote-notification и в коде через
+	     lib/native.ts, но была мертва). Значение подставляет профиль подписи:
+	     development-профиль — песочница APNs, distribution (App Store) —
+	     production. Держим development, чтобы сборки из Xcode и TestFlight
+	     регистрировались в песочнице (это же ждёт APNS_USE_SANDBOX на сервере);
+	     при экспорте в App Store Xcode подписывает как production. -->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

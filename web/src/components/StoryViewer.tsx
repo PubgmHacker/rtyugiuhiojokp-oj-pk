@@ -11,8 +11,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Eye, MessageCircle, Trash2, X } from "lucide-react";
+import { Eye, Flag, MessageCircle, Trash2, X } from "lucide-react";
 import { AuraRing } from "./Aura";
+import ReportReasonSheet from "./ReportReasonSheet";
 import { Sheet } from "./Sheet";
 import { Spinner } from "./ui";
 import { haptic } from "../lib/haptics";
@@ -22,6 +23,7 @@ import {
   getStoryViewers,
   getUserStories,
   markStoryViewed,
+  reportStory,
   type Story,
   type StoryViewer as Зритель,
 } from "../lib/api";
@@ -47,6 +49,9 @@ export function StoryViewer({
   const [viewersOpen, setViewersOpen] = useState(false);
   const [viewers, setViewers] = useState<Зритель[]>([]);
   const [busy, setBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [сбой, setСбой] = useState(false);
+  const [попытка, setПопытка] = useState(0);
 
   const прошло = useRef(0);
   const кадр = useRef<number | null>(null);
@@ -56,6 +61,8 @@ export function StoryViewer({
 
   useEffect(() => {
     let живо = true;
+    setLoading(true);
+    setСбой(false);
     getUserStories(userId)
       .then((s) => {
         if (!живо) return;
@@ -65,12 +72,14 @@ export function StoryViewer({
         const с = s.findIndex((x) => !x.seen);
         setIndex(с === -1 ? 0 : с);
       })
-      .catch(() => живо && setError("Историй нет"))
+      // «Историй нет» при упавшей сети было бы ложью: кольцо в ленте
+      // обещало истории, и человек должен понять, что они не доехали
+      .catch(() => живо && setСбой(true))
       .finally(() => живо && setLoading(false));
     return () => {
       живо = false;
     };
-  }, [userId]);
+  }, [userId, попытка]);
 
   const дальше = useCallback(() => {
     setIndex((i) => {
@@ -187,6 +196,20 @@ export function StoryViewer({
     }
   };
 
+  const пожаловаться = async (reason: string) => {
+    if (!story) return;
+    setReportOpen(false);
+    setPaused(false);
+    try {
+      await reportStory(story.id, reason);
+      haptic("success");
+      setError("Жалоба отправлена — модератор разберётся");
+    } catch {
+      haptic("error");
+      setError("Не удалось отправить жалобу");
+    }
+  };
+
   return (
     <motion.div
       className="fixed inset-0 z-[60] bg-black"
@@ -207,9 +230,41 @@ export function StoryViewer({
         <div className="grid h-full place-items-center">
           <Spinner />
         </div>
-      ) : error && !story ? (
-        <div className="grid h-full place-items-center px-8 text-center">
-          <p className="text-[15px] text-white/70">{error}</p>
+      ) : сбой ? (
+        <div className="grid h-full place-items-center px-8">
+          <div className="text-center">
+            <p className="mb-1 text-[28px]">📡</p>
+            <p className="mb-4 text-[15px] text-white/70">Не удалось загрузить</p>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={() => setПопытка((x) => x + 1)}
+                className="rounded-full bg-white/12 px-5 py-2.5 text-[14px] text-white backdrop-blur"
+              >
+                Повторить
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-full px-5 py-2.5 text-[14px] text-white/60"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : !story ? (
+        // Загрузилось, а кадров нет: истории живут сутки и могли истечь,
+        // пока лента была открыта. Чёрный экран без слов выглядел бы
+        // как поломка
+        <div className="grid h-full place-items-center px-8">
+          <div className="text-center">
+            <p className="mb-4 text-[15px] text-white/70">История уже истекла</p>
+            <button
+              onClick={onClose}
+              className="rounded-full bg-white/12 px-5 py-2.5 text-[14px] text-white backdrop-blur"
+            >
+              Закрыть
+            </button>
+          </div>
         </div>
       ) : (
         story && (
@@ -321,14 +376,29 @@ export function StoryViewer({
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={ответить}
-                  disabled={busy}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-full bg-white/12 py-2.5 text-[14px] text-white backdrop-blur disabled:opacity-50"
-                >
-                  <MessageCircle size={16} />
-                  Ответить в переписке
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={ответить}
+                    disabled={busy}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-white/12 py-2.5 text-[14px] text-white backdrop-blur disabled:opacity-50"
+                  >
+                    <MessageCircle size={16} />
+                    Ответить в переписке
+                  </button>
+                  {/* Жалоба — на каждой поверхности с чужим контентом
+                      (App Store, Guideline 1.2), история не исключение */}
+                  <button
+                    onClick={() => {
+                      haptic("light");
+                      setPaused(true);
+                      setReportOpen(true);
+                    }}
+                    aria-label="Пожаловаться на историю"
+                    className="tap-target grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/12 text-white backdrop-blur"
+                  >
+                    <Flag size={16} />
+                  </button>
+                </div>
               )}
             </div>
 
@@ -366,6 +436,17 @@ export function StoryViewer({
                 </ul>
               )}
             </Sheet>
+
+            <ReportReasonSheet
+              open={reportOpen}
+              title="Пожаловаться на историю"
+              subtitle="Модератор посмотрит кадр. История с нарушением снимается с показа."
+              onClose={() => {
+                setReportOpen(false);
+                setPaused(false);
+              }}
+              onPick={пожаловаться}
+            />
           </>
         )
       )}

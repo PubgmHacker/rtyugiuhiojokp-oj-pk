@@ -10,6 +10,8 @@
  * бы показать вспышку чужой темы на старте.
  */
 
+import { onTelegramThemeChange, syncTelegramChrome, telegramColorScheme } from "./telegram";
+
 export type AppearanceKey =
   | "dawn"
   | "midnight"
@@ -81,6 +83,10 @@ export const APPEARANCES: Appearance[] = [
 export const DEFAULT_APPEARANCE: AppearanceKey = "dawn";
 
 const STORAGE_KEY = "sd_appearance";
+//: Схему поставили за человека (по теме Telegram), а не он сам. Флаг нужен,
+//: чтобы отличать «выбрал тёмную» от «мы подставили тёмную по умолчанию»:
+//: первое надо уважать и не трогать, второе — вести за темой Telegram дальше.
+const AUTO_KEY = "sd_appearance_auto";
 
 export function isAppearance(value: unknown): value is AppearanceKey {
   return APPEARANCES.some((a) => a.key === value);
@@ -105,13 +111,22 @@ export function loadAppearance(): AppearanceKey {
  * Базовую схему ставим удалением атрибута, а не значением "dawn":
  * иначе селектор :root без атрибута перестал бы работать как база, и
  * добавление схемы требовало бы правки этой функции.
+ *
+ * `auto` — схему подставили за человека (по теме Telegram). Любой явный
+ * выбор — из шторки оформления или приехавший с сервера — снимает признак:
+ * дальше следовать за чужой темой значило бы перебивать выбор человека.
  */
-export function applyAppearance(key: AppearanceKey): void {
+export function applyAppearance(
+  key: AppearanceKey,
+  { auto = false }: { auto?: boolean } = {}
+): void {
   const root = document.documentElement;
   if (key === DEFAULT_APPEARANCE) root.removeAttribute("data-appearance");
   else root.setAttribute("data-appearance", key);
 
   localStorage.setItem(STORAGE_KEY, key);
+  if (auto) localStorage.setItem(AUTO_KEY, "1");
+  else localStorage.removeItem(AUTO_KEY);
 
   // Telegram Mini App и iOS-обвязка красят свои панели по этому мета-тегу.
   // Без него шапка остаётся тёмной на светлой схеме — самый заметный шов.
@@ -123,9 +138,43 @@ export function applyAppearance(key: AppearanceKey): void {
     document.head.appendChild(meta);
   }
   if (bg) meta.content = bg;
+
+  // Мета-тег читают Safari и WKWebView, но не Telegram — его панели красятся
+  // только через собственный API. Вне Telegram вызов ничего не делает.
+  syncTelegramChrome();
 }
 
 /** Ставим сохранённую схему до первого кадра — из main.tsx. */
 export function initAppearance(): void {
-  applyAppearance(loadAppearance());
+  applyAppearance(loadAppearance(), { auto: !localStorage.getItem(STORAGE_KEY) });
+}
+
+/**
+ * Подтянуть светлую/тёмную тему из Telegram, если человек схему не выбирал.
+ *
+ * Зачем отдельно от `initAppearance`. SDK Telegram приезжает асинхронно
+ * (см. index.html) и на момент первого кадра `colorScheme` может быть ещё
+ * неизвестен, а ждать его нельзя — это вспышка чужой темы на старте.
+ * Поэтому порядок такой: сначала синхронно ставим сохранённую схему, потом
+ * из App, когда SDK точно готов, догоняем тему Telegram.
+ *
+ * Соответствие простое: светлый Telegram — светлая схема, тёмный — базовая.
+ * Полностью повторять `themeParams` мы не станем сознательно: у продукта
+ * своя палитра (акцент, поверхности, тени), и подстановка чужих цветов дала
+ * бы не «родной вид», а сломанный контраст на каждом втором клиенте.
+ *
+ * Возвращает функцию отписки: пока схему выбирали не мы, ведём её за
+ * Telegram и дальше — человек может переключить тему, не выходя из приложения.
+ */
+export function followTelegramTheme(): () => void {
+  const подстроить = () => {
+    if (!localStorage.getItem(AUTO_KEY)) return;
+    const схема = telegramColorScheme();
+    if (!схема) return;
+    const нужная: AppearanceKey = схема === "light" ? "light" : DEFAULT_APPEARANCE;
+    if (нужная !== loadAppearance()) applyAppearance(нужная, { auto: true });
+  };
+
+  подстроить();
+  return onTelegramThemeChange(подстроить);
 }

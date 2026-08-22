@@ -6,6 +6,7 @@ from typing import Optional
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
@@ -36,7 +37,13 @@ from models.schemas import (
     VisitorsOut,
 )
 from services.matching import get_deck_profiles
-from services.ai_moderation import log_moderation, moderate_text
+from services.ai_moderation import log_moderation, moderate_text, verify_person_in_photo
+from services.enforcement import (
+    TEXT_BAN_REASONS,
+    banned_response,
+    register_identity_strike,
+    register_text_strike,
+)
 from services.appearance import DEFAULT_THEME, доступна, нормализовать
 from services.plans import (
     BOOST_MINUTES,
@@ -46,7 +53,7 @@ from services.plans import (
     tier_allows,
 )
 from services.premium import current_tier, is_premium as _is_premium
-from services.public_profile import в_utc, возраст_из_даты, наша_картинка, публичный_возраст
+from services.public_profile import в_utc, возраст_из_даты, публичный_возраст
 from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
 from services.push import register_device
@@ -60,7 +67,11 @@ settings = get_settings()
 
 
 async def _deck_like_profile(
-    session: AsyncSession, profile: Optional[Profile], user_id: str
+    session: AsyncSession,
+    profile: Optional[Profile],
+    user_id: str,
+    *,
+    is_verified: bool = False,
 ) -> UserProfile:
     """Публичная часть чужой анкеты — то же, что видно на карточке в деке."""
     if not profile:
@@ -89,6 +100,10 @@ async def _deck_like_profile(
         sticker=картинка_наклейки(profile.sticker),
         decor=безопасный_код(profile.decor),
         tg_channel=tg_channel,
+        # Галочка — там же, где сама анкета: раздел «Гости» её тоже показывает.
+        # Хелпер уже получает is_verified, но раньше не клал его в ответ — тот
+        # же разнобой «в одном месте из трёх», которым болел hide_age.
+        is_verified=is_verified,
     )
 
 
@@ -134,14 +149,23 @@ async def _require_boost(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> User:
-    """Пускает к бусту только с подходящим тарифом.
+    """Пускает к бусту с подходящим тарифом — или с купленным паком.
 
     Раньше право на буст выводилось из числа включений (`per_day == 0` — значит
     нельзя), то есть из `BOOSTS_PER_DAY`, а не из таблицы возможностей. Гейт
     работал лишь пока две таблицы случайно согласны: поставь бесплатному один
     пробный буст — и `deck_boost` открылся бы всем, хотя в `FEATURE_MIN_TIER`
     он платный.
+
+    Бонусные включения (пак за Stars в боте) — сами себе оплата: закрывать
+    их тарифным гейтом значило бы продать бесплатному уровню пак, которым
+    нельзя воспользоваться.
     """
+    result = await session.execute(
+        select(Profile.bonus_boosts).where(Profile.user_id == user.id)
+    )
+    if (result.scalar_one_or_none() or 0) > 0:
+        return user
     await _требовать(session, user.id, "deck_boost", "Буст")
     return user
 
@@ -158,15 +182,20 @@ async def _boost_state(session: AsyncSession, user_id: str, profile: Optional[Pr
         ))
     )
     used = result.scalar() or 0
+    bonus = profile.bonus_boosts if profile else 0
 
-    until = profile.boost_until if profile else None
+    # в_utc — как у «прежний» в activate_boost: SQLite отдаёт поле naive,
+    # и сравнение с aware-временем падало бы TypeError
+    until = в_utc(profile.boost_until) if profile else None
     active = bool(until and until > datetime.now(timezone.utc))
     return BoostOut(
         active=active,
         until=until if active else None,
         minutes=BOOST_MINUTES,
-        left_today=max(0, per_day - used),
+        # Суточные плюс купленные паком: у обоих пулов одна кнопка
+        left_today=max(0, per_day - used) + bonus,
         per_day=per_day,
+        bonus=bonus,
         required_tier_name=_имя_уровня("deck_boost"),
     )
 
@@ -217,6 +246,11 @@ async def activate_boost(
     base = прежний if (прежний and прежний > now) else now
     profile.boost_until = base + timedelta(minutes=BOOST_MINUTES)
     session.add(BoostActivation(user_id=user.id))
+    # Суточные тратятся первыми — они и так вернутся завтра, а купленный пак
+    # остаётся на потом (тот же порядок, что у _spend_bonus_superlike в
+    # routers/likes.py). Суточных не осталось — списываем бонусное включение.
+    if state.left_today - state.bonus <= 0:
+        profile.bonus_boosts -= 1
     await session.flush()
 
     fresh = await _boost_state(session, user.id, profile)
@@ -272,11 +306,13 @@ async def get_my_visitors(
 
     visitors = [
         VisitorOut(
-            profile=await _deck_like_profile(session, profile, visitor_id),
+            profile=await _deck_like_profile(
+                session, profile, visitor_id, is_verified=is_verified
+            ),
             visits=visits,
             last_seen_at=last_seen,
         )
-        for profile, visitor_id, visits, last_seen in await list_visitors(
+        for profile, visitor_id, visits, last_seen, is_verified in await list_visitors(
             session, user.id, since=since
         )
     ]
@@ -339,6 +375,7 @@ async def get_my_profile(
         ai_bio=profile.ai_bio if profile else None,
         looking_for=profile.looking_for if profile else "any",
         is_incognito=profile.is_incognito if profile else False,
+        is_paused=profile.is_paused if profile else False,
         hide_age=profile.hide_age if profile else False,
         hide_distance=profile.hide_distance if profile else False,
         hide_from_visitors=profile.hide_from_visitors if profile else False,
@@ -355,6 +392,7 @@ async def get_my_profile(
         filter_city=profile.filter_city if profile else "",
         filter_height_min=profile.filter_height_min if profile else None,
         filter_height_max=profile.filter_height_max if profile else None,
+        filter_verified=profile.filter_verified if profile else False,
         has_location=bool(profile and profile.latitude is not None),
         # Своё оформление владелец видит всегда: схему он выбирал сам, и
         # прятать её от него в его же настройках нечего.
@@ -366,6 +404,12 @@ async def get_my_profile(
         # решает, покажется ли он ДРУГИМ (см. _deck_like_profile), а не
         # прячет поле от самого человека в его же настройках
         tg_channel=profile.tg_channel if profile else "",
+        # Только владельцу: по нему клиент предупреждает, что удаление
+        # этого фото снимет галочку верификации
+        verified_photo=(profile.verified_photo or "") if profile else "",
+        # Язык с аккаунта, а не с анкеты: у человека без анкеты он тоже есть,
+        # и мини-апп обязан открыться на нём с первого экрана
+        locale=user.locale,
         **(await _referral_stats(session, user.id)),
     )
 
@@ -400,8 +444,8 @@ def _нормализовать_tg_channel(raw: str) -> str:
     return username
 
 
-def _проверить_фото(новые: list[str], прежние: list[str]) -> list[str]:
-    """Фото в анкете — только наши, уже прошедшие модерацию.
+def _проверить_фото(новые: list[str], прежние: list[str], user_id: str) -> list[str]:
+    """Фото в анкете — только свои, уже прошедшие модерацию.
 
     Модерация и срезание EXIF живут в `POST /upload/photo` и в боте. Но сама
     анкета обновляется через `PATCH /profiles/me`, и `photos` там — обычный
@@ -411,21 +455,24 @@ def _проверить_фото(новые: list[str], прежние: list[str
     санитайзера, — и вдобавок утекала бы referer'ом на чужой сервер.
 
     Что принимаем:
-    - URL из нашего R2 (их выдаёт только успешно отмодерированная загрузка);
+    - URL из СВОЕЙ папки нашего R2 (`photos/{user_id}/…`) — их выдаёт только
+      собственная успешно отмодерированная загрузка. Просто «наш R2»
+      недостаточно: фото чужих анкет публичны, и их URL можно скопировать из
+      выдачи — так чужая внешность попадала бы в анкету мимо всех проверок;
     - значения, которые уже стоят в анкете, — иначе клиент не смог бы
-      переставить или удалить существующие фото;
-    - Telegram file_id — их кладёт бот, когда R2 не настроен (см.
-      bot/handlers/registration.py), и они не URL вовсе.
+      переставить или удалить существующие фото.
 
-    Строку, которой нет среди прежних и которая похожа на ссылку не к нам,
-    отклоняем.
+    Telegram file_id (не-URL, их кладёт бот без R2) принимаются только среди
+    прежних: легального пути ПРИСЛАТЬ НОВЫЙ file_id через PATCH нет — бот
+    пишет фото своим слоем, а веб загружает через /upload/photo.
     """
     известные = set(прежние)
+    свой_префикс = (settings.R2_PUBLIC_URL or "").rstrip("/") + f"/photos/{user_id}/"
 
     for фото in новые:
         if фото in известные:
             continue
-        if наша_картинка(фото):
+        if settings.R2_PUBLIC_URL and фото.startswith(свой_префикс):
             continue
         raise HTTPException(
             status_code=400,
@@ -433,6 +480,101 @@ def _проверить_фото(новые: list[str], прежние: list[str
         )
 
     return новые
+
+
+async def _скачать_фото(url: str) -> bytes:
+    """Фото анкеты из R2 — сервер забирает его сам, клиенту не доверяем."""
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        ответ = await client.get(url)
+        ответ.raise_for_status()
+        return ответ.content
+
+
+async def _сверить_с_опорным(
+    session: AsyncSession, user: User, profile: Profile, новые_фото: list[str]
+) -> JSONResponse | None:
+    """Держать галочку честной при правке списка фото.
+
+    Галочка «проверенный» привязана к опорному фото (см. Profile.verified_photo
+    и routers/verification.py): живая съёмка подтвердила, что владелец — тот,
+    кто на нём. Отсюда два правила:
+
+    * опорное фото убрали из анкеты — совпадение больше нечем подтвердить,
+      галочка снимается (пройти проверку заново можно всегда);
+    * добавленные фото сверяются с опорным: на каждом должен быть человек,
+      прошедший живую проверку. Иначе подтверждённая анкета наполнялась бы
+      чужими фотографиями — бейдж превращался в инструмент катфишинга.
+
+    Отказ — страйк photo_identity; страйки копятся в бан (см.
+    services/enforcement.py). Возвращает готовый 403-ответ, если бан
+    применён (вернуть как есть: JSONResponse коммитит сессию, исключение
+    откатило бы бан), иначе None. Сверяются публичные фото анкеты между
+    собой — биометрии здесь нет, скачанные байты живут только в этом вызове.
+    """
+    if not user.is_verified:
+        return None
+
+    if not (profile.verified_photo or ""):
+        # Галочка без опорного фото — аномальное состояние (нормальный путь
+        # всегда пишет их парой). Сверять добавленное не с чем, поэтому
+        # закрываем по-честному: состав фото растёт — галочка снимается,
+        # живая проверка вернёт её вместе с опорным фото.
+        прежние = set(as_list(profile.photos))
+        if any(ф not in прежние for ф in новые_фото):
+            user.is_verified = False
+        return None
+
+    if profile.verified_photo not in новые_фото:
+        user.is_verified = False
+        profile.verified_photo = ""
+        return None
+
+    прежние = set(as_list(profile.photos))
+    добавленные = [ф for ф in новые_фото if ф not in прежние]
+    if not добавленные:
+        return None
+
+    try:
+        референс = await _скачать_фото(profile.verified_photo)
+    except Exception as exc:
+        logger.error(f"Сверка с опорным фото: референс не скачался: {exc}")
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка фото сейчас недоступна — попробуйте через пару минут",
+        ) from exc
+
+    for фото in добавленные:
+        try:
+            кандидат = await _скачать_фото(фото)
+        except Exception as exc:
+            logger.error(f"Сверка с опорным фото: не скачалось новое фото: {exc}")
+            raise HTTPException(
+                status_code=503,
+                detail="Проверка фото сейчас недоступна — попробуйте через пару минут",
+            ) from exc
+        вердикт = await verify_person_in_photo(референс, кандидат)
+        del кандидат
+        if вердикт.get("unavailable"):
+            # Fail-closed: без вердикта фото в подтверждённую анкету не входит
+            raise HTTPException(
+                status_code=503,
+                detail="Проверка фото сейчас недоступна — попробуйте через пару минут",
+            )
+        if not вердикт.get("present"):
+            бан = await register_identity_strike(
+                session, user, "photo_identity", фото, вердикт.get("reason", "")
+            )
+            if бан is not None:
+                return бан
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "На добавленном фото не найден владелец анкеты — "
+                    "в подтверждённую анкету можно добавлять только свои фото"
+                ),
+            )
+    del референс
+    return None
 
 
 @router.patch("/me", response_model=UserProfile)
@@ -477,8 +619,16 @@ async def update_my_profile(
 
     if update_fields.get("photos") is not None:
         update_fields["photos"] = _проверить_фото(
-            update_fields["photos"], as_list(profile.photos)
+            update_fields["photos"], as_list(profile.photos), user.id
         )
+        # Подтверждённая анкета: убрали опорное фото — галочка снимается,
+        # добавили новые — на каждом должен быть прошедший проверку человек.
+        # Готовый ответ означает бан за чужие фото — вернуть немедленно.
+        ответ_бана = await _сверить_с_опорным(
+            session, user, profile, update_fields["photos"]
+        )
+        if ответ_бана is not None:
+            return ответ_бана
 
     if "tg_channel" in update_fields:
         # Фича платная (см. FEATURE_MIN_TIER["tg_channel"]) — без неё
@@ -508,6 +658,23 @@ async def update_my_profile(
             datetime.now(timezone.utc).year - int(age_value), 1, 1, tzinfo=timezone.utc
         )
 
+    # Язык — колонка аккаунта, а не анкеты, поэтому забираем его из набора
+    # ДО общего цикла ниже. Иначе `setattr(profile, "locale", ...)` тихо
+    # повесил бы атрибут на объект анкеты: ошибки нет, ответ выглядит
+    # успешным, а в базу не уходит ничего.
+    язык = update_fields.pop("locale", None)
+    if язык:
+        user.locale = язык
+
+    # Прежние значения текстовых полей — модерация идёт ПОСЛЕ setattr-цикла,
+    # и нарушивший текст надо откатывать руками: ответ с баном или с
+    # автоудалением рекламы отдаётся чистым JSONResponse (исключение откатило
+    # бы бан), а чистый выход коммитит всё, что осталось в объекте.
+    прежние_тексты = {
+        поле: getattr(profile, поле)
+        for поле in ("bio", "display_name", "tg_channel")
+    }
+
     for key, value in update_fields.items():
         if value is None:
             continue  # explicit null не затирает non-nullable колонки (иначе 500)
@@ -518,28 +685,69 @@ async def update_my_profile(
     if len(profile.bio) > settings.MAX_BIO_LENGTH:
         raise HTTPException(status_code=400, detail=f"Bio must be under {settings.MAX_BIO_LENGTH} chars")
 
-    if data.bio:
-        mod_result = await moderate_text(profile.bio)
-        await log_moderation(user.id, "bio", profile.bio, mod_result)
-        if mod_result["blocked"]:
-            raise HTTPException(status_code=422, detail="Bio violates content policy")
+    # Текстовые поля анкеты. Имя и канал проверяются наравне с био: имя видно
+    # чаще анкеты (дека, чаты, комнаты, уведомления), канал ведёт вовне —
+    # через них уходили реклама, контакты и брань, пока модерация стояла
+    # только на био. Каждое нарушение — страйк (register_text_strike):
+    # предупреждение со счётом, рекламный текст автоудаляется из анкеты,
+    # с порога — блокировка аккаунта.
+    нарушения: list[tuple[str, object]] = []
+    бан = None
+    for поле, отказ, проверять in (
+        ("bio", "Описание нарушает правила", bool(data.bio)),
+        ("display_name", "Имя нарушает правила", bool(data.display_name)),
+        (
+            "tg_channel",
+            "Канал нарушает правила",
+            "tg_channel" in update_fields and bool(profile.tg_channel),
+        ),
+    ):
+        if not проверять:
+            continue
+        значение = getattr(profile, поле)
+        mod_result = await moderate_text(значение)
+        await log_moderation(user.id, поле, значение, mod_result)
+        if not mod_result["blocked"]:
+            continue
+        исход = None
+        if бан is None:
+            исход = await register_text_strike(session, user, mod_result)
+            if исход is not None and исход.banned:
+                бан = исход
+        # Нарушивший текст в анкете не остаётся: поле возвращается к прежнему
+        # чистому значению (пустым display_name оставлять нельзя). Ответы ниже
+        # без исключения коммитят сессию, поэтому откат — руками и для КАЖДОГО
+        # нарушившего поля, не только первого.
+        setattr(profile, поле, прежние_тексты[поле])
+        нарушения.append((отказ, исход))
 
-    # Имя проверяем наравне с био: оно видно чаще, чем анкета целиком — в деке,
-    # в списке чатов, в комнатах и в уведомлениях. Через него уходили реклама,
-    # контакты и брань, потому что модерация стояла только на био
-    if data.display_name:
-        mod_result = await moderate_text(profile.display_name)
-        await log_moderation(user.id, "display_name", profile.display_name, mod_result)
-        if mod_result["blocked"]:
-            raise HTTPException(status_code=422, detail="Имя нарушает правила")
-
-    # Канал — такой же публичный текст, как имя, только он ведёт вовне:
-    # реклама и мошенничество через него утекали бы мимо модерации остальных полей
-    if "tg_channel" in update_fields and profile.tg_channel:
-        mod_result = await moderate_text(profile.tg_channel)
-        await log_moderation(user.id, "tg_channel", profile.tg_channel, mod_result)
-        if mod_result["blocked"]:
-            raise HTTPException(status_code=422, detail="Канал нарушает правила")
+    if бан is not None:
+        return banned_response(
+            user, f"Аккаунт заблокирован. {TEXT_BAN_REASONS[бан.category]}"
+        )
+    if нарушения:
+        ad_исход = next(
+            (и for _, и in нарушения if и is not None and и.category == "ad"), None
+        )
+        if ad_исход is not None:
+            # Реклама: поле очищено, остальные правки сохраняются — это и есть
+            # «автоудаление рекламы с изменением анкеты». Чистый JSONResponse,
+            # чтобы очистка закоммитилась.
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": (
+                        "Реклама запрещена — текст удалён из анкеты. "
+                        + ad_исход.warning_text()
+                    ),
+                    "code": "ad_removed",
+                },
+            )
+        отказ, исход = нарушения[0]
+        счёт = f" {исход.warning_text()}" if исход is not None else ""
+        # Не-рекламные нарушения отклоняют PATCH целиком, как раньше:
+        # исключение откатит и правки, страйк в журнале живёт своей сессией
+        raise HTTPException(status_code=422, detail=f"{отказ}.{счёт}")
 
     await session.flush()
 
@@ -563,6 +771,7 @@ async def update_my_profile(
         ai_bio=profile.ai_bio,
         looking_for=profile.looking_for,
         is_incognito=profile.is_incognito,
+        is_paused=profile.is_paused,
         hide_age=profile.hide_age,
         hide_distance=profile.hide_distance,
         hide_from_visitors=profile.hide_from_visitors,
@@ -579,8 +788,14 @@ async def update_my_profile(
         filter_city=profile.filter_city,
         filter_height_min=profile.filter_height_min,
         filter_height_max=profile.filter_height_max,
+        filter_verified=profile.filter_verified,
         has_location=profile.latitude is not None,
         tg_channel=profile.tg_channel,
+        verified_photo=profile.verified_photo or "",
+        # Отдаём сохранённый язык обратно: без этого поля ответ на смену языка
+        # приезжал бы со значением по умолчанию, и клиент, доверяющий ответу,
+        # тут же откатил бы выбор на русский
+        locale=user.locale,
         **(await _referral_stats(session, user.id)),
     )
 

@@ -21,7 +21,7 @@ import {
   type Room,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
-import { Button, Skeleton, Spinner } from "./ui";
+import { Button, LoadError, Skeleton, Spinner } from "./ui";
 
 const MAX_LEN = 500;
 
@@ -47,24 +47,35 @@ export default function ReelForwardSheet({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  // Сбои списков раздельные: если упал только один, показываем второй —
+  // возможность переслать хоть куда-то лучше отказа целиком
+  const [сбойМэтчей, setСбойМэтчей] = useState(false);
+  const [сбойКомнат, setСбойКомнат] = useState(false);
+  const [попытка, setПопытка] = useState(0);
 
   useEffect(() => {
     if (!reel) return;
     setTarget(null);
     setText("");
     setError("");
+    setMatches(null);
+    setRooms(null);
+    setСбойМэтчей(false);
+    setСбойКомнат(false);
 
     // Отменяем по закрытию: шторку часто закрывают до ответа сети, и ответ
     // пришёл бы уже в размонтированный компонент
     const прервать = new AbortController();
     getMatches(прервать.signal)
       .then(setMatches)
-      .catch((e) => отменён(e) || setMatches([]));
+      // Пустой список не подставляем — «переслать некому» при упавшей сети
+      // читалось бы как «у вас нет мэтчей», а это неправда
+      .catch((e) => отменён(e) || setСбойМэтчей(true));
     getRooms(прервать.signal)
       .then(setRooms)
-      .catch((e) => отменён(e) || setRooms([]));
+      .catch((e) => отменён(e) || setСбойКомнат(true));
     return () => прервать.abort();
-  }, [reel]);
+  }, [reel, попытка]);
 
   const send = useCallback(async () => {
     if (!reel || !target || sending) return;
@@ -92,7 +103,14 @@ export default function ReelForwardSheet({
     }
   }, [reel, target, text, sending, matches, rooms, onClose, onSent]);
 
-  const пусто = matches !== null && rooms !== null && !matches.length && !rooms.length;
+  // Список «готов», когда ответил или упал; пустота честная только без сбоев
+  const мэтчиГотовы = matches !== null || сбойМэтчей;
+  const комнатыГотовы = rooms !== null || сбойКомнат;
+  const всёГотово = мэтчиГотовы && комнатыГотовы;
+  const сбой = сбойМэтчей || сбойКомнат;
+  const естьЧтоПоказать = !!matches?.length || !!rooms?.length;
+  const показыватьНечего = всёГотово && !естьЧтоПоказать;
+  const пусто = показыватьНечего && !сбой;
 
   return (
     <AnimatePresence>
@@ -131,12 +149,14 @@ export default function ReelForwardSheet({
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 no-scrollbar">
-              {matches === null || rooms === null ? (
+              {!всёГотово ? (
                 <div className="flex flex-col gap-2.5 pt-2">
                   {[0, 1, 2].map((i) => (
                     <Skeleton key={i} className="h-14 rounded-[var(--radius-tile)]" />
                   ))}
                 </div>
+              ) : показыватьНечего && сбой ? (
+                <LoadError onRetry={() => setПопытка((x) => x + 1)} />
               ) : пусто ? (
                 <p className="text-center text-[14px] text-text-muted py-10">
                   Переслать пока некому: нет ни мэтчей, ни комнат. Поставьте лайк
@@ -144,7 +164,7 @@ export default function ReelForwardSheet({
                 </p>
               ) : (
                 <>
-                  {!!matches.length && (
+                  {!!matches?.length && (
                     <>
                       <p className="text-caption text-text-muted mt-2 mb-2">Личные чаты</p>
                       <div className="flex flex-col gap-1.5 mb-4">
@@ -164,7 +184,7 @@ export default function ReelForwardSheet({
                     </>
                   )}
 
-                  {!!rooms.length && (
+                  {!!rooms?.length && (
                     <>
                       <p className="text-caption text-text-muted mb-2">Комнаты</p>
                       <div className="flex flex-col gap-1.5 pb-2">
@@ -187,6 +207,16 @@ export default function ReelForwardSheet({
                       </div>
                     </>
                   )}
+
+                  {/* Один из списков упал, но второй есть: говорим об этом
+                      мелко, не пряча живых получателей за общим отказом */}
+                  {сбой && (
+                    <p className="text-caption text-text-muted pb-3">
+                      {сбойМэтчей
+                        ? "Личные чаты не загрузились — показаны только комнаты."
+                        : "Комнаты не загрузились — показаны только личные чаты."}
+                    </p>
+                  )}
                 </>
               )}
             </div>
@@ -201,7 +231,7 @@ export default function ReelForwardSheet({
               </p>
             )}
 
-            {!пусто && (
+            {!показыватьНечего && (
               <div className="shrink-0 px-4 pb-3 pt-2 border-t border-hairline/60">
                 <div className="flex items-end gap-2">
                   <textarea

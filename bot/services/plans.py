@@ -268,3 +268,56 @@ async def видно_кто_лайкнул(user_id: str) -> bool:
     sub = await get_active_subscription(user_id)
     tier = (sub or {}).get("plan") or TIER_FREE
     return tier_allows(tier, "see_who_liked")
+
+
+# ── Паки: разовые покупки за Telegram Stars ──────────────────────
+
+#: Копия api/services/plans.py::PACK_* — виды паков.
+PACK_SUPERLIKES = "superlikes"
+PACK_BOOSTS = "boosts"
+
+
+@dataclass(frozen=True)
+class Pack:
+    """Копия api/services/plans.py::Pack — сверяет test_паки_совпадают_в_боте_и_api.
+
+    Цена в Stars, а не в рублях: паки продаются только за Stars, и пересчёт
+    по курсу давал бы кривые суммы при каждом сдвиге RUB_PER_STAR.
+    """
+
+    code: str
+    kind: str
+    qty: int
+    price_stars: int
+
+    @property
+    def title(self) -> str:
+        if self.kind == PACK_SUPERLIKES:
+            return f"{self.qty} {_склонение(self.qty, 'суперлайк', 'суперлайка', 'суперлайков')}"
+        return f"{self.qty} {_склонение(self.qty, 'буст', 'буста', 'бустов')}"
+
+
+def _склонение(n: int, один: str, два: str, пять: str) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return один
+    if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        return два
+    return пять
+
+
+PACKS: tuple[Pack, ...] = (
+    Pack("superlikes_5", PACK_SUPERLIKES, 5, 25),
+    Pack("superlikes_15", PACK_SUPERLIKES, 15, 59),
+    Pack("superlikes_50", PACK_SUPERLIKES, 50, 149),
+    Pack("boosts_1", PACK_BOOSTS, 1, 29),
+    Pack("boosts_3", PACK_BOOSTS, 3, 69),
+    Pack("boosts_10", PACK_BOOSTS, 10, 179),
+)
+
+PACKS_BY_CODE: dict[str, Pack] = {p.code: p for p in PACKS}
+
+#: Значок вида пака для кнопок — суперлайк узнают по звезде, буст по ракете.
+PACK_ICONS: dict[str, str] = {
+    PACK_SUPERLIKES: "⭐",
+    PACK_BOOSTS: "🚀",
+}

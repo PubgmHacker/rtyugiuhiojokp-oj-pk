@@ -264,7 +264,22 @@ async def get_deck_profiles(
     # свайпера их десятки тысяч, и `NOT IN` с таким списком убивает план.
     # Не отмечаем анкеты «просмотренными» при загрузке — иначе повторный
     # запрос деки (перезагрузка страницы) сжигает непросмотренные анкеты.
-    profiles = await _sample_candidates(session, user_id, limit * 3)
+    profiles = await _sample_candidates(
+        session,
+        user_id,
+        limit * 3,
+        # «Только подтверждённые» — единственный нишевый фильтр, который
+        # применяется в SQL, а не в `_passes_niche_filters`. Причина не в
+        # красоте: остальные фильтры отсеивают единицы, а этот — подавляющее
+        # большинство анкет. Отбрасывай его в Python, и выборка из limit*3
+        # кандидатов оставляла бы после фильтра две карточки вместо десяти —
+        # человек с включённым фильтром видел бы почти пустую деку и решил,
+        # что подтверждённых нет вовсе. В запросе `User` уже приджойнен,
+        # так что условие ничего не стоит.
+        extra_filters=[User.is_verified == True]
+        if my_profile is not None and my_profile.filter_verified
+        else None,
+    )
 
     # Сколько очков ранжирования даёт уровень подписки каждого кандидата.
     # Пусто — приоритета нет ни у кого (бесплатные и без подписки сюда не
@@ -312,19 +327,26 @@ async def get_deck_profiles(
         )
         referral_boost_ids = {row[0] for row in result.all()}
 
-    # «Сейчас в сети» — одним запросом на всю деку: обращаться за этим на
-    # каждую карточку значило бы N+1 на самом горячем экране
+    # «Сейчас в сети» и галочка — одним запросом на всю деку: обращаться за
+    # этим на каждую карточку значило бы N+1 на самом горячем экране
     недавно = datetime.now(timezone.utc) - timedelta(minutes=ОНЛАЙН_МИНУТ)
     онлайн: set[str] = set()
+    верифицированные: set[str] = set()
     if candidate_ids:
         result = await session.execute(
-            select(User.id).where(and_(
-                User.id.in_(candidate_ids),
-                User.last_seen_at.is_not(None),
-                User.last_seen_at >= недавно,
-            ))
+            select(User.id, User.last_seen_at, User.is_verified).where(
+                User.id.in_(candidate_ids)
+            )
         )
-        онлайн = {row[0] for row in result.all()}
+        for uid, last_seen, is_verified in result.all():
+            # Колонка без таймзоны отдаёт naive-время — приводим к UTC,
+            # иначе сравнение с aware-границей падает TypeError'ом
+            if last_seen is not None and last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            if last_seen is not None and last_seen >= недавно:
+                онлайн.add(uid)
+            if is_verified:
+                верифицированные.add(uid)
 
     # Filter by preferences and build deck
     deck: list[DeckProfile] = []
@@ -414,6 +436,7 @@ async def get_deck_profiles(
                 and not profile.is_incognito
                 and not profile.is_paused
             ),
+            is_verified=(profile.user_id in верифицированные),
         ))
 
     # Умная сортировка вместо рандома: общие интересы, город, близость,

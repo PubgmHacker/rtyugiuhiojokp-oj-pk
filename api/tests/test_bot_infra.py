@@ -200,3 +200,101 @@ def test_точка_входа_запускает_подписку_под_над
     assert "close_redis" in имена, (
         "bot.py не закрывает общий клиент Redis при остановке"
     )
+
+
+#: Подмена sentry_sdk до импорта алертинга: настоящая сеть и настоящий проект
+#: Sentry не нужны, нас интересует ровно то, что модуль отдаёт наружу.
+ФЕЙК_SENTRY = """
+import sys, types, json
+
+события = []
+теги = {}
+
+class _Область:
+    def set_tag(self, k, v): теги[k] = v
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+фейк = types.ModuleType("sentry_sdk")
+фейк.init = lambda **kw: события.append(("init", kw))
+фейк.new_scope = lambda: _Область()
+фейк.capture_exception = lambda exc: события.append(("exc", type(exc).__name__))
+фейк.capture_message = lambda msg, level="error": события.append(("msg", level, msg))
+sys.modules["sentry_sdk"] = фейк
+
+import services.alerting as A
+"""
+
+
+def test_алертинг_бота_молчит_без_dsn():
+    """Без SENTRY_DSN — ни одного обращения к sentry_sdk.
+
+    Это не косметика: `capture_exception` зовётся из `on_error`, то есть на
+    каждой упавшей кнопке. Если no-op сломается, локальная разработка и любое
+    окружение без DSN начнут ловить исключения внутри обработчика ошибок —
+    единственного места, которое обязано работать всегда.
+    """
+    ответ = _в_боте(ФЕЙК_SENTRY + """
+A.init("")
+A.capture_exception(ValueError("падение"), update_id=7)
+A.capture_message("деградация")
+print(json.dumps({"события": события}))
+""")
+    assert ответ["события"] == [], (
+        f"без DSN алертинг всё равно дёргает sentry_sdk: {ответ['события']}"
+    )
+
+
+def test_алертинг_бота_отправляет_с_тегами():
+    """С DSN исключение уходит вместе с тегами апдейта.
+
+    Теги — вся разница между «в проекте 4000 событий „Необработанная ошибка“»
+    и «вот этот апдейт этого человека на этой кнопке». А `server_name` отличает
+    поток бота от потока API: DSN один на два процесса, и без метки стектрейсы
+    сливаются в одну кучу.
+    """
+    ответ = _в_боте(ФЕЙК_SENTRY + """
+A.init("https://ключ@example.invalid/1")
+A.capture_exception(ValueError("падение"), update_id=7, telegram_id=42, callback_data=None)
+A.capture_message("подписка лежит")
+print(json.dumps({"события": события, "теги": теги}))
+""")
+    вид = [e[0] for e in ответ["события"]]
+    assert вид == ["init", "exc", "msg"], f"неожиданный поток событий: {вид}"
+
+    инит = ответ["события"][0][1]
+    assert инит.get("server_name") == "simp-dating-bot", (
+        "события бота не помечены server_name — в одном проекте Sentry их "
+        "не отличить от событий API"
+    )
+    assert инит.get("traces_sample_rate") == 0.0, (
+        "включена трассировка: трейсы долгого polling'а забьют квоту событий"
+    )
+    assert ответ["теги"] == {"update_id": "7", "telegram_id": "42"}, (
+        f"теги потерялись или проехал None: {ответ['теги']}"
+    )
+
+
+def test_точка_входа_включает_алертинг():
+    """`bot.py` инициализирует алертинг и сообщает об ошибке в Sentry.
+
+    Модуль может существовать и не вызываться: до этой правки бот целиком
+    полагался на `logger.exception`, а логи Railway живут до следующего
+    деплоя и никого не будят. Импортировать `bot.py` нечем (aiogram в другом
+    venv) — читаем вызовы через AST, как и надзиратель подписки выше.
+    """
+    дерево = ast.parse((БОТ / "bot.py").read_text(encoding="utf-8"))
+
+    имена = set()
+    for узел in ast.walk(дерево):
+        if isinstance(узел, ast.Call) and isinstance(узел.func, ast.Name):
+            имена.add(узел.func.id)
+
+    assert "init_alerting" in имена, (
+        "bot.py не зовёт init_alerting — падения обработчиков останутся "
+        "только в эфемерном логе Railway"
+    )
+    assert "capture_exception" in имена, (
+        "on_error не отправляет исключение в Sentry: об упавшей кнопке "
+        "узнаем от пользователя, а не от алерта"
+    )

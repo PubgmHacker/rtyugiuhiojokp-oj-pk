@@ -30,20 +30,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import (
-    Block, Match, Profile, Reel, ReelComment, ReelLike, Report,
+    Block, Match, Profile, Reel, ReelComment, ReelLike,
     Room, RoomMessage, User,
 )
 from models.schemas import (
+    ContentReport,
     ReelCommentOut,
     ReelComments,
     ReelCommentSend,
     ReelForward,
     ReelOut,
-    ReelReport,
     ReelsOut,
 )
 from routers.rooms import check_flood
 from services.ai_moderation import log_moderation, moderate_image, moderate_text
+from services.enforcement import enforce_text_verdict, register_content_strike
+from services.content_reports import подать_жалобу_на_контент
 from services.chat_delivery import (
     REEL_FALLBACK_TEXT, ДоставкаОтклонена, fan_out, save_message,
 )
@@ -269,14 +271,32 @@ async def create_reel(
     for i, (cover_bytes, _cover_type, _cover_ext) in enumerate(sanitized):
         verdict = await moderate_image(cover_bytes)
         await log_moderation(user.id, "reel_cover", f"reel by {user.id} frame {i + 1}", verdict)
+        if verdict.get("unavailable"):
+            # Сервис проверки лежит — видео не виновато: 503 и «позже», не 422
+            raise HTTPException(
+                status_code=503,
+                detail="Проверка видео сейчас недоступна — попробуйте через пару минут",
+            )
+        # Реклама в кадре — тот же страйк, что за рекламный текст; первый же
+        # такой кадр завершает запрос (отказ или бан), остальные не смотрим.
+        # Только "ad": блок с пустой категорией — отказ без страйка
+        if verdict.get("category") == "ad":
+            ответ_бана = await enforce_text_verdict(
+                session, user, verdict, "Видео нарушает правила"
+            )
+            if ответ_бана is not None:
+                return ответ_бана
         if verdict["blocked"]:
             raise HTTPException(status_code=422, detail="Видео нарушает правила")
 
     if caption.strip():
         text_verdict = await moderate_text(caption)
         await log_moderation(user.id, "reel_caption", caption, text_verdict)
-        if text_verdict["blocked"]:
-            raise HTTPException(status_code=422, detail="Подпись нарушает правила")
+        ответ_бана = await enforce_text_verdict(
+            session, user, text_verdict, "Подпись нарушает правила"
+        )
+        if ответ_бана is not None:
+            return ответ_бана
 
     base = f"reels/{user.id}/{uuid.uuid4()}"
     video_url = await upload_photo_to_r2(f"{base}.{ext}", data, video.content_type or "video/mp4")
@@ -485,8 +505,11 @@ async def add_comment(
     # Комментарий виден всем, кто смотрит ролик — модерируем как публичный текст
     verdict = await moderate_text(text)
     await log_moderation(user.id, "reel_comment", text, verdict)
-    if verdict["blocked"]:
-        raise HTTPException(status_code=422, detail="Комментарий нарушает правила")
+    ответ_бана = await enforce_text_verdict(
+        session, user, verdict, "Комментарий нарушает правила"
+    )
+    if ответ_бана is not None:
+        return ответ_бана
 
     comment = ReelComment(reel_id=reel_id, user_id=user.id, text=text)
     session.add(comment)
@@ -567,7 +590,7 @@ async def record_view(
 @router.post("/{reel_id}/report", status_code=204)
 async def report_reel(
     reel_id: str,
-    data: ReelReport,
+    data: ContentReport,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
@@ -587,49 +610,70 @@ async def report_reel(
     if reel.user_id == user.id:
         raise HTTPException(status_code=400, detail="Это ваш ролик")
 
-    # Общий лимит по пути тут не работает: id стоит в середине
-    # (/api/reels/{id}/report), а правила подбираются по префиксу. Поэтому
-    # считаем сами — жалоба снимает ролик с показа, спам ею бесплатен не должен
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
-    result = await session.execute(
-        select(func.count(Report.id)).where(and_(
-            Report.reporter_id == user.id,
-            Report.created_at >= since,
-        ))
-    )
-    if (result.scalar() or 0) >= 10:
-        raise HTTPException(status_code=429, detail="Слишком много жалоб подряд")
-
-    # Одна жалоба от человека на ролик: повторные не должны накручивать порог
-    result = await session.execute(
-        select(Report).where(and_(
-            Report.reporter_id == user.id,
-            Report.reported_id == reel.user_id,
-            Report.description.like(f"reel:{reel_id}%"),
-        ))
-    )
-    if result.scalar_one_or_none():
-        return Response(status_code=204)
-
-    session.add(Report(
+    порог = await подать_жалобу_на_контент(
+        session,
         reporter_id=user.id,
-        reported_id=reel.user_id,
+        author_id=reel.user_id,
         reason=data.reason,
-        # Ролик указываем в описании: модератору нужно знать, что именно
-        # смотреть, а отдельное поле ради этого заводить незачем
-        description=f"reel:{reel_id} {data.description}".strip()[:1000],
-    ))
-    await session.flush()
+        description=data.description,
+        метка=f"reel:{reel_id}",
+        порог=3,
+    )
+    if порог and not reel.is_hidden:
+        reel.is_hidden = True
+        await register_content_strike(session, reel.user_id, f"reel:{reel_id}")
+        logger.warning(f"Ролик {reel_id} снят с показа по жалобам")
 
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/{reel_id}/comments/{comment_id}/report", status_code=204)
+async def report_comment(
+    reel_id: str,
+    comment_id: str,
+    data: ContentReport,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Пожаловаться на комментарий под роликом.
+
+    Комментарий публичен, как и сам ролик, поэтому у зрителя должна быть
+    жалоба, а не только у владельца видео кнопка «удалить»: владелец может
+    не заходить сутками, а грубость под его роликом всё это время читают все.
+    """
     result = await session.execute(
-        select(func.count(func.distinct(Report.reporter_id))).where(and_(
-            Report.reported_id == reel.user_id,
-            Report.description.like(f"reel:{reel_id}%"),
+        select(ReelComment).where(and_(
+            ReelComment.id == comment_id, ReelComment.reel_id == reel_id,
         ))
     )
-    if (result.scalar() or 0) >= 3:
-        reel.is_hidden = True
-        logger.warning(f"Ролик {reel_id} снят с показа по жалобам")
+    comment = result.scalar_one_or_none()
+    if not comment or comment.is_hidden:
+        raise HTTPException(status_code=404, detail="Комментарий не найден")
+    if comment.user_id == user.id:
+        raise HTTPException(status_code=400, detail="Это ваш комментарий")
+
+    порог = await подать_жалобу_на_контент(
+        session,
+        reporter_id=user.id,
+        author_id=comment.user_id,
+        reason=data.reason,
+        description=data.description,
+        метка=f"reelcomment:{comment_id}",
+        порог=3,
+    )
+    if порог:
+        comment.is_hidden = True
+        await register_content_strike(
+            session, comment.user_id, f"reelcomment:{comment_id}"
+        )
+        # Счётчик показывает видимые комментарии — снятый уходит и из него,
+        # как при удалении
+        result = await session.execute(select(Reel).where(Reel.id == reel_id))
+        reel = result.scalar_one_or_none()
+        if reel:
+            reel.comments_count = max(0, reel.comments_count - 1)
+        logger.warning(f"Комментарий {comment_id} снят с показа по жалобам")
 
     await session.commit()
     return Response(status_code=204)
@@ -671,8 +715,11 @@ async def forward_reel(
     if caption:
         verdict = await moderate_text(caption)
         await log_moderation(user.id, "reel_forward", caption, verdict)
-        if verdict["blocked"]:
-            raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+        ответ_бана = await enforce_text_verdict(
+            session, user, verdict, "Сообщение нарушает правила"
+        )
+        if ответ_бана is not None:
+            return ответ_бана
 
     if data.match_id:
         # Мэтч должен быть свой и живой: иначе можно писать в чужую переписку.

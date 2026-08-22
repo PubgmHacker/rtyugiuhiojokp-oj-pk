@@ -20,6 +20,12 @@ from database import (
     get_match_partner,
 )
 from keyboards import matches_list_kb, chat_kb, main_kb, limit_reached_kb
+from services.enforcement import (
+    TEXT_BAN_REASONS,
+    answer_ban_screen,
+    apply_text_strike,
+    strike_suffix,
+)
 from services.moderation import moderate_text, humanize
 from states import ChatStates
 from texts import MATCH_LOCKED_SHORT, chat_header, match_limit_reached
@@ -123,26 +129,37 @@ async def send_message(message: Message, state: FSMContext):
         await message.answer("Сообщение не может быть пустым")
         return
 
+    # Пользователь нужен ДО модерации: нарушение пишется в журнал страйков
+    # на его id (тип "chat_message" — как у API в routers/chat.py)
+    db_user = await get_or_create_user(
+        message.from_user.id,
+        message.from_user.username or "",
+        message.from_user.first_name or "",
+    )
+
     # Личка — самый объёмный канал контента, и через бота он шёл вообще без
     # проверки: тот же текст из мини-аппа модерируется (api/routers/chat.py),
     # а отсюда попадал собеседнику как есть. Заблокировать отправителя тот
     # может, но сообщение уже прочитано
     verdict = await moderate_text(text.strip())
+    исход = await apply_text_strike(
+        db_user["id"], "chat_message", text.strip(), verdict
+    )
     if verdict.get("blocked"):
+        if исход is not None and исход.banned:
+            await answer_ban_screen(
+                message, TEXT_BAN_REASONS[исход.category], исход.banned_until
+            )
+            return
         await message.answer(
             f"Сообщение не отправлено: {humanize(verdict.get('reason', ''))}"
+            + strike_suffix(исход)
         )
         return
 
     # Store message via API or directly in DB
     from database.connection import _session_cls
     from database.models import Message as MsgModel
-
-    db_user = await get_or_create_user(
-        message.from_user.id,
-        message.from_user.username or "",
-        message.from_user.first_name or "",
-    )
 
     # Отправитель обязан быть участником живого мэтча (IDOR-защита)
     partner_profile = await get_match_partner(match_id, db_user["id"])

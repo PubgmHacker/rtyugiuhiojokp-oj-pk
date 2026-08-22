@@ -36,7 +36,7 @@
 	     убивает приложение при первом же getUserMedia, а не показывает
 	     системный запрос ── -->
 	<key>NSCameraUsageDescription</key>
-	<string>Камера нужна, чтобы вы могли снять и добавить фото в свою анкету.</string>
+	<string>Камера нужна, чтобы снять фото для анкеты и пройти добровольную проверку профиля. Кадры проверки не сохраняются.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Микрофон нужен для голосовой рулетки — случайных голосовых звонков. Мы не записываем разговоры.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

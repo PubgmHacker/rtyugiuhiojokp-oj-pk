@@ -21,7 +21,7 @@ import {
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
-import { EmptyState, ScreenHeader, Skeleton } from "../components/ui";
+import { EmptyState, LoadError, ScreenHeader, Skeleton } from "../components/ui";
 
 const SCORES = [1, 2, 3, 4, 5];
 
@@ -71,12 +71,17 @@ export default function PhotoRatings() {
 function RateQueue() {
   const [queue, setQueue] = useState<PhotoRatingTarget[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [сбой, setСбой] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setQueue(await getRatingQueue());
+      const next = await getRatingQueue();
+      setСбой(false);
+      setQueue(next);
     } catch {
-      setQueue([]);
+      // Пустую очередь не подставляем: «Все оценены» при упавшей сети — ложь,
+      // а автоподкачка ниже молотила бы запросами каждые 400мс весь офлайн
+      setСбой(true);
     }
   }, []);
 
@@ -105,11 +110,22 @@ function RateQueue() {
 
   // Кончилась пачка — подтягиваем следующую
   useEffect(() => {
-    if (queue && queue.length === 0) {
+    if (!сбой && queue && queue.length === 0) {
       const timer = window.setTimeout(load, 400);
       return () => window.clearTimeout(timer);
     }
-  }, [queue, load]);
+  }, [queue, load, сбой]);
+
+  if (сбой) {
+    return (
+      <LoadError
+        onRetry={() => {
+          setQueue(null);
+          load();
+        }}
+      />
+    );
+  }
 
   if (!queue) {
     return (
@@ -179,12 +195,23 @@ function RateQueue() {
 
 function MyRating() {
   const [data, setData] = useState<MyPhotoRating | null>(null);
+  const [сбой, setСбой] = useState(false);
 
-  useEffect(() => {
+  const загрузить = useCallback(() => {
+    setСбой(false);
+    setData(null);
     getMyPhotoRating()
       .then(setData)
-      .catch(() => setData({ photo: "", total: 0, average: null }));
+      // Заглушку с пустым фото не подставляем: «Нет фото» при упавшей
+      // сети — ложь, человек пойдёт перезаливать фото, которое есть
+      .catch(() => setСбой(true));
   }, []);
+
+  useEffect(загрузить, [загрузить]);
+
+  if (сбой) {
+    return <LoadError onRetry={загрузить} />;
+  }
 
   if (!data) {
     return (

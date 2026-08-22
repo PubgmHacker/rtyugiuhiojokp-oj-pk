@@ -57,6 +57,28 @@ class Settings(BaseSettings):
     # ── Zhipu AI (GLM-5.2) ──────────────────────────────────────
     ZHIPU_API_KEY: str = ""
 
+    # ── Sumsub (проверка «живости» через KYC-провайдера) ────────
+    # Пока все три значения не заданы, проверка профиля работает встроенной
+    # схемой (позы + GLM). С ключами включается провайдерский режим: WebSDK
+    # Sumsub в мини-аппе, вердикт приходит вебхуком/опросом. Кадры в этом
+    # режиме обрабатывает Sumsub как процессор — мы по-прежнему не храним их.
+    SUMSUB_APP_TOKEN: str = ""
+    SUMSUB_SECRET_KEY: str = ""
+    # Имя уровня из дашборда Sumsub, чувствительно к регистру. Уровень
+    # собирается из ОДНОГО шага Selfie (Liveness): человек крутит головой
+    # перед камерой. Документы (паспорт, ID) не запрашиваются — шаг
+    # Identity document в уровень не входит, галочке знакомств он не нужен.
+    SUMSUB_LEVEL_NAME: str = ""
+    # Секрет вебхука из Webhook manager — без него вебхук отвечает 401 всем.
+    SUMSUB_WEBHOOK_SECRET: str = ""
+    SUMSUB_BASE_URL: str = "https://api.sumsub.com"
+
+    @property
+    def sumsub_enabled(self) -> bool:
+        return bool(
+            self.SUMSUB_APP_TOKEN and self.SUMSUB_SECRET_KEY and self.SUMSUB_LEVEL_NAME
+        )
+
     # ── App Store IAP (покупка подписки в iOS) ──────────────────
     # Идентификаторы продуктов и сроки живут в services/plans.py — там же,
     # где цены и уровни. Пока bundle id не задан вместе с корневым
@@ -97,7 +119,12 @@ class Settings(BaseSettings):
     MAX_PHOTOS: int = 6
     MAX_BIO_LENGTH: int = 500
     MAX_INTERESTS: int = 10
-    MIN_AGE: int = 16
+    # Порог регистрации — 18: рейтинг App Store для знакомств 18+, и пул
+    # общий для Telegram и iOS, поэтому ниже опускать нельзя ни на одной
+    # платформе — иначе несовершеннолетние анкеты видны взрослым в общей
+    # выдаче. Это же число обещают оферта и лендинг: синхронность всех
+    # копий держит api/tests/test_age_floor.py.
+    MIN_AGE: int = 18
     MAX_AGE: int = 99
     DECK_SIZE: int = 10  # анкет за один запрос
 

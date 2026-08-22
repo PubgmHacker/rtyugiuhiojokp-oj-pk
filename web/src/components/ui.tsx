@@ -214,6 +214,30 @@ export function Chip({
   );
 }
 
+/* ── Тумблер ────────────────────────────────────────────────── */
+
+/**
+ * Презентационный тумблер: состоянием и aria владеет строка-кнопка вокруг
+ * (см. PrivacyToggle в Profile и «Только подтверждённые» в Discover), чтобы
+ * зона нажатия была всей строкой, а не пятачком 46×27.
+ */
+export function Toggle({ on }: { on: boolean }) {
+  return (
+    <span
+      className={`w-[46px] h-[27px] rounded-full relative shrink-0 transition-colors ${
+        on ? "bg-success" : "bg-surface-3"
+      }`}
+    >
+      <motion.span
+        layout
+        transition={{ type: "spring", stiffness: 520, damping: 32 }}
+        className="absolute top-[3px] w-[21px] h-[21px] bg-white rounded-full"
+        style={{ left: on ? 22 : 3 }}
+      />
+    </span>
+  );
+}
+
 /* ── Бейдж верификации ──────────────────────────────────────── */
 
 export function VerifiedBadge({ size = 18 }: { size?: number }) {
@@ -285,6 +309,34 @@ export function EmptyState({
       )}
       {action}
     </div>
+  );
+}
+
+/* ── Сбой загрузки ──────────────────────────────────────────── */
+
+/** Ветка «данные не приехали». Показывать вместо неё пустоту нельзя:
+ *  «пока пусто» при упавшей сети — ложь, из-за которой человек уходит,
+ *  думая, что лайков/лент/записей действительно нет. */
+export function LoadError({
+  onRetry,
+  title = "Не удалось загрузить",
+  description = "Проверьте соединение и попробуйте снова.",
+}: {
+  onRetry: () => void;
+  title?: string;
+  description?: string;
+}) {
+  return (
+    <EmptyState
+      emoji="📡"
+      title={title}
+      description={description}
+      action={
+        <Button variant="secondary" size="md" onClick={onRetry}>
+          Повторить
+        </Button>
+      }
+    />
   );
 }
 

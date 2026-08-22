@@ -26,14 +26,19 @@ export default function ReportsTable() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("pending");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // Сбой — не «Нет жалоб»: успокаивающая галочка при упавшей сети опасна,
+  // модератор решит, что очередь пуста, и уйдёт
+  const [сбой, setСбой] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setСбой(false);
     try {
       const data = await getAdminReports(filter);
       setReports(data);
     } catch (e) {
       console.error(e);
+      setСбой(true);
     } finally {
       setLoading(false);
     }
@@ -95,6 +100,18 @@ export default function ReportsTable() {
                   ))}
                 </tr>
               ))
+            ) : сбой ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-12 text-center text-text-muted">
+                  <p className="mb-3">📡 Не удалось загрузить</p>
+                  <button
+                    onClick={load}
+                    className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"
+                  >
+                    Повторить
+                  </button>
+                </td>
+              </tr>
             ) : reports.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-text-muted">

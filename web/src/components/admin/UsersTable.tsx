@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, Shield, ShieldOff, Eye } from "lucide-react";
+import { Search, Shield, ShieldOff, BadgeCheck } from "lucide-react";
 import {
   getAdminUsers,
   banUser,
   unbanUser,
+  setUserVerified,
   type AdminUser,
 } from "../../lib/admin";
+import UserCard from "./UserCard";
 
 export default function UsersTable() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -14,14 +16,20 @@ export default function UsersTable() {
   const [bannedOnly, setBannedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // Клик по строке открывает досье; кнопки в строке — для бесспорных случаев
+  const [openUserId, setOpenUserId] = useState<string | null>(null);
+  // Сбой — не «Нет пользователей»: пустая таблица при упавшей сети — ложь
+  const [сбой, setСбой] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setСбой(false);
     try {
       const data = await getAdminUsers(page, 50, search, bannedOnly);
       setUsers(data);
     } catch (e) {
       console.error(e);
+      setСбой(true);
     } finally {
       setLoading(false);
     }
@@ -47,6 +55,18 @@ export default function UsersTable() {
     try {
       await unbanUser(userId);
       setUsers(users.map((u) => (u.id === userId ? { ...u, is_banned: false } : u)));
+    } catch (e) {
+      console.error(e);
+    }
+    setActionLoading(null);
+  };
+
+  // Ручная галочка: снять с подменившего фото, выдать тому, кого AI не узнаёт
+  const handleVerified = async (userId: string, verified: boolean) => {
+    setActionLoading(userId);
+    try {
+      await setUserVerified(userId, verified);
+      setUsers(users.map((u) => (u.id === userId ? { ...u, is_verified: verified } : u)));
     } catch (e) {
       console.error(e);
     }
@@ -104,6 +124,18 @@ export default function UsersTable() {
                   ))}
                 </tr>
               ))
+            ) : сбой ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-12 text-center text-text-muted">
+                  <p className="mb-3">📡 Не удалось загрузить</p>
+                  <button
+                    onClick={load}
+                    className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"
+                  >
+                    Повторить
+                  </button>
+                </td>
+              </tr>
             ) : users.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-text-muted">
@@ -112,7 +144,11 @@ export default function UsersTable() {
               </tr>
             ) : (
               users.map((u) => (
-                <tr key={u.id} className="border-t border-white/5 hover:bg-white/[0.02] transition">
+                <tr
+                  key={u.id}
+                  onClick={() => setOpenUserId(u.id)}
+                  className="border-t border-white/5 hover:bg-white/[0.02] transition cursor-pointer"
+                >
                   <td className="px-4 py-3">
                     <div>
                       <p className="font-medium truncate max-w-[150px]">{u.display_name || "—"}</p>
@@ -148,8 +184,21 @@ export default function UsersTable() {
                   <td className="px-4 py-3 hidden lg:table-cell text-text-muted text-xs">
                     {u.created_at ? new Date(u.created_at).toLocaleDateString("ru") : "—"}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  {/* Кнопки не должны заодно открывать досье */}
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => handleVerified(u.id, !u.is_verified)}
+                        disabled={actionLoading === u.id}
+                        className={`p-1.5 rounded-lg transition disabled:opacity-40 ${
+                          u.is_verified
+                            ? "bg-info/10 text-info hover:bg-info/20"
+                            : "bg-white/5 text-text-muted hover:text-text"
+                        }`}
+                        title={u.is_verified ? "Снять галочку" : "Выдать галочку вручную"}
+                      >
+                        <BadgeCheck size={16} />
+                      </button>
                       {u.is_banned ? (
                         <button
                           onClick={() => handleUnban(u.id)}
@@ -198,6 +247,18 @@ export default function UsersTable() {
           </button>
         </div>
       </div>
+
+      {openUserId && (
+        <UserCard
+          userId={openUserId}
+          onClose={() => setOpenUserId(null)}
+          onChanged={(patch) =>
+            setUsers((prev) =>
+              prev.map((u) => (u.id === openUserId ? { ...u, ...patch } : u))
+            )
+          }
+        />
+      )}
     </div>
   );
 }

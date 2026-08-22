@@ -11,11 +11,12 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.types import BotCommand, ErrorEvent, MenuButtonWebApp, WebAppInfo
 from aiohttp import web
 
-from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, REDIS_URL, SITE_URL, webapp_https, mini_app_url
+from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, REDIS_URL, SENTRY_DSN, SITE_URL, webapp_https, mini_app_url
 from database import init_db, get_or_create_user, get_profile, record_referral, get_user_by_id
-from handlers import registration, dating, matches, premium, referral, account, onboarding
+from handlers import registration, dating, matches, premium, referral, account, onboarding, unban
 from handlers.onboarding import send_language_picker
 from keyboards import main_kb
+from middlewares.ban_gate import BanGateMiddleware
 from middlewares.registration import RegistrationMiddleware
 from middlewares.throttle import ThrottleMiddleware
 from services.redis_subscriber import close_redis, supervise_redis_subscriber
@@ -168,6 +169,22 @@ async def on_error(event: ErrorEvent) -> bool:
             pass
         target = cb.message
 
+    # В Sentry уходит то же исключение, что в лог. Логи Railway эфемерны и
+    # никто не смотрит их в реальном времени, а упавший обработчик — это
+    # человек, который получил «что-то пошло не так» вместо ответа. Теги
+    # (кто, какой апдейт, какая кнопка) отличают такие события друг от
+    # друга: без них всё сваливается в одну неразличимую группу.
+    # Без SENTRY_DSN — no-op (см. services/alerting.py).
+    from services.alerting import capture_exception
+
+    нажатие = getattr(update, "callback_query", None)
+    capture_exception(
+        event.exception,
+        update_id=getattr(update, "update_id", None),
+        telegram_id=getattr(getattr(target, "from_user", None), "id", None),
+        callback_data=getattr(нажатие, "data", None),
+    )
+
     if target is not None:
         try:
             await target.answer(T.ERROR_GENERIC)
@@ -233,6 +250,11 @@ def собрать_dispatcher(storage) -> Dispatcher:
     dp.callback_query.outer_middleware(ThrottleMiddleware())
     dp.message.outer_middleware(RegistrationMiddleware())
     dp.callback_query.outer_middleware(RegistrationMiddleware())
+    # Бан-гейт — сразу после регистрации: она кладёт db_user в data, по нему
+    # гейт и решает. pre_checkout_query не оборачиваем — оплата разблокировки
+    # должна подтверждаться (см. middlewares/ban_gate.py)
+    dp.message.outer_middleware(BanGateMiddleware())
+    dp.callback_query.outer_middleware(BanGateMiddleware())
 
     # Ошибка в одном обработчике не должна оставлять человека без ответа
     dp.errors.register(on_error)
@@ -244,6 +266,7 @@ def собрать_dispatcher(storage) -> Dispatcher:
     dp.include_router(onboarding.router)
     dp.include_router(account.router)
     dp.include_router(premium.router)
+    dp.include_router(unban.router)
     dp.include_router(referral.router)
     dp.include_router(registration.router)
     dp.include_router(dating.router)
@@ -253,6 +276,15 @@ def собрать_dispatcher(storage) -> Dispatcher:
 
 async def main():
     """Точка входа."""
+    # Алертинг — первым делом, до любой работы: падение на инициализации БД
+    # или на set_my_commands тоже должно доходить до Sentry, а не только в
+    # эфемерный лог. Без SENTRY_DSN — no-op (см. services/alerting.py).
+    from services.alerting import init as init_alerting
+
+    init_alerting(SENTRY_DSN)
+    if not SENTRY_DSN:
+        logger.warning("SENTRY_DSN пуст: об ошибках бота никто не узнает первым")
+
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN not set!")
         return

@@ -28,7 +28,7 @@ import {
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
-import { Button, Card, ScreenHeader, Skeleton } from "../components/ui";
+import { Button, Card, LoadError, ScreenHeader, Skeleton } from "../components/ui";
 
 const TABS: { type: TarotSpreadType; label: string }[] = [
   { type: "day", label: "Карта дня" },
@@ -106,9 +106,10 @@ export default function Tarot() {
     } finally {
       setLoading(false);
     }
-    // nameA/nameB читаются только при явном запросе, не при смене вкладки
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Имена в зависимостях, чтобы load не запомнил их первоначальные пустые
+    // значения (со старым `[]` getTarotPair всегда слал ""). Лишних запросов
+    // это не даёт: эффект ниже выходит рано и для pair, и по `загружено`.
+  }, [nameA, nameB]);
 
   const locked = GATED[tab] && spreadsOpen === false;
 
@@ -223,11 +224,19 @@ export default function Tarot() {
           </div>
         )}
 
-        {error && (
-          <p role="alert" className="text-[13px] text-danger mb-2">
-            {error}
-          </p>
-        )}
+        {error &&
+          !loading &&
+          (tab === "pair" ? (
+            // У «Он и я» кнопка повтора уже есть — «Разложить карты» выше
+            <p role="alert" className="text-[13px] text-danger mb-2">
+              {error}
+            </p>
+          ) : (
+            <LoadError
+              title="Не удалось получить расклад"
+              onRetry={() => load(tab)}
+            />
+          ))}
 
         {!loading && spread && (
           <motion.div

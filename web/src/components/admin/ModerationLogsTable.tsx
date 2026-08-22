@@ -12,14 +12,18 @@ export default function ModerationLogsTable() {
   const [logs, setLogs] = useState<AdminModerationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  // Сбой — не «Нет записей модерации»: пустая таблица при упавшей сети — ложь
+  const [сбой, setСбой] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setСбой(false);
     try {
       const data = await getModerationLogs(filter);
       setLogs(data);
     } catch (e) {
       console.error(e);
+      setСбой(true);
     } finally {
       setLoading(false);
     }
@@ -68,6 +72,18 @@ export default function ModerationLogsTable() {
                   ))}
                 </tr>
               ))
+            ) : сбой ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-12 text-center text-text-muted">
+                  <p className="mb-3">📡 Не удалось загрузить</p>
+                  <button
+                    onClick={load}
+                    className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"
+                  >
+                    Повторить
+                  </button>
+                </td>
+              </tr>
             ) : logs.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-text-muted">

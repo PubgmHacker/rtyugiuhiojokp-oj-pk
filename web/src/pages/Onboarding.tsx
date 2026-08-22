@@ -14,6 +14,8 @@ import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { legalUrl } from "../lib/legal";
 import { getCurrentPosition } from "../lib/native";
+import { setClosingConfirmation } from "../lib/telegram";
+import { useTelegramBack } from "../lib/useTelegramBack";
 import {
   loadDraft,
   saveDraft,
@@ -40,6 +42,11 @@ import {
 const MAX_INTERESTS = 5;
 const MAX_PHOTOS = 6;
 const MAX_BIO = 500;
+// Те же числа, что MIN_AGE/MAX_AGE в api/config.py: сервер отклонит анкету
+// вне границ, а клиент обязан сказать это до отправки, теми же числами.
+// Синхронность с сервером и текстами проверяет api/tests/test_age_floor.py.
+const MIN_AGE = 18;
+const MAX_AGE = 99;
 
 type StepId =
   | "name"
@@ -153,7 +160,7 @@ export default function Onboarding() {
       case "name":
         return name.trim().length >= 2;
       case "age":
-        return Number.isInteger(ageNum) && ageNum >= 16 && ageNum <= 99;
+        return Number.isInteger(ageNum) && ageNum >= MIN_AGE && ageNum <= MAX_AGE;
       case "gender":
         return !!gender;
       case "lookingFor":
@@ -178,6 +185,21 @@ export default function Onboarding() {
     setDirection(delta);
     setIndex((i) => Math.min(STEPS.length - 1, Math.max(0, i + delta)));
     haptic("light");
+  }, []);
+
+  // Нативная кнопка «назад» Telegram водит по шагам анкеты, а не выкидывает из
+  // мини-аппа: в шапке она стоит рядом с «Закрыть», и человек, тапнув привычную
+  // стрелку, терял всю анкету. На первом шаге прячем — назад некуда.
+  useTelegramBack(index > 0 ? () => go(-1) : null);
+
+  // Подтверждение закрытия на весь онбординг. Черновик мы теперь пишем, так что
+  // данные не сгорят, но незакрытая анкета — это незарегистрированный человек:
+  // случайный тап «Закрыть» посреди воронки чаще всего не возвращается. Снимаем
+  // при уходе с экрана, иначе подтверждение осталось бы висеть на всём
+  // приложении — кнопка в Telegram одна и глобальная.
+  useEffect(() => {
+    setClosingConfirmation(true);
+    return () => setClosingConfirmation(false);
   }, []);
 
   /* ── Черновик ────────────────────────────────────────────────
@@ -320,6 +342,31 @@ export default function Onboarding() {
   const removePhoto = useCallback((id: string) => {
     haptic("light");
     setPhotos((p) => p.filter((s) => s.id !== id));
+  }, []);
+
+  /** Сделать фото главным — переносом в начало списка.
+   *
+   *  Порядок массива и есть порядок показа: `photos[0]` — то, что видно на
+   *  карточке в деке, в лайках, в чатах и в «Гостях». До этой кнопки главным
+   *  было то фото, которое загрузили первым, и поменять его можно было
+   *  единственным способом: удалить всё, что стоит перед нужным, и залить
+   *  заново — вместе с повторной AI-проверкой каждого снимка. Для самого
+   *  решающего поля анкеты (по нему и свайпают) это абсурдная цена.
+   *
+   *  Только вверх, без произвольного перетаскивания: жест drag конфликтует со
+   *  свайпом шагов онбординга, а «главное» — единственный порядок, который
+   *  человеку правда важен. Остальные фото сдвигаются, сохраняя свой порядок. */
+  const makePrimary = useCallback((id: string) => {
+    setPhotos((p) => {
+      const i = p.findIndex((s) => s.id === id);
+      // Уже главное или ещё грузится — двигать нечего
+      if (i <= 0 || !p[i].url) return p;
+      haptic("success");
+      const next = [...p];
+      const [фото] = next.splice(i, 1);
+      next.unshift(фото);
+      return next;
+    });
   }, []);
 
   const toggleInterest = useCallback((tag: string) => {
@@ -499,18 +546,18 @@ export default function Onboarding() {
             {step === "age" && (
               <StepShell
                 title="Сколько вам лет?"
-                hint="Симп — сервис с 16 лет"
+                hint="Симп — сервис с 18 лет"
               >
                 <TextField
                   value={age}
                   onChange={(v) => setAge(v.replace(/\D/g, "").slice(0, 2))}
-                  placeholder="16"
+                  placeholder="18"
                   inputMode="numeric"
                   autoFocus
                 />
-                {age && ageNum < 16 && (
+                {age && ageNum < MIN_AGE && (
                   <p className="mt-3 text-[14px] text-danger">
-                    Регистрация возможна с 16 лет.
+                    Регистрация возможна с 18 лет.
                   </p>
                 )}
               </StepShell>
@@ -586,7 +633,11 @@ export default function Onboarding() {
             {step === "photos" && (
               <StepShell
                 title="Добавьте фото"
-                hint="Первое станет главным. Нужно хотя бы одно"
+                hint={
+                  photos.filter((p) => p.url).length > 1
+                    ? "Первое — главное. Нажмите на любое другое, чтобы сделать его главным"
+                    : "Первое станет главным. Нужно хотя бы одно"
+                }
               >
                 <div className="grid grid-cols-3 gap-2.5">
                   {Array.from({ length: MAX_PHOTOS }).map((_, i) => (
@@ -596,6 +647,7 @@ export default function Onboarding() {
                       isPrimary={i === 0}
                       onPick={addPhoto}
                       onRemove={() => photos[i] && removePhoto(photos[i].id)}
+                      onMakePrimary={() => photos[i] && makePrimary(photos[i].id)}
                       disabled={i > photos.length}
                     />
                   ))}
@@ -787,7 +839,7 @@ export default function Onboarding() {
               >
                 <div className="space-y-3 text-[14px] text-text-muted">
                   <p>
-                    Нажимая «Принимаю», вы подтверждаете, что вам 16 лет или
+                    Нажимая «Принимаю», вы подтверждаете, что вам 18 лет или
                     больше, и принимаете{" "}
                     {/* Адрес абсолютный не для красоты: в нативной сборке origin —
                         `capacitor://localhost`, и относительная ссылка с
@@ -812,6 +864,16 @@ export default function Onboarding() {
                       политику
                     </a>
                     .
+                  </p>
+                  {/* Обещание нулевой терпимости — требование App Store к
+                      приложениям с пользовательским контентом (Guideline
+                      1.2): оно должно прозвучать до начала общения, а не
+                      прятаться в оферте. То же обещание — в правилах
+                      сообщества и в согласии бота. */}
+                  <p>
+                    К оскорблениям, травле и откровенному контенту у нас
+                    нулевая терпимость: такие анкеты и сообщения блокируются,
+                    а пожаловаться можно на любую анкету, фото или сообщение.
                   </p>
                   <p>
                     Мы не мониторим и не продаём ваши переписки.
@@ -972,12 +1034,14 @@ function PhotoTile({
   isPrimary,
   onPick,
   onRemove,
+  onMakePrimary,
   disabled,
 }: {
   slot?: PhotoSlot;
   isPrimary: boolean;
   onPick: (f: File) => void;
   onRemove: () => void;
+  onMakePrimary: () => void;
   disabled: boolean;
 }) {
   const inputId = useId();
@@ -1044,7 +1108,7 @@ function PhotoTile({
     return (
       <div className="relative aspect-[3/4] rounded-[var(--radius-tile)] overflow-hidden bg-surface-2">
         <img src={slot.url} alt="" className="w-full h-full object-cover" />
-        {isPrimary && (
+        {isPrimary ? (
           <span
             className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full
                        bg-accent text-[10px] font-bold text-white
@@ -1053,11 +1117,30 @@ function PhotoTile({
             <Star size={9} fill="currentColor" />
             Главное
           </span>
+        ) : (
+          /* Тап по самой плитке, а не по маленькой звёздочке: цель во весь
+             снимок промахнуться невозможно, а всё, что можно сделать с не
+             главным фото, кроме удаления, — как раз повысить его */
+          <button
+            onClick={onMakePrimary}
+            aria-label="Сделать главным фото"
+            className="absolute inset-0 flex items-end justify-start p-1.5
+                       active:bg-black/25 transition-colors"
+          >
+            <span
+              className="px-2 py-0.5 rounded-full bg-black/55 backdrop-blur-sm
+                         text-[10px] font-semibold text-white
+                         flex items-center gap-1"
+            >
+              <Star size={9} />
+              Главным
+            </span>
+          </button>
         )}
         <button
           aria-label="Удалить фото"
           onClick={onRemove}
-          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full
+          className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full
                      bg-black/60 backdrop-blur-sm flex items-center justify-center"
         >
           <X size={15} />

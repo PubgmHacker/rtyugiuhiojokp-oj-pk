@@ -27,9 +27,19 @@ async def sqlite_session():
     await engine.dispose()
 
 
-async def _создать_пользователя(session, user_id: str, display_name: str):
+async def _создать_пользователя(
+    session,
+    user_id: str,
+    display_name: str,
+    verified: bool = False,
+    filter_verified: bool = False,
+):
     """Минимальная анкета: видна в деке, не заблокирована."""
-    session.add(User(id=user_id, telegram_id=int(user_id.replace("U", ""))))
+    session.add(User(
+        id=user_id,
+        telegram_id=int(user_id.replace("U", "")),
+        is_verified=verified,
+    ))
     session.add(Profile(
         user_id=user_id,
         display_name=display_name,
@@ -38,6 +48,7 @@ async def _создать_пользователя(session, user_id: str, displa
         age_min=18,
         age_max=99,
         sample_key=0.5,
+        filter_verified=filter_verified,
     ))
     await session.commit()
 
@@ -148,3 +159,37 @@ async def test_дека_не_показывает_самого_себя(sqlite_s
 
     assert "U1" not in ids, "сам себя вижу в деке"
     assert "U2" in ids
+
+
+@pytest.mark.asyncio
+async def test_фильтр_подтверждённых_отсекает_неподтверждённых(sqlite_session):
+    """Включённый «только подтверждённые» оставляет в деке лишь прошедших
+    проверку. Это защитный фильтр: сломать его молча — значит показывать
+    неподтверждённых человеку, который явно попросил их не видеть."""
+    await _создать_пользователя(sqlite_session, "U1", "Я", filter_verified=True)
+    await _создать_пользователя(sqlite_session, "U2", "Подтверждённый", verified=True)
+    await _создать_пользователя(sqlite_session, "U3", "Неподтверждённый")
+
+    дека = await get_deck_profiles(sqlite_session, "U1", limit=10)
+    ids = {a.id for a in дека}
+
+    assert "U2" in ids, "подтверждённый выпал из деки при включённом фильтре"
+    assert "U3" not in ids, "неподтверждённый прошёл сквозь фильтр"
+
+
+@pytest.mark.asyncio
+async def test_без_фильтра_подтверждённых_видны_все(sqlite_session):
+    """Выключенный фильтр (значение по умолчанию) ничего не отсекает.
+
+    Ловит инверсию условия и «фильтр включён всегда»: в первые месяцы
+    подтверждённых мало, и постоянно действующий фильтр опустошил бы деку
+    у всех, кто его не просил."""
+    await _создать_пользователя(sqlite_session, "U1", "Я")
+    await _создать_пользователя(sqlite_session, "U2", "Подтверждённый", verified=True)
+    await _создать_пользователя(sqlite_session, "U3", "Неподтверждённый")
+
+    дека = await get_deck_profiles(sqlite_session, "U1", limit=10)
+    ids = {a.id for a in дека}
+
+    assert "U2" in ids
+    assert "U3" in ids, "фильтр подтверждённых действует у того, кто его не включал"

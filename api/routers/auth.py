@@ -18,7 +18,7 @@ from middleware.auth import (
 )
 from models.models import User, Profile
 from models.schemas import AuthResponse, UserProfile
-from services.ban_memory import is_banned_identity
+from services.ban_memory import banned_identity_record
 from services.apple_auth import AppleAuthError, verify_identity_token
 from services.email_recovery import (
     можно_отправлять,
@@ -63,6 +63,15 @@ def _user_to_profile(user: User, profile: Profile | None) -> UserProfile:
         ai_bio=profile.ai_bio if profile else None,
         looking_for=profile.looking_for if profile else "any",
         is_incognito=profile.is_incognito if profile else False,
+        # Пауза — в ответе на вход, а не только в /profiles/me. Мини-апп
+        # предупреждает паузой скрытого человека сразу, с первого кадра:
+        # приезжай флаг отдельным запросом анкеты, экран успел бы показать
+        # обычную деку тому, кого никто не видит, — то есть соврать.
+        is_paused=profile.is_paused if profile else False,
+        # Язык нужен именно здесь, в ответе на вход: мини-апп выбирает язык до
+        # первой отрисовки, и если ждать отдельного запроса анкеты, интерфейс
+        # успеет мигнуть русским тому, кто выбрал другой язык
+        locale=user.locale,
     )
 
 
@@ -74,7 +83,10 @@ async def auth_telegram(
     """Авторизация через Telegram initData."""
     init_data = data.get("initData", "")
     if not init_data:
-        return AuthResponse(success=False, token="", user=UserProfile())
+        # id="" обязателен: поле не опциональное, и `UserProfile()` без него
+        # падает валидацией уже внутри обработчика — вместо честного
+        # «success: false» клиент получал 500 на пустом initData
+        return AuthResponse(success=False, token="", user=UserProfile(id=""))
 
     tg_data = verify_telegram_init_data(init_data)
 
@@ -98,17 +110,19 @@ async def auth_telegram(
         # Забаненный мог удалить аккаунт и прийти заново тем же Telegram:
         # удаление каскадом стирает бан, поэтому проверяем отдельный список.
         # Создаём его сразу забаненным, а не отказываем — иначе он поймёт, что
-        # обход не сработал, и начнёт искать другой способ
-        previously_banned = await is_banned_identity(session, telegram_id=tg_id)
+        # обход не сработал, и начнёт искать другой способ. Срок наследуется
+        # из памяти банов: временно забаненному достаётся остаток, а не вечность
+        прошлый_бан = await banned_identity_record(session, telegram_id=tg_id)
 
         user = User(
             telegram_id=tg_id,
             role="user",
-            is_banned=previously_banned,
+            is_banned=прошлый_бан is not None,
+            banned_until=прошлый_бан.banned_until if прошлый_бан else None,
         )
         session.add(user)
         await session.flush()
-        if previously_banned:
+        if прошлый_бан is not None:
             logger.warning(f"Повторная регистрация забаненного telegram_id={tg_id}")
         # Create empty profile
         profile = Profile(
@@ -196,6 +210,12 @@ async def auth_link_code(
 
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
+    if user is not None and user.is_banned:
+        # Истёкший временный бан не должен запирать вход по коду навсегда:
+        # ленивое снятие — то же, что в get_current_user
+        from services.enforcement import lift_ban_if_expired
+
+        await lift_ban_if_expired(session, user)
     if not user or user.is_banned:
         return AuthResponse(success=False, token="", user=UserProfile(id=""))
 
@@ -240,13 +260,19 @@ async def auth_apple(
     if not user:
         # Забаненный не должен получать чистую историю, зайдя через Apple:
         # список банов живёт отдельно от аккаунта (см. auth_telegram). Ключ —
-        # именованный: apple_id строковый, и по колонке telegram_id он не искал
-        previously_banned = await is_banned_identity(session, apple_id=apple_id)
+        # именованный: apple_id строковый, и по колонке telegram_id он не искал.
+        # Срок наследуется тем же правилом: остаток, а не вечность
+        прошлый_бан = await banned_identity_record(session, apple_id=apple_id)
 
-        user = User(apple_id=apple_id, role="user", is_banned=previously_banned)
+        user = User(
+            apple_id=apple_id,
+            role="user",
+            is_banned=прошлый_бан is not None,
+            banned_until=прошлый_бан.banned_until if прошлый_бан else None,
+        )
         session.add(user)
         await session.flush()
-        if previously_banned:
+        if прошлый_бан is not None:
             logger.warning(f"Повторная регистрация забаненного apple_id={apple_id}")
 
         имя = str(data.get("full_name") or "").strip()
@@ -407,6 +433,12 @@ async def login_by_email(
 
     result = await session.execute(select(User).where(User.id == владелец))
     user = result.scalar_one_or_none()
+    if user is not None and user.is_banned:
+        # Истёкший временный бан снимается и здесь — иначе восстановление
+        # по почте оставалось бы закрытым после отбытого срока
+        from services.enforcement import lift_ban_if_expired
+
+        await lift_ban_if_expired(session, user)
     # Забаненному вход по почте не даёт обхода: проверка та же, что везде
     if not user or user.is_banned or user.email != адрес:
         return AuthResponse(success=False, token="", user=UserProfile(id=""))

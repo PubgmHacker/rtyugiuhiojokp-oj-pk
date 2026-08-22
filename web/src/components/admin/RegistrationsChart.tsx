@@ -3,9 +3,11 @@ import type { AdminStats } from "../../lib/admin";
 
 interface Props {
   stats: AdminStats | null;
+  /** Первая загрузка: пустой график в этот момент ещё не «Нет данных». */
+  loading?: boolean;
 }
 
-export default function RegistrationsChart({ stats }: Props) {
+export default function RegistrationsChart({ stats, loading = false }: Props) {
   const chartData = stats?.registrations_chart || [];
   const maxCount = useMemo(() => Math.max(...chartData.map((d) => d.count), 1), [chartData]);
   const width = 600;
@@ -17,7 +19,11 @@ export default function RegistrationsChart({ stats }: Props) {
     return (
       <div className="bg-surface rounded-2xl p-6">
         <h3 className="font-semibold mb-4">Регистрации (14 дней)</h3>
-        <div className="h-48 flex items-center justify-center text-text-muted">Нет данных</div>
+        {loading ? (
+          <div className="h-48 bg-bg rounded-xl animate-pulse" />
+        ) : (
+          <div className="h-48 flex items-center justify-center text-text-muted">Нет данных</div>
+        )}
       </div>
     );
   }

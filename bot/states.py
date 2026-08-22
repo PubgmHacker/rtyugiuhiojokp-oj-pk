@@ -49,3 +49,9 @@ class DeleteStates(StatesGroup):
     """Удаление аккаунта — подтверждение в два шага."""
 
     confirming = State()
+
+
+class PromoStates(StatesGroup):
+    """Активация промокода — один шаг: ждём код сообщением."""
+
+    waiting_code = State()

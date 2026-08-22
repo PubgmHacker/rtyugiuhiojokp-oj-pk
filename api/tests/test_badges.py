@@ -99,9 +99,11 @@ async def клиент(app, мир):
 
 
 async def test_считает_непрочитанные_и_лайки(клиент):
+    # Полное равенство, а не подмножество: появление нового счётчика должно
+    # осознанно дойти и сюда, и до BadgeCounts на клиенте
     r = await клиент.get("/api/badges")
     assert r.status_code == 200, r.text
-    assert r.json() == {"messages": 2, "likes": 2}
+    assert r.json() == {"messages": 2, "likes": 2, "notifications": 0}
 
 
 async def test_оценённые_лайки_выпадают_из_бейджа(клиент, мир):

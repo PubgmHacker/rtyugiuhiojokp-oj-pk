@@ -39,6 +39,13 @@ import ReelBubble from "../components/ReelBubble";
 import { ChatThemeSheet } from "../components/ChatThemeSheet";
 import { HabitsSheet } from "../components/HabitsSheet";
 import { когдаСлот } from "../components/LimitSheet";
+import {
+  useЯзык,
+  перевести,
+  форматВремени,
+  форматДняРазделителя,
+  type Язык,
+} from "../lib/i18n";
 import { REPORT_REASONS } from "../lib/profileOptions";
 import { readableOn } from "../lib/aura";
 
@@ -75,6 +82,7 @@ export default function Chat() {
   const lastTypingSent = useRef(0);
 
   const myId = useStore((s) => s.user?.id);
+  const язык = useЯзык();
   const isMounted = useIsMounted();
   // Живой matchId на каждый рендер: замыкание эффекта хранит свой matchId
   // навсегда, а этот реф нужен именно для сравнения "а актуален ли ещё тот
@@ -332,7 +340,7 @@ export default function Chat() {
   }, [match, navigate]);
 
   /* ── Группировка сообщений ───────────────────────────────── */
-  const groups = useMemo(() => groupMessages(messages, myId), [messages, myId]);
+  const groups = useMemo(() => groupMessages(messages, myId, язык), [messages, myId, язык]);
 
   const partnerName = match?.partner.display_name || "Чат";
   const partnerPhoto = match?.partner.photos?.[0];
@@ -373,7 +381,7 @@ export default function Chat() {
           </p>
           {limits?.matches_reset_at && (
             <p className="text-caption text-text-muted mb-6">
-              Следующий слот вернётся {когдаСлот(limits.matches_reset_at)}.
+              Следующий слот вернётся {когдаСлот(limits.matches_reset_at, язык)}.
             </p>
           )}
           {!limits?.matches_reset_at && <div className="mb-6" />}
@@ -708,7 +716,7 @@ export default function Chat() {
                           opacity: theme?.background_color ? 0.6 : undefined,
                         }}
                       >
-                        {formatTime(last.created_at)}
+                        {formatTime(last.created_at, язык)}
                       </span>
                       {group.mine &&
                         (last.read_at ? (
@@ -889,14 +897,14 @@ interface Group {
 }
 
 /** Подряд идущие сообщения одного автора в пределах 5 минут — одна группа. */
-function groupMessages(messages: ChatMessage[], myId?: string): Group[] {
+function groupMessages(messages: ChatMessage[], myId: string | undefined, язык: Язык): Group[] {
   const groups: Group[] = [];
   let lastDate = "";
 
   for (const m of messages) {
     const mine = m.sender_id === myId;
     const dayKey = m.created_at ? new Date(m.created_at).toDateString() : "";
-    const dateLabel = dayKey && dayKey !== lastDate ? formatDate(m.created_at) : null;
+    const dateLabel = dayKey && dayKey !== lastDate ? formatDate(m.created_at, язык) : null;
     if (dateLabel) lastDate = dayKey;
 
     const prev = groups[groups.length - 1];
@@ -922,28 +930,26 @@ function withinGap(a?: string | null, b?: string | null): boolean {
   return diff < 5 * 60 * 1000;
 }
 
-function formatTime(iso?: string | null): string {
+function formatTime(iso: string | null | undefined, язык: Язык): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return форматВремени(d, язык);
 }
 
-function formatDate(iso?: string | null): string {
+function formatDate(iso: string | null | undefined, язык: Язык): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
 
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) return "Сегодня";
+  if (d.toDateString() === now.toDateString()) return перевести(язык, "date.today");
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return "Вчера";
+  if (d.toDateString() === yesterday.toDateString()) return перевести(язык, "date.yesterday");
 
-  return d.toLocaleDateString("ru-RU", {
-    day: "numeric",
-    month: "long",
-    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
-  });
+  // Год добавляем только чужой: «20 августа 2026» в переписке этого года —
+  // шум, а без года в переписке прошлого не понять, о каком дне речь.
+  return форматДняРазделителя(d, язык, d.getFullYear() !== now.getFullYear());
 }

@@ -283,6 +283,8 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
               {profile.age}
             </span>
           )}
+          {/* Галочка живой проверки: человек в анкете — реальный */}
+          {profile.is_verified && <VerifiedBadge size={20} />}
           {/* Наклейка из коллекции — маленький знак характера рядом с именем.
               Одна: витрина достижений отвлекала бы от человека */}
           {profile.sticker && (

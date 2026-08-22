@@ -13,6 +13,8 @@ interface AppState {
   unreadLikes: number;
   /** Счётчик для бейджа на вкладке «Чаты» — непрочитанные сообщения. */
   unreadMessages: number;
+  /** Красная точка колокольчика — непрочитанное в центре уведомлений. */
+  unreadNotifications: number;
 
   setUser: (user: UserProfile | null) => void;
   setToken: (token: string | null) => void;
@@ -25,6 +27,7 @@ interface AppState {
   setOnboarded: (onboarded: boolean) => void;
   setUnreadLikes: (count: number) => void;
   setUnreadMessages: (count: number) => void;
+  setUnreadNotifications: (count: number) => void;
   logout: () => void;
 }
 
@@ -53,6 +56,7 @@ export const useStore = create<AppState>((set) => ({
   isOnboarded: !!(начальныйПрофиль?.display_name && начальныйПрофиль?.photos?.length),
   unreadLikes: 0,
   unreadMessages: 0,
+  unreadNotifications: 0,
 
   setUser: (user) => {
     if (user) localStorage.setItem("sd_user", JSON.stringify(user));
@@ -73,12 +77,16 @@ export const useStore = create<AppState>((set) => ({
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
   setUnreadLikes: (unreadLikes) => set({ unreadLikes }),
   setUnreadMessages: (unreadMessages) => set({ unreadMessages }),
+  setUnreadNotifications: (unreadNotifications) => set({ unreadNotifications }),
   logout: () => {
     // Сервер должен погасить токен, пока он ещё в localStorage: без этого
     // он остаётся годным до конца срока, даже если выйти на чужом устройстве
     void logoutServerSide();
     localStorage.removeItem("sd_token");
     localStorage.removeItem("sd_user");
+    // Срок бана — атрибут аккаунта: следующему человеку на этом устройстве
+    // он не принадлежит
+    localStorage.removeItem("sd_banned_until");
     set({
       user: null,
       token: null,
@@ -87,6 +95,7 @@ export const useStore = create<AppState>((set) => ({
       isOnboarded: false,
       unreadLikes: 0,
       unreadMessages: 0,
+      unreadNotifications: 0,
     });
   },
 }));

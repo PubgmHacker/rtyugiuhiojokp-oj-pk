@@ -259,16 +259,29 @@ def test_чтение_не_ограничивается():
 
 
 def test_ключ_клиента_по_токену_а_не_по_ip():
-    """За мобильным NAT сидят тысячи людей — лимит по IP задел бы всех."""
+    """За мобильным NAT сидят тысячи людей — лимит по IP задел бы всех.
+
+    Токен обязан быть ПРОВЕРЕННЫМ: раньше ключом служил хвост заголовка как
+    есть, и на неавторизованных путях атакующий крутил счётчик, выдумывая
+    новый «токен» на каждый запрос (см. test_rate_limit_key.py). Поэтому
+    мусорный Bearer здесь падает в IP-ключ, а не в токенный.
+    """
     from types import SimpleNamespace
 
+    from middleware.auth import create_access_token
     from middleware.rate_limit import _client_key
 
     with_token = SimpleNamespace(
+        headers={"authorization": f"Bearer {create_access_token('user-42')}"},
+        client=SimpleNamespace(host="10.0.0.1"),
+    )
+    assert _client_key(with_token) == "u:user-42"
+
+    мусорный = SimpleNamespace(
         headers={"authorization": "Bearer " + "a" * 120},
         client=SimpleNamespace(host="10.0.0.1"),
     )
-    assert _client_key(with_token).startswith("t:")
+    assert _client_key(мусорный) == "ip:10.0.0.1"
 
     without_token = SimpleNamespace(
         headers={"x-forwarded-for": "203.0.113.9, 10.0.0.1"},
@@ -2842,14 +2855,17 @@ def test_каждая_награда_достижима():
 
 
 def test_кейсы_только_по_подписке():
-    """Бонус, доступный бесплатно, не помогает продать подписку."""
-    from services.cases import openings_per_day
+    """Бонус, доступный бесплатно, не помогает продать подписку. Квота
+    месячная: одна попытка на базовом платном уровне, три — на максимальном,
+    редкость попытки и есть ценность кейса."""
+    from services.cases import openings_per_month
 
-    assert openings_per_day("free") == 0
-    assert openings_per_day("plus") >= 1
-    assert openings_per_day("ultra") > openings_per_day("plus")
+    assert openings_per_month("free") == 0
+    assert openings_per_month("plus") == 1
+    assert openings_per_month("ultra") > openings_per_month("plus")
+    assert openings_per_month("aurora") == 3
     # Испорченная запись в БД не должна выдавать попытки
-    assert openings_per_day("админ") == 0
+    assert openings_per_month("админ") == 0
 
 
 def test_попытки_считаются_по_времени():
@@ -2858,12 +2874,14 @@ def test_попытки_считаются_по_времени():
     from routers import cases
 
     исходник = inspect.getsource(cases._openings_left)
-    assert "timedelta(days=1)" in исходник
+    # Окно — календарный месяц, а не скользящие сутки: у месяца есть дата
+    # обновления, которую можно показать под кнопкой
+    assert "начало_месяца" in исходник
     assert "CaseOpening.created_at >= since" in исходник
 
 
-def test_выпавший_буст_продлевает_а_не_обнуляет():
-    """Иначе выпавшие минуты сожгли бы уже действующий буст.
+def test_буст_продлевает_а_не_обнуляет():
+    """Иначе новые минуты сожгли бы уже действующий буст.
 
     Считаем ту же арифметику, что и роутер: от конца действующего буста, а не
     от текущего момента. Прежняя версия искала строку в исходнике и молчала бы
@@ -2876,7 +2894,7 @@ def test_выпавший_буст_продлевает_а_не_обнуляет
     now = datetime.now(timezone.utc)
     действующий_до = now + timedelta(minutes=20)
 
-    # Ровно как в routers/cases.py и routers/profiles.py
+    # Ровно как в routers/profiles.py (включение буста)
     прежний = в_utc(действующий_до)
     база = прежний if (прежний and прежний > now) else now
     итог = база + timedelta(minutes=15)
@@ -2891,9 +2909,10 @@ def test_выпавший_буст_продлевает_а_не_обнуляет
 
 
 def test_бонусные_суперлайки_отдельным_полем_и_тратятся_последними():
-    """Прибавка к суточной квоте возобновлялась бы каждый день сама — кейс
-    давал бы бесконечный бонус. А тратить награду первой означало бы сжечь её
-    вместо того, что и так обновится завтра."""
+    """Начисленный бонус (акции, компенсации, старые награды кейсов) не имеет
+    права попадать в суточную квоту: прибавка к квоте возобновлялась бы каждый
+    день сама. А тратить бонус первым означало бы сжечь его вместо того, что и
+    так обновится завтра."""
     import inspect
 
     from models.models import Profile
@@ -3132,7 +3151,11 @@ def test_вкладка_ещё_вместо_отдельной_вкладки_р
     конец = app.index("];", начало)
     nav = app[начало:конец]
 
-    assert nav.count("path:") == 5, "в навигации должно быть ровно пять вкладок"
+    # Считаем записи, а не слово `path:`: у массива появилась аннотация типа
+    # (`{ path: string; icon: typeof Flame; label: Ключ }[]`, добавлена вместе с
+    # переводом подписей), и её `path: string` — не вкладка. Кавычка после
+    # двоеточия отличает запись от поля типа.
+    assert nav.count('path: "') == 5, "в навигации должно быть ровно пять вкладок"
     assert '"/more"' in nav
     # Второстепенные разделы живут в «Ещё», а не в навигации
     for путь in ('"/reels"', '"/rooms"', '"/voice"', '"/cases"', '"/photo-ratings"'):
@@ -3334,13 +3357,20 @@ def test_бан_переживает_удаление_аккаунта():
 
     assert "telegram_id" in BannedIdentity.__table__.columns
 
-    # Запоминаем при всех трёх видах бана
-    assert "remember_ban" in inspect.getsource(admin.ban_user)
-    assert "remember_ban" in inspect.getsource(admin.report_action)
-    assert "remember_ban" in inspect.getsource(report.create_report)
+    # Запоминаем при всех трёх видах бана. Админские баны идут через общий
+    # ban_user_for_violation — тогда память обязана сидеть внутри него.
+    from services import enforcement
 
-    # Проверяем при регистрации
-    assert "is_banned_identity" in inspect.getsource(auth.auth_telegram)
+    assert "remember_ban" in inspect.getsource(enforcement.ban_user_for_violation)
+    for функция in (admin.ban_user, admin.report_action, report.create_report):
+        исходник = inspect.getsource(функция)
+        assert "remember_ban" in исходник or "ban_user_for_violation" in исходник, (
+            f"{функция.__name__} банит, не запоминая личность"
+        )
+
+    # Проверяем при регистрации: запись нужна целиком, чтобы новый аккаунт
+    # унаследовал срок временного бана, а не только сам факт
+    assert "banned_identity_record" in inspect.getsource(auth.auth_telegram)
 
     # Разбан убирает из списка, иначе он работал бы только до первой чистки
     assert "forgive" in inspect.getsource(admin.unban_user)
@@ -3361,7 +3391,12 @@ def test_удаление_аккаунта_остаётся_полным():
     from models.models import BannedIdentity
 
     колонки = set(BannedIdentity.__table__.columns.keys())
-    assert колонки == {"id", "telegram_id", "apple_id", "reason", "created_at"}
+    # banned_until — атрибут санкции (когда бан кончается), той же природы,
+    # что reason: без него временный бан после удаления аккаунта становился
+    # бы вечным. Личных данных в нём нет.
+    assert колонки == {
+        "id", "telegram_id", "apple_id", "reason", "created_at", "banned_until",
+    }
     # Ничего личного: ни имени, ни фото, ни города
     assert not (колонки & {"display_name", "photos", "bio", "city", "birth_date"})
 
@@ -3594,21 +3629,25 @@ def test_свои_просмотры_не_считаются():
 def test_жалоба_на_ролик_не_требует_контакта_но_ограничена():
     """Общая жалоба на пользователя требует, чтобы люди контактировали (защита
     от травли жалобами). Ролик видят все, и случайный зритель заметит нарушение
-    первым — поэтому своя ручка. Но лимит по префиксу пути её не ловит: id
-    стоит в середине, поэтому считаем в самом роутере."""
+    первым — поэтому своя ручка. Механика жалоб общая для всех поверхностей и
+    живёт в services.content_reports; ручка задаёт порог и прячет ролик."""
     import inspect
 
     from middleware.rate_limit import _find_limit
     from routers import reels
+    from services import content_reports
 
-    исходник = inspect.getsource(reels.report_reel)
-    # Порог: три жалобы снимают ролик с показа
-    assert ">= 3" in исходник
-    assert "is_hidden = True" in исходник
+    ручка = inspect.getsource(reels.report_reel)
+    # Порог: три жалобы снимают ролик с показа; само сравнение — в сервисе
+    assert "порог=3" in ручка
+    assert "is_hidden = True" in ручка
+
+    сервис = inspect.getsource(content_reports.подать_жалобу_на_контент)
+    assert ">= порог" in сервис
     # Повторная жалоба того же человека не накручивает порог
-    assert "Report.reporter_id == user.id" in исходник
-    # Свой лимит внутри роутера
-    assert "429" in исходник
+    assert "Report.reporter_id == reporter_id" in сервис
+    # Свой антифлуд: лимит по префиксу пути не ловит id в середине
+    assert "429" in сервис
 
     # Убедимся, что префиксное правило действительно не подходит
     _, лимит, _ = _find_limit("/api/reels/abc/report", "POST")
@@ -3846,6 +3885,13 @@ async def _mod(текст):
     return {"blocked": True, "reason": "мат"}
 
 
+async def _strike(*a, **kw):
+    # Страйк-путь легитимно пишет журнал модерации (log_moderation,
+    # text_strike_count) — глушим его, чтобы взрыв _session_cls ниже
+    # означал ровно одно: сообщение дошло до записи в базу
+    return None
+
+
 async def _user(*a, **kw):
     return {"id": "u-me"}
 
@@ -3884,6 +3930,7 @@ class FakeState:
 
 async def main():
     m.moderate_text = _mod
+    m.apply_text_strike = _strike
     m.get_or_create_user = _user
     m.get_match_partner = _partner
     # Если модерация не сработает, тест упадёт именно здесь — значит текст
@@ -4023,10 +4070,13 @@ def test_сумма_шансов_кейса_единица():
 
     assert abs(sum(r.chance for r in REWARDS) - 1.0) < 1e-9
 
-    # Наклейка обязана быть среди наград: иначе коллекцию нечем пополнять
-    from services.cases import REWARD_STICKER
+    # Обе коллекции обязаны быть среди наград: иначе одну из них нечем
+    # пополнять. И только они: расходники превращали бы кейс в игровой автомат
+    from services.cases import REWARD_DECOR, REWARD_STICKER
 
     assert any(r.code == REWARD_STICKER for r in REWARDS)
+    assert any(r.code == REWARD_DECOR for r in REWARDS)
+    assert {r.code for r in REWARDS} == {REWARD_STICKER, REWARD_DECOR}
 
 
 def test_каждый_эндпоинт_кому_то_нужен():
@@ -4071,6 +4121,7 @@ def test_каждый_эндпоинт_кому_то_нужен():
         "/iap/appstore/notifications",  # сервер-сервер от Apple
         "/auth/apple",                  # нативная сборка iOS
         "/auth/me",                     # проверка токена сторонними клиентами
+        "/verification/sumsub/webhook",  # сервер-сервер от Sumsub
     }
 
     мёртвые = sorted(серверные - зовут - ВНЕШНИЕ)
@@ -4189,7 +4240,7 @@ class Анкета:
     user_id = "u"; display_name = "А"; bio = ""; gender = "female"
     birth_date = datetime(1995, 5, 5); city = ""; photos = []; interests = []
     ai_bio = None; looking_for = "any"; goal = ""; relation_type = ""; subculture = ""; mbti = ""
-    height_cm = None; sticker = ""; hide_age = True
+    height_cm = None; sticker = ""; hide_age = True; verified_photo = ""
 
 скрытый = _profile_to_dict(Анкета())
 Анкета.hide_age = False
@@ -4221,6 +4272,58 @@ print(json.dumps({
     assert ответ["скрытый"] is None, "бот показал возраст, который человек скрыл"
     assert ответ["открытый"], "возраст пропал у всех подряд"
     assert ответ["високосный"] == "ок", ответ["високосный"]
+
+
+def test_бот_уважает_фильтр_подтверждённых():
+    """Дека бота обязана применять «только подтверждённые».
+
+    Запрос деки у бота свой, а не общий с API (api/services/matching.py), и
+    каждый фильтр в нём продублирован руками. Забытая копия — это худший
+    сценарий защитного фильтра: человек включил его в мини-аппе, приложение
+    честно сузило выдачу, а бот продолжает показывать неподтверждённых. Фильтр
+    выглядит работающим и не работает.
+
+    Поведенческая версия этой проверки — test_deck_exclusions.py (API-путь);
+    здесь, как и в тесте возраста выше, бот запускается своим интерпретатором:
+    aiogram в venv API нет.
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    бот = Path(__file__).resolve().parents[2] / "bot"
+    python = бот / ".venv" / "bin" / "python"
+    if not python.exists():
+        pytest.skip("venv бота не поднят в этом окружении")
+
+    скрипт = """
+import sys
+sys.path.insert(0, ".")
+import json, inspect
+from database.connection import get_deck_profiles
+from database.models import Profile
+
+исходник = inspect.getsource(get_deck_profiles)
+
+print(json.dumps({
+    # Колонка есть в модели бота: обе стороны зовут create_all(), и без неё
+    # бот создал бы таблицу без фильтра
+    "колонка_в_модели": hasattr(Profile, "filter_verified"),
+    # Условие стоит в самом запросе деки, а не отфильтровано после выборки
+    "фильтр_в_запросе": (
+        "filter_verified" in исходник and "is_verified" in исходник
+    ),
+}))
+"""
+
+    результат = subprocess.run(
+        [str(python), "-c", скрипт], cwd=бот, capture_output=True, text=True
+    )
+    assert результат.returncode == 0, результат.stderr
+
+    ответ = json.loads(результат.stdout.strip().splitlines()[-1])
+    assert ответ["колонка_в_модели"], "в модели бота нет filter_verified"
+    assert ответ["фильтр_в_запросе"], "дека бота не фильтрует по подтверждённости"
 
 
 # ── JSON-колонки в GROUP BY ─────────────────────────────────────

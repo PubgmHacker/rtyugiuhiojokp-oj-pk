@@ -51,10 +51,11 @@ async def create_admin(telegram_id: int, name: str = "Admin", email: str | None 
             existing = result.scalar_one_or_none()
 
             if existing:
-                # Promote existing user
+                # Promote existing user. Галочку НЕ ставим: is_verified —
+                # результат живой проверки лица (routers/verification.py),
+                # а не признак роли; админ проходит её как все.
                 existing.role = "owner"
                 existing.is_banned = False
-                existing.is_verified = True
                 await session.flush()
                 print(f"[OK] User TG:{telegram_id} promoted to OWNER (id={existing.id})")
             else:
@@ -63,7 +64,6 @@ async def create_admin(telegram_id: int, name: str = "Admin", email: str | None 
                     telegram_id=telegram_id,
                     role="owner",
                     is_banned=False,
-                    is_verified=True,
                 )
                 session.add(user)
                 await session.flush()
@@ -90,7 +90,6 @@ async def create_admin(telegram_id: int, name: str = "Admin", email: str | None 
             print(f"     Telegram:    {admin.telegram_id}")
             print(f"     Role:        {admin.role}")
             print(f"     Is banned:   {admin.is_banned}")
-            print(f"     Is verified: {admin.is_verified}")
 
     print()
     print("=" * 50)

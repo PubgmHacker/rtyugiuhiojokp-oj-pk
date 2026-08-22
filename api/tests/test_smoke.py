@@ -86,9 +86,10 @@ def test_admin_id_parsing():
 def test_age_limits_match_product_policy():
     from config import get_settings
 
-    # Политика продукта — 16+ (см. Login, онбординг, бот). App Store рейтинг
-    # 18+ живёт отдельно в APPSTORE.md и сюда не подмешивается.
-    assert get_settings().MIN_AGE == 16
+    # Политика продукта — 18+ на всех каналах: пул анкет общий для Telegram
+    # и iOS, а App Store ставит сервисам знакомств рейтинг 18+. Синхронность
+    # числа со всеми текстами сторожит test_age_floor.py.
+    assert get_settings().MIN_AGE == 18
 
 
 # ── Схемы ───────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import Like, Match, Message, User
+from models.models import Like, Match, Message, Notification, User
 from models.schemas import BadgeCounts
 
 router = APIRouter(prefix="/badges", tags=["badges"])
@@ -60,4 +60,19 @@ async def get_badges(
         ))
     )
 
-    return BadgeCounts(messages=int(messages or 0), likes=int(likes or 0))
+    # Красная точка колокольчика: формула та же, что в GET /notifications —
+    # непрочитанное по всей ленте
+    notifications = await session.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(and_(
+            Notification.user_id == user.id,
+            Notification.read_at.is_(None),
+        ))
+    )
+
+    return BadgeCounts(
+        messages=int(messages or 0),
+        likes=int(likes or 0),
+        notifications=int(notifications or 0),
+    )

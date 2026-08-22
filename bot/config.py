@@ -45,6 +45,21 @@ _load_dotenv()
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 BOT_USERNAME: str = os.getenv("BOT_USERNAME", "")
 
+# ── Режим разработки ────────────────────────────────────────────
+# Тот же смысл, что DEBUG в api/config.py, и та же переменная окружения.
+# Локальный стенд обязан работать без внешних ключей, поэтому в DEBUG сбой
+# AI-модерации фото пропускает снимок. В проде наоборот: фото без проверки
+# в анкету не попадает (fail-closed, см. services/moderation.py).
+DEBUG: bool = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+
+# ── Возрастные границы ──────────────────────────────────────────
+# Те же числа, что MIN_AGE/MAX_AGE в api/config.py: пул анкет общий для
+# бота и приложения, порог обязан совпадать. Намеренно не из env — это
+# обещание оферты, а не настройка стенда. Синхронность всех копий числа
+# (код, тексты, документы) проверяет api/tests/test_age_floor.py.
+MIN_AGE: int = 18
+MAX_AGE: int = 99
+
 # ── Admin ──────────────────────────────────────────────────────
 ADMIN_IDS: list[int] = []
 raw = os.getenv("ADMIN_IDS", "")
@@ -134,10 +149,23 @@ def legal_url(page: str) -> str:
 # ходят по своему курсу, а линейка должна оставаться одной для всех способов.
 RUB_PER_STAR: float = float(os.getenv("RUB_PER_STAR", "1.9"))
 RUB_PER_USDT: float = float(os.getenv("RUB_PER_USDT", "95"))
+# Досрочная разблокировка забаненного аккаунта. Оплата — только Stars: они
+# доступны каждому без настройки, а забаненному нельзя предлагать способ,
+# который может оказаться выключенным.
+UNBAN_PRICE_RUB: int = int(os.getenv("UNBAN_PRICE_RUB", "349"))
 # CryptoBot (@CryptoBot, Crypto Pay API) — если токен пуст, способ скрыт
 CRYPTOBOT_TOKEN: str = os.getenv("CRYPTOBOT_TOKEN", "")
-# СБП — появится после подключения провайдера (заглушка)
-SBP_ENABLED: bool = os.getenv("SBP_ENABLED", "").lower() in ("1", "true", "yes")
+# Рублёвая оплата (карта и СБП) — токен платёжного провайдера из BotFather:
+# /mybots → Payments → ЮKassa (или другой), он же выдаёт СБП внутри своей
+# формы. Telegram сам держит счёт и присылает successful_payment, поэтому
+# отдельного вебхука и HTTP-клиента здесь не нужно.
+PAYMENT_PROVIDER_TOKEN: str = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
+# Способ скрыт, пока нет токена — ровно как у CryptoBot. Отдельного
+# выключателя нет сознательно: раньше здесь стоял SBP_ENABLED, и поднятый
+# флаг рисовал кнопку, которая отвечала «скоро появится». Флаг, включающий
+# заглушку, хуже отсутствующей кнопки: человек уходит с экрана оплаты,
+# решив, что оплата сломана.
+SBP_ENABLED: bool = bool(PAYMENT_PROVIDER_TOKEN)
 
 # ── Referral program ─────────────────────────────────────────────
 REFERRAL_MIN_INVITES: int = int(os.getenv("REFERRAL_MIN_INVITES", "3"))
@@ -158,6 +186,13 @@ ZHIPU_API_KEY: str = os.getenv("ZHIPU_API_KEY", "")
 # Минимальный интервал между действиями одного пользователя, секунды
 THROTTLE_MESSAGE: float = float(os.getenv("THROTTLE_MESSAGE", "0.7"))
 THROTTLE_CALLBACK: float = float(os.getenv("THROTTLE_CALLBACK", "0.4"))
+
+# ── Алертинг (Sentry) ────────────────────────────────────────────
+# Та же переменная, что у API: один проект Sentry на оба процесса, события
+# бота помечены server_name (см. services/alerting.py). Пусто — no-op, но на
+# старте о этом предупреждаем: логи Railway эфемерны, и без DSN упавший
+# обработчик виден только жалобой пользователя.
+SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
 
 # ── Misc ─────────────────────────────────────────────────────────
 # Railway отдаёт PORT для web-сервисов; для бота используем WEBHOOK_PORT

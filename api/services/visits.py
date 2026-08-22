@@ -81,8 +81,11 @@ async def count_visits(
 
 async def list_visitors(
     session: AsyncSession, host_id: str, limit: int = 50, since: datetime | None = None
-) -> list[tuple[Profile | None, str, int, datetime]]:
-    """Гости с их анкетами: (профиль, id, сколько раз, когда последний раз).
+) -> list[tuple[Profile | None, str, int, datetime, bool]]:
+    """Гости с их анкетами: (профиль, id, сколько раз, когда, галочка).
+
+    Галочка едет тем же запросом: карточка гостя рисуется как карточка деки,
+    а там она есть — отдельный запрос на неё был бы N+1.
 
     Заблокированные в обе стороны не показываются: жертва харассмента не
     должна видеть обидчика даже в списке визитов.
@@ -97,7 +100,7 @@ async def list_visitors(
     hidden |= {row[0] for row in result.all()}
 
     query = (
-        select(ProfileVisit, Profile)
+        select(ProfileVisit, Profile, User.is_verified)
         .join(User, ProfileVisit.visitor_id == User.id)
         .outerjoin(Profile, Profile.user_id == ProfileVisit.visitor_id)
         .where(and_(
@@ -111,8 +114,11 @@ async def list_visitors(
     result = await session.execute(query)
 
     out = []
-    for visit, profile in result.all():
+    for visit, profile, is_verified in result.all():
         if visit.visitor_id in hidden:
             continue
-        out.append((profile, visit.visitor_id, visit.visits, visit.last_seen_at))
+        out.append((
+            profile, visit.visitor_id, visit.visits, visit.last_seen_at,
+            bool(is_verified),
+        ))
     return out

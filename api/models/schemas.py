@@ -5,6 +5,13 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from config import get_settings
+from services import locales as локали
+
+# Возрастные границы валидации — из конфига, не литералами: числа обещаны
+# в оферте, и второй копии, способной разъехаться, здесь быть не должно.
+_границы = get_settings()
+
 
 # ════════════════════════════════════════════════════════════════
 #  AUTH
@@ -26,6 +33,11 @@ class UserProfile(BaseModel):
     role: str = "user"
     is_banned: bool = False
     is_verified: bool = False
+    #: Был в сети недавно — тот же флаг, что в деке (DeckProfile.is_online):
+    #: не точное время, а «сейчас в сети». Скрывшим себя (инкогнито, пауза)
+    #: не проставляется. Заполняют его только списки «кто лайкнул» и мэтчей —
+    #: карточки людей там обязаны читаться как карточки деки.
+    is_online: bool = False
     created_at: Optional[datetime] = None
 
     # Profile fields (can be null if profile not created yet)
@@ -39,6 +51,12 @@ class UserProfile(BaseModel):
     ai_bio: Optional[str] = None
     looking_for: str = "any"
     is_incognito: bool = False
+    #: Анкета на паузе — человек взял перерыв. Из выдачи убирает так же, как
+    #: инкогнито, но это разные вещи: инкогнито продаётся с Plus, пауза
+    #: бесплатна всегда (уйти со витрины — не платная возможность). Отдаётся
+    #: только владельцу, как и `is_incognito`: чужая пауза — не наше дело,
+    #: и снаружи она и так выглядит просто отсутствием анкеты.
+    is_paused: bool = False
     hide_age: bool = False
     hide_distance: bool = False
     hide_from_visitors: bool = False
@@ -56,6 +74,10 @@ class UserProfile(BaseModel):
     filter_city: str = ""
     filter_height_min: Optional[int] = None
     filter_height_max: Optional[int] = None
+    #: «Только подтверждённые в выдаче». Свой флаг человека, а не свойство
+    #: анкеты: наружу не уходит (см. _deck_like_profile), как и остальные
+    #: filter_*.
+    filter_verified: bool = False
     #: Тип связи («с кем» — друзья/подруги/партнёр). Отдельная ось от `goal`
     #: («зачем»): пусто значит «не указано», как и у прочих нишевых полей.
     relation_type: str = ""
@@ -87,6 +109,14 @@ class UserProfile(BaseModel):
     #: собирает клиент. Пусто — блока нет. Отдаётся, только если тариф
     #: разрешает `tg_channel` (см. services/plans.py, tier_allows).
     tg_channel: str = ""
+    #: Опорное фото верификации — URL фото анкеты, с которым совпало лицо на
+    #: живой проверке. Отдаётся только владельцу (/profiles/me, PATCH /me):
+    #: клиент по нему предупреждает, что удаление этого фото снимет галочку.
+    verified_photo: str = ""
+    #: Язык интерфейса, выбранный на онбординге бота. Клиент по нему
+    #: переключает мини-апп и форматирует даты; пустым не бывает —
+    #: у аккаунтов до появления колонки это "ru".
+    locale: str = локали.ПО_УМОЛЧАНИЮ
 
 
 class ProfileUpdate(BaseModel):
@@ -96,21 +126,30 @@ class ProfileUpdate(BaseModel):
     birth_date: Optional[str] = None  # ISO format "YYYY-MM-DD"
     # Клиенту удобнее прислать возраст, чем дату рождения: точный день
     # мы всё равно не спрашиваем. Пересчитывается в birth_date на сервере.
-    age: Optional[int] = Field(None, ge=16, le=99)
+    age: Optional[int] = Field(None, ge=_границы.MIN_AGE, le=_границы.MAX_AGE)
     city: Optional[str] = Field(None, max_length=100)
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     interests: Optional[list[str]] = None
     photos: Optional[list[str]] = None
     is_incognito: Optional[bool] = None
+    #: Пауза. Уровнем подписки не ограничена намеренно: возможность убрать
+    #: себя с витрины — не товар. Пока её не было в этой схеме, поставить
+    #: анкету на паузу мог только бот, а мини-апп и iOS-аккаунт без Telegram
+    #: не могли ни включить её, ни выключить включённую.
+    is_paused: Optional[bool] = None
     hide_age: Optional[bool] = None
     hide_distance: Optional[bool] = None
     hide_from_visitors: Optional[bool] = None
     #: Пустая строка — «вернуть базовую схему», поэтому min_length не ставим.
     app_theme: Optional[str] = Field(None, max_length=24)
+    #: Язык интерфейса. Строго из списка: неизвестный код — 422, а не тихая
+    #: подстановка русского. Клиент, отправивший опечатку, обязан узнать об
+    #: этом сразу, иначе он покажет «язык сохранён» и соврёт.
+    locale: Optional[str] = Field(None, pattern=локали.ШАБЛОН)
     looking_for: Optional[str] = Field(None, pattern="^(male|female|other|any)$")
-    age_min: Optional[int] = Field(None, ge=16, le=99)
-    age_max: Optional[int] = Field(None, ge=16, le=99)
+    age_min: Optional[int] = Field(None, ge=_границы.MIN_AGE, le=_границы.MAX_AGE)
+    age_max: Optional[int] = Field(None, ge=_границы.MIN_AGE, le=_границы.MAX_AGE)
     distance_max: Optional[int] = Field(None, ge=1, le=500)
     # Пустая строка — осознанное «сбросить», поэтому min_length не ставим.
     goal: Optional[str] = Field(None, max_length=32)
@@ -129,6 +168,9 @@ class ProfileUpdate(BaseModel):
     filter_city: Optional[str] = Field(None, max_length=100)
     filter_height_min: Optional[int] = Field(None, ge=120, le=230)
     filter_height_max: Optional[int] = Field(None, ge=120, le=230)
+    #: Показывать только анкеты с пройденной проверкой. Без гейта по тарифу:
+    #: фильтр защитный, а не вкусовой (см. models.Profile.filter_verified).
+    filter_verified: Optional[bool] = None
     # Валидация формата — на сервере (роутер), не здесь: юзер может прислать
     # "@name" или полную ссылку "https://t.me/name", и их надо сперва
     # ободрать до голого username, а Field(pattern=...) сырой ввод не чистит.
@@ -274,6 +316,10 @@ class DeckProfile(BaseModel):
     sticker: Optional[str] = None
     #: Код оформления карточки — рамка, заработанная коллекцией.
     decor: Optional[str] = None
+    #: Профиль прошёл живую проверку лица (галочка). Выдаётся только
+    #: routers/verification.py — см. миграцию b9c4e71f52a8 о том, почему
+    #: никакой другой источник галочку не ставит.
+    is_verified: bool = False
 
 
 # ════════════════════════════════════════════════════════════════
@@ -349,8 +395,10 @@ class ReelPreview(BaseModel):
     caption: str = ""
 
 
-class ReelReport(BaseModel):
-    """Жалоба на ролик. Причины те же, что и у жалобы на анкету."""
+class ContentReport(BaseModel):
+    """Жалоба на единицу контента: ролик, историю, сообщение комнаты,
+    комментарий. Причины те же, что и у жалобы на анкету, — модератор
+    разбирает всё в одной очереди."""
 
     reason: str = Field(pattern="^(" + "|".join(REPORT_REASONS) + ")$")
     description: str = Field(default="", max_length=500)
@@ -490,6 +538,31 @@ class StickerOut(BaseModel):
     owned: int = 0
 
 
+class DecorOut(BaseModel):
+    """Лимитированная обложка карточки.
+
+    Обложка не покупается и не открывается прогрессом — только выпадает из
+    кейса, поэтому у неё редкость, а не условие открытия.
+    """
+
+    code: str
+    title: str
+    rarity: str
+    rarity_title: str
+    #: Есть ли обложка в коллекции. Носить можно только свою.
+    unlocked: bool = False
+
+
+class DecorCollectionOut(BaseModel):
+    """Витрина обложек: и свои, и ещё не выпавшие — цель должна быть видна."""
+
+    decors: list[DecorOut] = Field(default_factory=list)
+    #: Что надето сейчас. None — без обложки.
+    selected: Optional[str] = None
+    owned: int = 0
+    total: int = 0
+
+
 class CaseRewardOut(BaseModel):
     """Награда из кейса. Шанс показываем честно: скрытые шансы — ровно то,
     за что гача-механики и не любят."""
@@ -500,22 +573,29 @@ class CaseRewardOut(BaseModel):
     chance_percent: int
     #: Заполняется, только если выпала наклейка.
     sticker: Optional[StickerOut] = None
+    #: Заполняется, только если выпала обложка.
+    decor: Optional[DecorOut] = None
 
 
 class CaseStateOut(BaseModel):
-    left_today: int = 0
-    per_day: int = 0
+    left: int = 0
+    per_month: int = 0
+    #: Когда квота обновится — первое число следующего месяца (UTC).
+    resets_at: Optional[datetime] = None
     rewards: list[CaseRewardOut] = Field(default_factory=list)
+    #: Уровень, с которого кейсы открываются. С сервера, а не словом в
+    #: клиенте: фича уже переезжала между уровнями.
+    required_tier_name: str = ""
 
 
 class CaseOpenResult(BaseModel):
     reward: CaseRewardOut
-    left_today: int = 0
-    per_day: int = 0
-    boost_minutes: int = 30
-    #: Такая наклейка уже была — вместо неё начислен суперлайк.
+    left: int = 0
+    per_month: int = 0
+    resets_at: Optional[datetime] = None
+    #: Повтор наклейки. Возможен только у полной коллекции: пока есть
+    #: недостающие, кейс выбирает среди них.
     duplicate: bool = False
-    duplicate_superlikes: int = 0
 
 
 class StickerCollectionOut(BaseModel):
@@ -631,10 +711,14 @@ class BoostOut(BaseModel):
     until: Optional[datetime] = None
     #: Сколько минут даёт одно включение — для подписи на кнопке.
     minutes: int = 30
-    #: Осталось включений сегодня.
+    #: Осталось включений сегодня — суточные плюс купленные паком.
     left_today: int = 0
     #: Сколько всего положено на уровне подписки.
     per_day: int = 0
+    #: Сколько из left_today — купленные за Stars (Profile.bonus_boosts).
+    #: Клиенту важно различать: суточные вернутся завтра сами, бонусные —
+    #: не возобновляются.
+    bonus: int = 0
     #: Имя уровня, который открывает буст — для подписи на кнопке, когда
     #: включений не положено вовсе. Клиент не должен писать его словом: гейт
     #: живёт в FEATURE_MIN_TIER, и зашитое имя соврёт после переноса фичи.
@@ -820,30 +904,52 @@ class StoryReplyTarget(BaseModel):
     prefill: str
 
 
-class DecorOut(BaseModel):
-    code: str
-    title: str
-    #: Условие открытия человеческим языком.
-    hint: str
-    unlocked: bool
-    #: Собрано из нужного. Оба нуля — условия по коллекции нет.
-    have: int = 0
-    need: int = 0
-
-
-class DecorCollectionOut(BaseModel):
-    decors: list[DecorOut] = Field(default_factory=list)
-    #: Что надето сейчас. None — без рамки.
-    selected: Optional[str] = None
-    #: Наклеек в коллекции — то же число, что в условиях.
-    stickers_owned: int = 0
-
-
 # ════════════════════════════════════════════════════════════════
 #  БЕЙДЖИ ТАББАРА
 # ════════════════════════════════════════════════════════════════
 
 class BadgeCounts(BaseModel):
-    """Непрочитанное для вкладок. Ровно два числа — ничего лишнего."""
+    """Непрочитанное для вкладок и колокольчика — три числа, ничего лишнего."""
     messages: int = 0
     likes: int = 0
+    notifications: int = 0
+
+
+# ════════════════════════════════════════════════════════════════
+#  ЦЕНТР УВЕДОМЛЕНИЙ
+# ════════════════════════════════════════════════════════════════
+
+class NotificationOut(BaseModel):
+    """Событие ленты. Текст собирает клиент из kind + payload — API не знает
+    языка интерфейса (см. models.Notification)."""
+    id: str
+    kind: str
+    payload: dict = {}
+    created_at: datetime
+    read_at: Optional[datetime] = None
+
+
+class NotificationsPage(BaseModel):
+    """unread — по всей ленте, не по отданному срезу: бейдж не должен
+    обещать меньше, чем есть."""
+    items: list[NotificationOut] = []
+    unread: int = 0
+
+
+# ════════════════════════════════════════════════════════════════
+#  ПРОМОКОДЫ
+# ════════════════════════════════════════════════════════════════
+
+class PromoActivateIn(BaseModel):
+    """Промокод как его ввёл человек: регистр, пробелы и дефисы
+    нормализует сервер, здесь только границы длины от мусора."""
+    code: str = Field(min_length=1, max_length=64)
+
+
+class PromoActivateOut(BaseModel):
+    """Что дала активация. plan/expires_at — итоговая подписка: если у
+    человека уже был уровень выше, plan останется прежним, а срок вырастет."""
+    tier: str
+    days: int
+    plan: str
+    expires_at: str

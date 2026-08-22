@@ -2,7 +2,9 @@
  * Кейсы — бонус подписки.
  *
  * У конкурента из кейса выпадают коллекционные персонажи. Здесь награда
- * полезная: суперлайки и минуты буста, они работают сразу.
+ * двойная: полезная — суперлайки и минуты буста, они работают сразу; и
+ * коллекционная — наклейки и рамки карточки, которые больше нигде не
+ * достаются. Первая держит подписку, вторая — интерес к самому кейсу.
  *
  * Шансы показаны рядом с каждой наградой. Скрытые шансы — ровно то, за что
  * гача-механики и не любят, а честные превращают кейс из ловушки в понятный
@@ -21,7 +23,7 @@ import {
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
-import { Button, Card, ScreenHeader, Skeleton, Spinner } from "../components/ui";
+import { Button, Card, LoadError, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 import StickerCollection from "../components/StickerCollection";
 import DecorPicker from "../components/DecorPicker";
 
@@ -32,12 +34,19 @@ export default function Cases() {
   const [дубль, setДубль] = useState(false);
   const [won, setWon] = useState<CaseReward | null>(null);
   const [error, setError] = useState("");
+  const [сбой, setСбой] = useState(false);
 
-  useEffect(() => {
+  const загрузить = useCallback(() => {
+    setСбой(false);
+    setState(null);
     getCaseState()
       .then(setState)
-      .catch(() => setError("Не удалось загрузить кейсы"));
+      // Ошибка первой загрузки раньше писалась в error, который рендерится
+      // только внутри загруженного экрана — скелетоны висели вечно
+      .catch(() => setСбой(true));
   }, []);
+
+  useEffect(загрузить, [загрузить]);
 
   const open = useCallback(async () => {
     if (busy) return;
@@ -50,7 +59,14 @@ export default function Cases() {
       setWon(result.reward);
       setДубль(Boolean(result.duplicate));
       setState((cur) =>
-        cur ? { ...cur, left_today: result.left_today, per_day: result.per_day } : cur
+        cur
+          ? {
+              ...cur,
+              left: result.left,
+              per_month: result.per_month,
+              resets_at: result.resets_at ?? cur.resets_at,
+            }
+          : cur
       );
     } catch (e: any) {
       haptic("error");
@@ -64,10 +80,14 @@ export default function Cases() {
     return (
       <div>
         <ScreenHeader title="Кейсы" />
-        <div className="px-4 pt-4 flex flex-col gap-3">
-          <Skeleton className="h-40 rounded-[var(--radius-tile)]" />
-          <Skeleton className="h-32 rounded-[var(--radius-tile)]" />
-        </div>
+        {сбой ? (
+          <LoadError onRetry={загрузить} />
+        ) : (
+          <div className="px-4 pt-4 flex flex-col gap-3">
+            <Skeleton className="h-40 rounded-[var(--radius-tile)]" />
+            <Skeleton className="h-32 rounded-[var(--radius-tile)]" />
+          </div>
+        )}
       </div>
     );
   }
@@ -88,12 +108,15 @@ export default function Cases() {
           </motion.div>
 
           <p className="text-[17px] font-extrabold mb-1">
-            Попыток: {state.left_today}
+            Попыток: {state.left}
           </p>
           <p className="text-caption text-text-muted mb-4">
-            {state.per_day === 0
-              ? "Попытки даются по подписке"
-              : `${state.per_day} ${plural(state.per_day, "попытка", "попытки", "попыток")} в сутки на вашем уровне`}
+            {state.per_month === 0
+              ? `Попытки даются с подпиской${state.required_tier_name ? ` ${state.required_tier_name}` : ""}`
+              : `${state.per_month} ${plural(state.per_month, "попытка", "попытки", "попыток")} в месяц на вашем уровне` +
+                (state.left === 0 && state.resets_at
+                  ? ` · обновятся ${когда(state.resets_at)}`
+                  : "")}
           </p>
 
           {/* Выигрыш показываем на месте кнопки: отдельная модалка ради одной
@@ -136,7 +159,7 @@ export default function Cases() {
             ) : null}
           </AnimatePresence>
 
-          {state.per_day === 0 ? (
+          {state.per_month === 0 ? (
             <Link to="/plans" onClick={() => haptic("light")}>
               <Button size="lg" fullWidth>
                 Оформить подписку
@@ -146,12 +169,12 @@ export default function Cases() {
             <Button
               size="lg"
               fullWidth
-              disabled={busy || state.left_today === 0}
+              disabled={busy || state.left === 0}
               onClick={open}
             >
               {busy ? (
                 <Spinner size={20} />
-              ) : state.left_today === 0 ? (
+              ) : state.left === 0 ? (
                 "Попытки закончились"
               ) : (
                 "Открыть кейс"
@@ -210,4 +233,14 @@ function plural(n: number, one: string, few: string, many: string): string {
   if (mod10 === 1 && mod100 !== 11) return one;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
   return many;
+}
+
+/** «1 сентября» — дата без года и времени: квота обновляется в начале месяца.
+ *
+ *  Показываем только когда попытки кончились: до этого дата отвлекает от
+ *  кнопки, а после — единственное, что человек хочет знать. */
+function когда(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "в начале месяца";
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 }

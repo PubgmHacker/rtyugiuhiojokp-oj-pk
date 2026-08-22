@@ -54,6 +54,7 @@ export function ChatThemeSheet({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [попытка, setПопытка] = useState(0);
 
   const [mine, setMine] = useState("#ff2d6f");
   const [theirs, setTheirs] = useState("#1c1f28");
@@ -71,6 +72,7 @@ export function ChatThemeSheet({
     if (!open || presets.length) return;
     let живо = true;
     setLoading(true);
+    setError(null);
     getChatThemePresets()
       .then((r) => {
         if (!живо) return;
@@ -82,7 +84,7 @@ export function ChatThemeSheet({
     return () => {
       живо = false;
     };
-  }, [open, presets.length]);
+  }, [open, presets.length, попытка]);
 
   // Ползунки цвета стартуют с того, что в чате сейчас — иначе первое
   // касание любого из трёх перекрашивает остальные два в наши значения.
@@ -133,6 +135,14 @@ export function ChatThemeSheet({
       {loading ? (
         <div className="grid h-32 place-items-center">
           <Spinner />
+        </div>
+      ) : !presets.length ? (
+        // Каталог не доехал: пустая решётка выглядела бы как «тем нет».
+        // Баннер выше объясняет причину, кнопка повторяет без закрытия шторки
+        <div className="grid h-32 place-items-center">
+          <Button variant="secondary" size="sm" onClick={() => setПопытка((x) => x + 1)}>
+            Повторить
+          </Button>
         </div>
       ) : (
         <>

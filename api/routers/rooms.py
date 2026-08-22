@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import Block, Profile, Reel, Room, RoomMessage, User
 from models.schemas import (
+    ContentReport,
     RoomMessageOut,
     RoomMessages,
     RoomOut,
@@ -28,6 +29,8 @@ from models.schemas import (
     RoomsOut,
 )
 from services.ai_moderation import log_moderation, moderate_text
+from services.enforcement import enforce_text_verdict, register_content_strike
+from services.content_reports import подать_жалобу_на_контент
 from services.chat_delivery import reel_preview
 from utils import as_list
 
@@ -204,8 +207,11 @@ async def send_room_message(
     # все — поэтому текст проверяем до публикации
     verdict = await moderate_text(text)
     await log_moderation(user.id, "room_message", text, verdict)
-    if verdict["blocked"]:
-        raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+    ответ_бана = await enforce_text_verdict(
+        session, user, verdict, "Сообщение нарушает правила"
+    )
+    if ответ_бана is not None:
+        return ответ_бана
 
     message = RoomMessage(room_id=room_id, sender_id=user.id, text=text)
     session.add(message)
@@ -225,3 +231,48 @@ async def send_room_message(
     )
     await session.commit()
     return out
+
+
+@router.post("/{room_id}/messages/{message_id}/report", status_code=204)
+async def report_room_message(
+    room_id: str,
+    message_id: str,
+    data: ContentReport,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Пожаловаться на сообщение в комнате.
+
+    Блокировка убирает обидчика только из СВОЕЙ ленты, а сообщение в общем
+    чате продолжают читать остальные — поэтому нужна и жалоба: три разных
+    жалобщика снимают сообщение с показа для всех, не дожидаясь модератора.
+    """
+    await _room_or_404(session, room_id)
+
+    result = await session.execute(
+        select(RoomMessage).where(and_(
+            RoomMessage.id == message_id, RoomMessage.room_id == room_id,
+        ))
+    )
+    message = result.scalar_one_or_none()
+    if not message or message.is_hidden:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    if message.sender_id == user.id:
+        raise HTTPException(status_code=400, detail="Это ваше сообщение")
+
+    порог = await подать_жалобу_на_контент(
+        session,
+        reporter_id=user.id,
+        author_id=message.sender_id,
+        reason=data.reason,
+        description=data.description,
+        метка=f"roommsg:{message_id}",
+        порог=3,
+    )
+    if порог:
+        message.is_hidden = True
+        await register_content_strike(session, message.sender_id, f"roommsg:{message_id}")
+        logger.warning(f"Сообщение {message_id} в комнате снято с показа по жалобам")
+
+    await session.commit()
+    return Response(status_code=204)

@@ -15,7 +15,7 @@ from middleware.rate_limit import RateLimitMiddleware
 from routers import (
     auth, profiles, likes, matches, chat, upload, report, admin, blocks, iap, reels,
     leaderboard, photo_ratings, rooms, cases, daily, voice, sections, tarot, habits,
-    chat_themes, stories, badges,
+    chat_themes, stories, badges, verification, promo, notifications,
 )
 
 settings = get_settings()
@@ -117,10 +117,61 @@ async def lifespan(app: FastAPI):
     from services.alerting import init as init_alerting
     init_alerting(settings.SENTRY_DSN)
 
-    if not settings.DEBUG and settings.JWT_SECRET == "change_this_in_production":
-        raise RuntimeError(
-            "JWT_SECRET is still the default value — set a random secret before running in production"
-        )
+    # ── Префлайт конфигурации ──────────────────────────────────
+    # Ошибки конфигурации должны валить деплой одним понятным списком, а не
+    # обнаруживаться пользователями по одной: без ZHIPU-ключа модерация фото
+    # отклоняет все загрузки (fail-closed), без R2 фото некуда класть, без
+    # BOT_TOKEN нечем проверить подпись initData — «поднявшийся» процесс с
+    # такими дырами не работает, он лишь выглядит живым. DEBUG не трогаем:
+    # локальная разработка обязана подниматься без ключей.
+    if not settings.DEBUG:
+        неисправимо: list[str] = []
+        if settings.JWT_SECRET == "change_this_in_production":
+            неисправимо.append(
+                "JWT_SECRET — значение по умолчанию: токен подделает любой, "
+                "кто читал исходники. Сгенерируйте случайный секрет"
+            )
+        if not settings.BOT_TOKEN:
+            неисправимо.append(
+                "BOT_TOKEN пуст: подпись Telegram initData проверить нечем — "
+                "вход из Telegram не работает"
+            )
+        if not settings.ZHIPU_API_KEY:
+            неисправимо.append(
+                "ZHIPU_API_KEY пуст: модерация фото не работает, а без неё "
+                "каждая загрузка отклоняется (fail-closed)"
+            )
+        if not all((
+            settings.R2_ACCOUNT_ID,
+            settings.R2_ACCESS_KEY_ID,
+            settings.R2_SECRET_ACCESS_KEY,
+            settings.R2_PUBLIC_URL,
+        )):
+            неисправимо.append(
+                "R2 настроен не полностью (нужны ACCOUNT_ID, ACCESS_KEY_ID, "
+                "SECRET_ACCESS_KEY, PUBLIC_URL): фото некуда сохранять"
+            )
+        if неисправимо:
+            raise RuntimeError(
+                "Продовая конфигурация неполна:\n  - " + "\n  - ".join(неисправимо)
+            )
+
+        # Деградации, допустимые по дизайну, — но о каждой предупреждаем на
+        # старте: одна строка в логе деплоя дешевле недели «почему у части
+        # людей не соединяются звонки»
+        if not settings.TURN_URL:
+            logger.warning(
+                "TURN не настроен: звонки за симметричным NAT не соберутся "
+                "(часть мобильных сетей)"
+            )
+        if not settings.APNS_KEY_P8:
+            logger.warning("APNs не настроен: пуши в iOS-приложение не отправляются")
+        if not settings.SMTP_HOST or not settings.SMTP_FROM:
+            logger.warning(
+                "SMTP не настроен: письма подтверждения и восстановления не уходят"
+            )
+        if not settings.SENTRY_DSN:
+            logger.warning("SENTRY_DSN пуст: об ошибках прода никто не узнает первым")
 
     # Подключение к БД, миграции, create_all. Два разных отказа разведены
     # намеренно:
@@ -270,7 +321,10 @@ app.include_router(habits.router, prefix="/api")
 app.include_router(chat_themes.router, prefix="/api")
 app.include_router(stories.router, prefix="/api")
 app.include_router(badges.router, prefix="/api")
+app.include_router(verification.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(promo.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
 
 
 @app.exception_handler(AccountBannedError)
@@ -284,7 +338,13 @@ async def account_banned_handler(request: Request, exc: AccountBannedError):
     """
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail, "code": BANNED_CODE},
+        content={
+            "detail": exc.detail,
+            "code": BANNED_CODE,
+            # Срок в ISO (None — вечный): клиент показывает таймер и делает
+            # платную досрочную разблокировку главной кнопкой экрана
+            "banned_until": exc.banned_until.isoformat() if exc.banned_until else None,
+        },
     )
 
 

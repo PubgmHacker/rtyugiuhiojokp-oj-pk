@@ -11,16 +11,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Send, Trash2, X } from "lucide-react";
+import { Flag, Send, Trash2, X } from "lucide-react";
 import {
   addReelComment,
   deleteReelComment,
   getReelComments,
+  reportReelComment,
   type Reel,
   type ReelComment,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
-import { Skeleton, Spinner } from "./ui";
+import ReportReasonSheet from "./ReportReasonSheet";
+import { LoadError, Skeleton, Spinner } from "./ui";
 
 const MAX_LEN = 300;
 
@@ -38,16 +40,29 @@ export default function ReelComments({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [reportFor, setReportFor] = useState<ReelComment | null>(null);
+  const [сбой, setСбой] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  const загрузить = useCallback(() => {
+    if (!reel) return;
+    setComments(null);
+    setСбой(false);
+    getReelComments(reel.id)
+      .then(setComments)
+      // Пустой список не подставляем: «Пока никто не написал» при упавшей
+      // сети — ложь, к тому же под живым роликом с ненулевым счётчиком
+      .catch(() => setСбой(true));
+  }, [reel]);
 
   useEffect(() => {
     if (!reel) return;
-    setComments(null);
     setError("");
-    getReelComments(reel.id)
-      .then(setComments)
-      .catch(() => setComments([]));
-  }, [reel]);
+    setNotice("");
+    setReportFor(null);
+    загрузить();
+  }, [reel, загрузить]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -86,6 +101,24 @@ export default function ReelComments({
       }
     },
     [reel, onCountChange]
+  );
+
+  const пожаловаться = useCallback(
+    async (reason: string) => {
+      const comment = reportFor;
+      setReportFor(null);
+      if (!reel || !comment) return;
+      setError("");
+      try {
+        await reportReelComment(reel.id, comment.id, reason);
+        haptic("success");
+        setNotice("Жалоба отправлена — модератор разберётся");
+      } catch (e: any) {
+        haptic("error");
+        setError(e?.response?.data?.detail ?? "Не удалось отправить жалобу");
+      }
+    },
+    [reel, reportFor]
   );
 
   return (
@@ -133,11 +166,15 @@ export default function ReelComments({
 
             <div className="flex-1 overflow-y-auto px-5 no-scrollbar">
               {!comments ? (
-                <div className="flex flex-col gap-2.5 pt-2">
-                  {[0, 1, 2].map((i) => (
-                    <Skeleton key={i} className="h-12 rounded-[var(--radius-tile)]" />
-                  ))}
-                </div>
+                сбой ? (
+                  <LoadError onRetry={загрузить} />
+                ) : (
+                  <div className="flex flex-col gap-2.5 pt-2">
+                    {[0, 1, 2].map((i) => (
+                      <Skeleton key={i} className="h-12 rounded-[var(--radius-tile)]" />
+                    ))}
+                  </div>
+                )
               ) : !comments.length ? (
                 <p className="text-center text-[14px] text-text-muted py-10">
                   Пока никто не написал. Скажите что-нибудь — это заметят.
@@ -174,14 +211,27 @@ export default function ReelComments({
 
                       {/* Удалить может автор комментария и владелец ролика:
                           под своим видео человек должен убрать грубость сам,
-                          не дожидаясь модератора */}
-                      {(c.is_mine || reel.is_mine) && (
+                          не дожидаясь модератора. Остальным — жалоба: чужой
+                          комментарий публичен, и зритель должен иметь способ
+                          сообщить о нарушении (App Store, Guideline 1.2) */}
+                      {c.is_mine || reel.is_mine ? (
                         <button
                           aria-label="Удалить комментарий"
                           onClick={() => remove(c)}
                           className="shrink-0 text-text-faint active:scale-90 transition-transform"
                         >
                           <Trash2 size={15} />
+                        </button>
+                      ) : (
+                        <button
+                          aria-label="Пожаловаться на комментарий"
+                          onClick={() => {
+                            haptic("light");
+                            setReportFor(c);
+                          }}
+                          className="shrink-0 text-text-faint active:scale-90 transition-transform"
+                        >
+                          <Flag size={15} />
                         </button>
                       )}
                     </div>
@@ -198,6 +248,16 @@ export default function ReelComments({
                            bg-danger/12 border border-danger/30 text-danger text-[13px]"
               >
                 {error}
+              </p>
+            )}
+
+            {notice && (
+              <p
+                role="status"
+                className="mx-5 mb-2 px-3.5 py-2 rounded-[var(--radius-tile)]
+                           bg-surface-2 border border-hairline text-text-secondary text-[13px]"
+              >
+                {notice}
               </p>
             )}
 
@@ -227,6 +287,14 @@ export default function ReelComments({
               </div>
             </div>
           </motion.div>
+
+          <ReportReasonSheet
+            open={reportFor !== null}
+            title="Пожаловаться на комментарий"
+            subtitle="Модератор прочитает его. Три жалобы снимают комментарий с показа сразу."
+            onClose={() => setReportFor(null)}
+            onPick={пожаловаться}
+          />
         </>
       )}
     </AnimatePresence>

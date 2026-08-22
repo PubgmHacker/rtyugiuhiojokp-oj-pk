@@ -34,19 +34,21 @@ export default function DirectMessageSheet({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [сбойКвоты, setСбойКвоты] = useState(false);
+  const [попытка, setПопытка] = useState(0);
 
   useEffect(() => {
     if (!profile) return;
     setText("");
     setError(null);
+    setQuota(null);
+    setСбойКвоты(false);
     getDirectQuota()
       .then(setQuota)
-      // Сеть не ответила — закрываем отправку, но без имени тарифа: врать
-      // про «доступно на Х» при неизвестном ответе хуже, чем промолчать
-      .catch(() =>
-        setQuota({ left: 0, total: 0, allowed: false, required_tier_name: "" })
-      );
-  }, [profile]);
+      // Гейт «доступно по подписке» при упавшей сети был бы ложной кассой:
+      // человек с оплаченным тарифом увидел бы предложение купить его снова
+      .catch(() => setСбойКвоты(true));
+  }, [profile, попытка]);
 
   const trimmed = text.trim();
   const gated = quota !== null && (!quota.allowed || quota.left <= 0);
@@ -100,7 +102,22 @@ export default function DirectMessageSheet({
               отправить только одно.
             </p>
 
-            {gated ? (
+            {сбойКвоты ? (
+              <div
+                className="px-4 py-3.5 mb-4 text-center
+                           rounded-[var(--radius-tile)] bg-surface-2 border border-hairline"
+              >
+                <p className="text-[13.5px] text-text-muted mb-2.5">
+                  📡 Не удалось проверить лимит писем
+                </p>
+                <button
+                  onClick={() => setПопытка((x) => x + 1)}
+                  className="text-[13.5px] font-semibold text-accent"
+                >
+                  Повторить
+                </button>
+              </div>
+            ) : gated ? (
               <Link
                 to="/plans"
                 onClick={() => haptic("light")}
@@ -149,7 +166,7 @@ export default function DirectMessageSheet({
               <Button variant="secondary" size="lg" onClick={onClose}>
                 Отмена
               </Button>
-              {!gated && (
+              {!gated && !сбойКвоты && (
                 <Button
                   size="lg"
                   fullWidth

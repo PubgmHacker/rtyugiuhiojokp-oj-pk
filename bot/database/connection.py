@@ -5,11 +5,17 @@ import logging
 import random
 from datetime import datetime, timezone
 
-from sqlalchemy import select, text, func, and_, not_, or_, case
+from sqlalchemy import select, text, func, and_, not_, or_, case, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
 from services.plans import tier_rank
+
+# Список языков берём из texts: там его единственная копия на стороне бота —
+# по ней же рисуется сетка кнопок онбординга, и собственная копия здесь
+# разъехалась бы с ней при первом добавленном языке. Цикла нет: texts тянет
+# только services.plans, который мы импортируем строкой выше.
+from texts import ONBOARDING_LOCALES as ЯЗЫКИ
 
 # Модулем, а не именами: `services/quotas.py` импортирует `database.models`, а
 # это поднимает пакет `database` целиком — то есть нас же. `from ... import
@@ -18,6 +24,8 @@ from services.plans import tier_rank
 import services.quotas as quotas
 
 from database.models import (
+    AiModerationLog,
+    BannedIdentity,
     Base,
     Block,
     User,
@@ -25,6 +33,8 @@ from database.models import (
     Like,
     Match,
     ProcessedPayment,
+    PromoActivation,
+    PromoCode,
     Referral,
     Report,
     Subscription,
@@ -72,6 +82,26 @@ async def get_or_create_user(telegram_id: int, username: str = "", name: str = "
             user = result.scalar_one_or_none()
 
             if user:
+                # Временный бан истёк — снимаем прямо здесь, как API в
+                # get_current_user: фонового джоба нет, а /start забаненного —
+                # ровно тот момент, когда срок пора проверить. Чистим и память
+                # банов: иначе удаление аккаунта воскресило бы отбытый бан.
+                if user.is_banned and user.banned_until is not None:
+                    срок = (
+                        user.banned_until
+                        if user.banned_until.tzinfo
+                        else user.banned_until.replace(tzinfo=timezone.utc)
+                    )
+                    if срок <= datetime.now(timezone.utc):
+                        user.is_banned = False
+                        user.banned_until = None
+                        conds = [BannedIdentity.telegram_id == telegram_id]
+                        if user.apple_id:
+                            conds.append(BannedIdentity.apple_id == user.apple_id)
+                        await session.execute(
+                            delete(BannedIdentity).where(or_(*conds))
+                        )
+                        logger.info(f"Бан истёк и снят в боте: user={user.id}")
                 user.last_seen_at = datetime.now()
                 await session.flush()
                 return _user_to_dict(user)
@@ -97,14 +127,73 @@ async def get_user_by_id(user_id: str) -> dict | None:
         return _user_to_dict(user) if user else None
 
 
-async def get_profile(user_id: str) -> dict | None:
+async def set_user_locale(telegram_id: int, locale: str) -> bool:
+    """Запомнить выбранный на онбординге язык на аккаунте.
+
+    До этого выбор жил только в FSM-состоянии: перезапуск бота, смена storage
+    или истечение ключа — и человек, выбравший узбекский, продолжал на русском,
+    а мини-апп о выборе не узнавал вообще.
+
+    Пишем по telegram_id, а не по внутреннему id: обработчик онбординга знает
+    только Telegram-аккаунт. Возвращаем False, если строки нет — это не ошибка
+    сценария, а сигнал вызывающему не считать язык сохранённым.
+    """
+    if locale not in ЯЗЫКИ:
+        # Молча не подставляем русский: неизвестный код — это рассинхрон
+        # клавиатуры бота с этим списком, и он должен быть виден в логах,
+        # а не превращаться в тихую потерю языка
+        logger.warning("не сохранили неизвестный язык %r для %s", locale, telegram_id)
+        return False
+
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+            user.locale = locale
+            await session.flush()
+            return True
+
+
+async def get_user_locale(telegram_id: int) -> str | None:
+    """Язык аккаунта по Telegram-id, или None, если аккаунта ещё нет.
+
+    Нужен там, где FSM пуст, а язык всё равно обязан быть правильным: тап по
+    старой кнопке через неделю, рестарт бота посреди онбординга. None, а не
+    "ru", чтобы вызывающий сам решил, чем подставлять — тихий русский вместо
+    выбранного языка и есть та ошибка, которую эта колонка закрывает.
+    """
     cls = _session_cls()
     async with cls() as session:
         result = await session.execute(
-            select(Profile).where(Profile.user_id == user_id)
+            select(User.locale).where(User.telegram_id == telegram_id)
         )
-        profile = result.scalar_one_or_none()
-        return _profile_to_dict(profile) if profile else None
+        язык = result.scalar_one_or_none()
+        return язык if язык in ЯЗЫКИ else None
+
+
+async def get_profile(user_id: str) -> dict | None:
+    cls = _session_cls()
+    async with cls() as session:
+        # Галочка живёт на User, а не на Profile — забираем её тем же
+        # запросом: через get_profile рисуются карточка партнёра и своя
+        # анкета, и ✅ должен быть виден везде одинаково
+        result = await session.execute(
+            select(Profile, User.is_verified)
+            .join(User, Profile.user_id == User.id)
+            .where(Profile.user_id == user_id)
+        )
+        row = result.first()
+        if not row:
+            return None
+        profile, is_verified = row
+        данные = _profile_to_dict(profile)
+        данные["is_verified"] = bool(is_verified)
+        return данные
 
 
 async def update_profile(user_id: str, **fields) -> dict | None:
@@ -128,17 +217,331 @@ async def update_profile(user_id: str, **fields) -> dict | None:
             return _profile_to_dict(profile)
 
 
-async def set_profile_ready(user_id: str) -> None:
-    """Mark profile as complete after onboarding."""
+# set_profile_ready здесь больше нет — она ставила is_verified каждому, кто
+# дошёл до конца анкеты, и галочка «проверенный» врала. Теперь её выдаёт
+# только живая проверка лица (api/routers/verification.py).
+
+
+async def clear_verification(user_id: str) -> None:
+    """Снять галочку «проверенный» вместе с опорным фото.
+
+    Галочка обещает, что все фото анкеты принадлежат человеку, прошедшему
+    живую проверку. Сверять лица умеет только API (сверка добавленного фото
+    с опорным в api/routers/profiles.py) — бот при изменении состава фото
+    галочку честно снимает, повторная проверка в мини-аппе вернёт её.
+    Опорное фото обнуляем той же транзакцией: галочка и опорное живут
+    только парой, половинчатое состояние ломало бы сверку в API.
+    """
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            if user:
+                user.is_verified = False
+            result = await session.execute(
+                select(Profile).where(Profile.user_id == user_id)
+            )
+            profile = result.scalar_one_or_none()
+            if profile:
+                profile.verified_photo = ""
+
+
+# ════════════════════════════════════════════════════════════════
+#  ДОСРОЧНАЯ РАЗБЛОКИРОВКА (платная)
+# ════════════════════════════════════════════════════════════════
+
+async def unban_after_payment(
+    user_id: str, charge_id: str, price_rub: int, stars: int | None = None,
+) -> dict:
+    """Снять бан после оплаченной досрочной разблокировки.
+
+    Возвращает {"unbanned": bool, "reason": str}. "not_banned" — деньги
+    пришли, а снимать нечего (двойная оплата, разбан админом): вызывающий
+    обязан вернуть Stars.
+
+    Одной транзакцией:
+    * флаг is_banned;
+    * память банов (dating_banned_identities) — без чистки разбан жил бы до
+      первого удаления аккаунта: привязки продолжали бы держать бан;
+    * запись unban_purchase в журнал модерации — от неё API считает новое
+      окно страйков за чужое лицо (api/services/enforcement.py). Без этой
+      амнистии первый же спорный кадр после оплаты банил бы обратно,
+      и покупка была бы ловушкой.
+
+    Отзыв токенов не трогаем: отметка отзыва гасит только токены, выданные
+    ДО бана, а свежий вход после разблокировки получает живой токен сам.
+    """
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            if user is None:
+                return {"unbanned": False, "reason": "no_user"}
+            if not user.is_banned:
+                return {"unbanned": False, "reason": "not_banned"}
+
+            user.is_banned = False
+            user.banned_until = None
+
+            conds = []
+            if user.telegram_id:
+                conds.append(BannedIdentity.telegram_id == user.telegram_id)
+            if user.apple_id:
+                conds.append(BannedIdentity.apple_id == user.apple_id)
+            if conds:
+                await session.execute(delete(BannedIdentity).where(or_(*conds)))
+
+            session.add(
+                AiModerationLog(
+                    user_id=user_id,
+                    content_type="unban_purchase",
+                    content=charge_id,
+                    result="safe",
+                    action="none",
+                    reason=f"досрочная разблокировка за {price_rub} ₽",
+                )
+            )
+
+            # Журнал платежей — для выручки в админке (``stars`` — фактически
+            # уплаченные Stars из successful_payment). days=0: разбан не
+            # двигает подписку. В savepoint: дубль апдейта Telegram упадёт на
+            # уникальном ключе (provider, external_id) и не откатит разбан
+            if stars:
+                from sqlalchemy.exc import IntegrityError
+
+                try:
+                    async with session.begin_nested():
+                        session.add(
+                            ProcessedPayment(
+                                provider="stars",
+                                external_id=charge_id,
+                                user_id=user_id,
+                                days=0,
+                                amount=stars,
+                                currency="XTR",
+                            )
+                        )
+                except IntegrityError:
+                    pass
+
+    logger.warning(f"Разбан по оплате: user={user_id} charge={charge_id}")
+    return {"unbanned": True, "reason": ""}
+
+
+async def reban_after_refund(charge_id: str) -> dict:
+    """Вернуть бан после возврата Stars за досрочную разблокировку.
+
+    Без этого возврат делал разблокировку бесплатной: оплатил, разбанился,
+    вернул Stars через поддержку Telegram — и остался разбаненным.
+
+    Платёж ищем по журналу модерации (unban_purchase хранит charge_id):
+    сам возврат Telegram не говорит, чей он и за что. Возвращает
+    {"rebanned": bool, "user_id": str, "telegram_id": int} — привязки нужны
+    вызывающему для уведомления и отзыва токенов.
+    """
     cls = _session_cls()
     async with cls() as session:
         async with session.begin():
             result = await session.execute(
-                select(User).where(User.id == user_id)
+                select(AiModerationLog).where(
+                    AiModerationLog.content_type == "unban_purchase",
+                    AiModerationLog.content == charge_id,
+                )
+            )
+            покупка = result.scalars().first()
+            if покупка is None:
+                return {"rebanned": False, "user_id": "", "telegram_id": 0}
+
+            # Деньги вернулись — из журнала выручки платёж уходит (как
+            # revoke_premium_payment в API удаляет строку подписки). До
+            # проверок пользователя: выручка корректируется, даже если
+            # возвращать бан уже некому
+            result = await session.execute(
+                select(ProcessedPayment).where(
+                    ProcessedPayment.provider == "stars",
+                    ProcessedPayment.external_id == charge_id,
+                )
+            )
+            платёж = result.scalars().first()
+            if платёж is not None:
+                await session.delete(платёж)
+
+            result = await session.execute(
+                select(User).where(User.id == покупка.user_id)
             )
             user = result.scalar_one_or_none()
-            if user:
-                user.is_verified = True
+            if user is None or user.is_banned:
+                # Уже забанен заново или удалился — возвращать бан некому
+                return {"rebanned": False, "user_id": "", "telegram_id": 0}
+
+            # Вечный, без лестницы: возврат денег за разбан — не «нарушение
+            # поведения», а обман платежом, и срок тут выторговывать нечего
+            user.is_banned = True
+            user.banned_until = None
+
+            # Память банов: та же пара привязок, что при обычном бане.
+            # Существующую строку обновляем, а не пропускаем: в ней мог
+            # остаться короткий (или истёкший) срок прежнего бана, и он
+            # отпустил бы возвращенца раньше времени.
+            if user.telegram_id:
+                result = await session.execute(
+                    select(BannedIdentity).where(
+                        BannedIdentity.telegram_id == user.telegram_id
+                    )
+                )
+                строка = result.scalars().first()
+                if строка is None:
+                    session.add(
+                        BannedIdentity(
+                            telegram_id=user.telegram_id,
+                            reason="возврат платежа за досрочную разблокировку",
+                        )
+                    )
+                else:
+                    строка.reason = "возврат платежа за досрочную разблокировку"
+                    строка.banned_until = None
+
+            # След в журнале: спорные разбаны-возвраты разбираются постфактум
+            session.add(
+                AiModerationLog(
+                    user_id=user.id,
+                    content_type="unban_refund",
+                    content=charge_id,
+                    result="blocked",
+                    action="ban",
+                    reason="возврат Stars за досрочную разблокировку",
+                )
+            )
+
+            итог = {
+                "rebanned": True,
+                "user_id": user.id,
+                "telegram_id": user.telegram_id or 0,
+            }
+
+    logger.warning(f"Бан возвращён после возврата Stars: charge={charge_id}")
+    return итог
+
+
+# ════════════════════════════════════════════════════════════════
+#  ПАКИ ЗА STARS (суперлайки и бусты)
+# ════════════════════════════════════════════════════════════════
+
+async def credit_pack(
+    user_id: str, charge_id: str, kind: str, qty: int, stars: int,
+) -> dict:
+    """Начислить купленный пак: суперлайки или включения буста.
+
+    Возвращает {"credited": bool, "reason": str, "balance": int}.
+    "already_processed" — этот charge_id уже зачтён (дубль апдейта
+    Telegram), "no_profile" — анкеты нет и класть бонус некуда: деньги
+    списаны, вызывающий обязан вернуть Stars.
+
+    Идемпотентность — той же строкой журнала платежей, что у подписок и
+    разбана: unique(provider, external_id). Здесь она маркер зачёта, а не
+    примечание, поэтому НЕ в savepoint: упала запись платежа — откатилось и
+    начисление, второй successful_payment зачтёт всё заново. Два зачёта в
+    полёте одновременно разводит тот же unique: проигравший откатывается
+    целиком и приходит сюда IntegrityError.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    cls = _session_cls()
+    try:
+        async with cls() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(Profile).where(Profile.user_id == user_id)
+                )
+                профиль = result.scalar_one_or_none()
+                if профиль is None:
+                    return {"credited": False, "reason": "no_profile", "balance": 0}
+
+                result = await session.execute(
+                    select(ProcessedPayment).where(
+                        ProcessedPayment.provider == "stars",
+                        ProcessedPayment.external_id == charge_id,
+                    )
+                )
+                if result.scalars().first() is not None:
+                    return {
+                        "credited": False,
+                        "reason": "already_processed",
+                        "balance": 0,
+                    }
+
+                # days=0: пак не двигает подписку. amount — фактически
+                # уплаченные Stars из successful_payment, по ним админка
+                # считает выручку
+                session.add(
+                    ProcessedPayment(
+                        provider="stars",
+                        external_id=charge_id,
+                        user_id=user_id,
+                        days=0,
+                        amount=stars,
+                        currency="XTR",
+                    )
+                )
+
+                if kind == "boosts":
+                    профиль.bonus_boosts = (профиль.bonus_boosts or 0) + qty
+                    баланс = профиль.bonus_boosts
+                else:
+                    профиль.bonus_superlikes = (профиль.bonus_superlikes or 0) + qty
+                    баланс = профиль.bonus_superlikes
+    except IntegrityError:
+        return {"credited": False, "reason": "already_processed", "balance": 0}
+
+    logger.info(
+        f"Пак начислен: user={user_id} charge={charge_id} {kind}+{qty} "
+        f"баланс={баланс}"
+    )
+    return {"credited": True, "reason": "", "balance": баланс}
+
+
+async def revoke_pack(charge_id: str, kind: str, qty: int) -> dict:
+    """Списать пак после возврата Stars.
+
+    Возвращает {"revoked": bool, "user_id": str}. Платёж ищем по журналу
+    выручки — сам возврат Telegram говорит только payload и charge_id.
+    Строка платежа удаляется (выручка корректируется, как у подписок), а
+    баланс срезается не ниже нуля: купленное могли уже потратить, и уводить
+    счётчик в минус значило бы отбирать суточную квоту.
+    """
+    cls = _session_cls()
+    async with cls() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(ProcessedPayment).where(
+                    ProcessedPayment.provider == "stars",
+                    ProcessedPayment.external_id == charge_id,
+                )
+            )
+            платёж = result.scalars().first()
+            if платёж is None:
+                # Уже возвращён или зачёт не состоялся — списывать нечего
+                return {"revoked": False, "user_id": ""}
+
+            user_id = платёж.user_id
+            await session.delete(платёж)
+
+            result = await session.execute(
+                select(Profile).where(Profile.user_id == user_id)
+            )
+            профиль = result.scalar_one_or_none()
+            if профиль is not None:
+                if kind == "boosts":
+                    профиль.bonus_boosts = max(0, (профиль.bonus_boosts or 0) - qty)
+                else:
+                    профиль.bonus_superlikes = max(
+                        0, (профиль.bonus_superlikes or 0) - qty
+                    )
+
+    logger.warning(f"Пак списан после возврата: charge={charge_id} {kind}-{qty}")
+    return {"revoked": True, "user_id": user_id}
 
 
 # ════════════════════════════════════════════════════════════════
@@ -334,6 +737,23 @@ async def create_report(
                 user = target.scalar_one_or_none()
                 if user:
                     user.is_banned = True
+                    # Память банов — как у банов API (services/enforcement.py):
+                    # без неё этот бан снимался бы бесплатно удалением аккаунта
+                    # (каскад стирает флаг), и платная досрочная разблокировка
+                    # теряла бы смысл. Дубль не пишем: telegram_id уникален.
+                    if user.telegram_id:
+                        существует = await session.execute(
+                            select(BannedIdentity.id).where(
+                                BannedIdentity.telegram_id == user.telegram_id
+                            )
+                        )
+                        if существует.scalar_one_or_none() is None:
+                            session.add(
+                                BannedIdentity(
+                                    telegram_id=user.telegram_id,
+                                    reason="жалобы нескольких пользователей",
+                                )
+                            )
             elif distinct_reporters >= 3:
                 target = await session.execute(
                     select(Profile).where(Profile.user_id == reported_id)
@@ -417,6 +837,8 @@ async def activate_premium(
     payment_id: str = "",
     provider: str = "stars",
     tier: str = "plus",
+    amount: int | None = None,
+    currency: str | None = None,
 ) -> dict:
     """Активировать/продлить Premium.
 
@@ -424,6 +846,18 @@ async def activate_premium(
     dating_processed_payments, а не на сравнении с последним payment_id: инвойс
     CryptoBot остаётся оплаченным навсегда, кнопку «Проверить оплату» можно
     нажать повторно, и без журнала повторное нажатие начисляло премиум заново.
+
+    ``amount``/``currency`` — цена платежа в минорных единицах (XTR — звёзды,
+    RUB — копейки, USDT — сотые): по журналу админка считает выручку. На
+    начисление не влияют — только запись.
+
+    Маркер платежа и начисление — в ОДНОЙ транзакции. Раньше маркер
+    коммитился отдельно, до начисления, и падение процесса в зазоре оставляло
+    платёж «зачтённым» навсегда без подписки: деньги списаны, а каждая
+    повторная проверка отвечала «уже зачтено». Гонка двух одновременных
+    проверок закрыта по-прежнему: маркер вставляется в savepoint, второй
+    INSERT ждёт блокировку строки и падает на уникальном ключе, не начислив
+    ничего. Так же устроен api/services/premium.py::activate_premium.
     """
     from datetime import timedelta
 
@@ -431,33 +865,33 @@ async def activate_premium(
 
     cls = _session_cls()
     async with cls() as session:
-        # Платёж помечается зачтённым в отдельной транзакции: при гонке двух
-        # одновременных проверок одного инвойса второй INSERT упадёт на
-        # уникальном ключе и начисления не будет.
-        if payment_id:
-            try:
-                async with session.begin():
-                    session.add(
-                        ProcessedPayment(
-                            provider=provider,
-                            external_id=payment_id,
-                            user_id=user_id,
-                            days=days,
-                        )
-                    )
-            except IntegrityError:
-                await session.rollback()
-                result = await session.execute(
-                    select(Subscription).where(Subscription.user_id == user_id)
-                )
-                sub = result.scalar_one_or_none()
-                return {
-                    "plan": sub.plan if sub else "free",
-                    "expires_at": sub.expires_at.isoformat() if sub and sub.expires_at else "",
-                    "already_processed": True,
-                }
-
         async with session.begin():
+            if payment_id:
+                try:
+                    async with session.begin_nested():
+                        session.add(
+                            ProcessedPayment(
+                                provider=provider,
+                                external_id=payment_id,
+                                user_id=user_id,
+                                days=days,
+                                amount=amount,
+                                currency=currency,
+                            )
+                        )
+                except IntegrityError:
+                    # Savepoint откатился, внешняя транзакция жива — читаем
+                    # текущую подписку, чтобы честно ответить, до когда она
+                    result = await session.execute(
+                        select(Subscription).where(Subscription.user_id == user_id)
+                    )
+                    sub = result.scalar_one_or_none()
+                    return {
+                        "plan": sub.plan if sub else "free",
+                        "expires_at": sub.expires_at.isoformat() if sub and sub.expires_at else "",
+                        "already_processed": True,
+                    }
+
             result = await session.execute(
                 select(Subscription).where(Subscription.user_id == user_id)
             )
@@ -483,6 +917,126 @@ async def activate_premium(
             sub.expires_at = base + timedelta(days=days)
             await session.flush()
             return {"plan": sub.plan, "expires_at": sub.expires_at.isoformat()}
+
+
+async def activate_promo_code(user_id: str, raw_code: str) -> dict:
+    """Активировать промокод — зеркало api/services/promo.py::activate_promo.
+
+    Отказы возвращаются словарём {"activated": False, "reason": ...}, а не
+    исключением: у бота нет get_session, который превратил бы исключение в
+    ответ. Атомарность та же: слот лимита списывается одним UPDATE с
+    проверкой остатка в WHERE, повторная активация одним человеком ловится
+    уникальной парой (promo_id, user_id) — при гонке второй INSERT падает на
+    ключе при коммите, IntegrityError откатывает транзакцию целиком, и
+    списанный слот возвращается. Отказные ветки до записи возвращаются из
+    session.begin() пустым коммитом — записать им нечего.
+
+    Начисление подписки — в ТОЙ ЖЕ транзакции, что активация и слот
+    (доктрина activate_premium: маркер и начисление коммитятся вместе).
+    Сам activate_premium не зовём — он открывает собственную сессию, и
+    между коммитами жил бы зазор: активация записана, подписка нет.
+    """
+    from datetime import timedelta
+
+    from sqlalchemy.exc import IntegrityError
+
+    код = raw_code.strip().upper().replace(" ", "").replace("-", "")
+    if not код:
+        return {"activated": False, "reason": "not_found"}
+
+    cls = _session_cls()
+    try:
+        async with cls() as session:
+            async with session.begin():
+                промо = await session.scalar(
+                    select(PromoCode).where(PromoCode.code == код)
+                )
+                # Погашенный код отвечает как несуществующий: подсказывать,
+                # что утёкший код настоящий, незачем
+                if not промо or not промо.is_active:
+                    return {"activated": False, "reason": "not_found"}
+
+                now = datetime.utcnow()
+                if промо.expires_at and промо.expires_at.replace(tzinfo=None) < now:
+                    return {"activated": False, "reason": "expired"}
+
+                уже = await session.scalar(
+                    select(PromoActivation).where(
+                        and_(
+                            PromoActivation.promo_id == промо.id,
+                            PromoActivation.user_id == user_id,
+                        )
+                    )
+                )
+                if уже is not None:
+                    return {"activated": False, "reason": "already_used"}
+
+                списан = await session.execute(
+                    update(PromoCode)
+                    .where(
+                        and_(
+                            PromoCode.id == промо.id,
+                            or_(
+                                PromoCode.max_uses == 0,
+                                PromoCode.used_count < PromoCode.max_uses,
+                            ),
+                        )
+                    )
+                    .values(used_count=PromoCode.used_count + 1)
+                )
+                if списан.rowcount == 0:
+                    return {"activated": False, "reason": "exhausted"}
+
+                session.add(PromoActivation(promo_id=промо.id, user_id=user_id))
+                # Журнальный маркер — как у платежей, но amount=None:
+                # промокод не выручка, метрики его не считают
+                session.add(
+                    ProcessedPayment(
+                        provider="promo",
+                        external_id=f"{промо.id}:{user_id}",
+                        user_id=user_id,
+                        days=промо.days,
+                        amount=None,
+                        currency=None,
+                    )
+                )
+
+                result = await session.execute(
+                    select(Subscription).where(Subscription.user_id == user_id)
+                )
+                sub = result.scalar_one_or_none()
+                if not sub:
+                    sub = Subscription(user_id=user_id)
+                    session.add(sub)
+
+                # Продление поверх остатка, уровень не понижаем — как в
+                # activate_premium выше
+                base = now
+                if sub.expires_at:
+                    current = sub.expires_at.replace(tzinfo=None)
+                    if current > now:
+                        base = current
+                if tier_rank(промо.tier) >= tier_rank(sub.plan or "free"):
+                    sub.plan = промо.tier
+                sub.expires_at = base + timedelta(days=промо.days)
+                await session.flush()
+
+                logger.info(
+                    f"promo activated: code={промо.code} tier={промо.tier} "
+                    f"days={промо.days} user={user_id}"
+                )
+                return {
+                    "activated": True,
+                    "tier": промо.tier,
+                    "days": промо.days,
+                    "plan": sub.plan,
+                    "expires_at": sub.expires_at.isoformat(),
+                }
+    except IntegrityError:
+        # Гонка: два сообщения с одним кодом от одного человека. Второй
+        # INSERT активации упал на uq_promo_activation при коммите, вся его
+        # транзакция откатилась — слот и подписка целы
+        return {"activated": False, "reason": "already_used"}
 
 
 async def revoke_premium_payment(payment_id: str, provider: str = "stars") -> dict:
@@ -834,26 +1388,41 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
             if my.filter_height_max:
                 filters.append(Profile.height_cm <= my.filter_height_max)
 
+        # «Только подтверждённые» — защитный фильтр, включается в мини-аппе
+        # (см. api/models/models.py, почему он бесплатный). Запрос деки у бота
+        # свой, а не общий с API, поэтому условие обязано повториться здесь:
+        # иначе человек включил фильтр в приложении, а бот продолжает
+        # показывать неподтверждённых — защита, которая действует только на
+        # одной из двух поверхностей, хуже её отсутствия, потому что ей верят.
+        # User уже в джойне (_scan тянет галочку тем же запросом).
+        if my and my.filter_verified:
+            filters.append(User.is_verified == True)
+
         # Выборка от случайной точки sample_key по индексу вместо
         # ORDER BY RANDOM(): тому нужна сортировка всей таблицы на каждый
         # показ анкеты. У конца диапазона строк не хватит — добираем
         # с начала, иначе анкеты с большим ключом видели бы полупустую деку.
-        async def _scan(*extra) -> list[Profile]:
+        async def _scan(*extra) -> list[tuple[Profile, bool]]:
+            # User и так в джойне — галочка едет тем же запросом, без N+1
             result = await session.execute(
-                select(Profile)
+                select(Profile, User.is_verified)
                 .join(User, Profile.user_id == User.id)
                 .where(*filters, *extra)
                 .order_by(Profile.sample_key)
                 .limit(limit * 3)
             )
-            return list(result.scalars().all())
+            return [(p, bool(v)) for p, v in result.all()]
 
         cut = random.random()
         rows = await _scan(Profile.sample_key >= cut)
         if len(rows) < limit * 3:
             rows += await _scan(Profile.sample_key < cut)
 
-        profiles = [_profile_to_dict(p) for p in rows[: limit * 3]]
+        profiles = []
+        for p, verified in rows[: limit * 3]:
+            анкета = _profile_to_dict(p)
+            анкета["is_verified"] = verified
+            profiles.append(анкета)
 
         # Встречный фильтр + сортировка по общим интересам
         my_gender = my.gender if my else "other"
@@ -1041,7 +1610,9 @@ def _user_to_dict(user: User) -> dict:
         "telegram_id": user.telegram_id,
         "role": user.role,
         "is_banned": user.is_banned,
+        "banned_until": user.banned_until.isoformat() if user.banned_until else None,
         "is_verified": user.is_verified,
+        "locale": user.locale or "ru",
         "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
@@ -1081,4 +1652,7 @@ def _profile_to_dict(profile: Profile) -> dict:
         # поэтому в текстовой карточке она отмечается значком редкости —
         # см. texts.ЗНАЧОК_НАКЛЕЙКИ
         "sticker": profile.sticker or "",
+        # Опорное фото верификации — служебное поле для _finish_registration
+        # (решает, снимать ли галочку при смене фото); в карточках не рисуется
+        "verified_photo": profile.verified_photo or "",
     }

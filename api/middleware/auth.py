@@ -35,10 +35,19 @@ class AccountBannedError(HTTPException):
     ``detail`` остаётся человеческой строкой: код добавляет обработчик в
     ``main.py`` отдельным полем, поэтому форма ответа для тех, кто читает
     только ``detail``, не меняется.
+
+    ``banned_until`` — срок бана (None — вечный): обработчик кладёт его в тело
+    ответа, клиент показывает таймер и «снять сейчас за 349 ₽» вместо глухого
+    «доступ закрыт».
     """
 
-    def __init__(self, detail: str = "User is banned") -> None:
+    def __init__(
+        self,
+        detail: str = "User is banned",
+        banned_until: Optional[datetime] = None,
+    ) -> None:
         super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+        self.banned_until = banned_until
 
 
 def create_access_token(user_id: str, telegram_id: Optional[int] = None) -> str:
@@ -133,7 +142,12 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     if user.is_banned:
-        raise AccountBannedError()
+        # Временный бан истёк — снимаем прямо здесь, фонового джоба нет.
+        # Первый же запрос после срока возвращает доступ без действий человека
+        from services.enforcement import lift_ban_if_expired
+
+        if not await lift_ban_if_expired(session, user):
+            raise AccountBannedError(banned_until=user.banned_until)
 
     return user
 

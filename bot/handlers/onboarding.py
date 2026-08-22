@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
 from aiogram.fsm.context import FSMContext
 
 from config import legal_url
-from database import get_or_create_user, get_profile
+from database import get_or_create_user, get_profile, get_user_locale, set_user_locale
 from keyboards import consent_kb, language_kb, main_kb, start_app_kb
 from states import OnboardingStates
 import texts as T
@@ -54,11 +54,54 @@ async def send_broadcasts(message: Message, locale: str) -> None:
     await message.answer(T.onboarding_broadcast_email(locale))
 
 
+async def _язык(telegram_id: int, state: FSMContext) -> str:
+    """Язык для ответа: state → аккаунт → русский.
+
+    State первым: он свежее всех, человек мог только что нажать другой флаг, а
+    до базы выбор доезжает отдельной записью. База вторым: state теряется при
+    рестарте бота, смене storage и истечении ключа, и без неё тап по кнопке
+    недельной давности отвечал по-русски тому, кто выбрал узбекский.
+
+    Русский последним — не `ONBOARDING_LOCALE_FALLBACK`. Это разные ситуации:
+    английский подставляется вместо непонятного кода (см. `resolve_locale`), а
+    здесь мы не знаем о человеке вообще ничего — язык он ещё не выбирал, и
+    русский по умолчанию верен, как и в колонке базы.
+
+    Ни один сбой чтения не должен стоить ответа на тап: Telegram крутит часики
+    на кнопке до таймаута, и молчание бота человек читает как «бот умер».
+    """
+    try:
+        data = await state.get_data()
+        сохранённый = data.get("onb_locale")
+        if сохранённый:
+            return T.resolve_locale(сохранённый)
+    except Exception as e:
+        logger.debug("не прочитали state для языка: %s", e)
+
+    try:
+        из_базы = await get_user_locale(telegram_id)
+    except Exception as e:
+        logger.debug("не прочитали язык из базы: %s", e)
+        из_базы = None
+
+    return из_базы or "ru"
+
+
 @router.callback_query(_ГДЕ_ОНБОРДИНГ, F.data.startswith("onb:lang:"))
 async def pick_language(callback: CallbackQuery, state: FSMContext):
     code = (callback.data or "").rsplit(":", 1)[-1]
     locale = code if code in _VALID_LOCALES else T.ONBOARDING_LOCALE_FALLBACK
     await callback.answer()
+    # Пишем язык на аккаунт, а не только в state: FSM не переживает рестарт
+    # бота и истечение ключа, а мини-апп его не видит вовсе — до этой записи
+    # выбор узбекского жил до первого сбоя, дальше человек получал русский.
+    # Строка в базе уже есть: /start вызывает get_or_create_user до того, как
+    # покажет эту клавиатуру (см. bot.py). Сбой записи онбординг не ломает —
+    # язык в state есть, шаг продолжается.
+    try:
+        await set_user_locale(callback.from_user.id, locale)
+    except Exception as e:
+        logger.warning("не сохранили язык %s для %s: %s", locale, callback.from_user.id, e)
     if callback.message:
         await send_consent(callback.message, state, locale)
 
@@ -83,12 +126,7 @@ async def start_app(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     if not callback.message:
         return
-    locale = "ru"
-    try:
-        data = await state.get_data()
-        locale = T.resolve_locale(data.get("onb_locale"))
-    except Exception:
-        pass
+    locale = await _язык(callback.from_user.id, state)
 
     db_user = await get_or_create_user(
         callback.from_user.id,
@@ -122,13 +160,11 @@ async def stale_onboarding_tap(callback: CallbackQuery, state: FSMContext):
     раз и решает, что бот умер. Состояние не трогаем вообще, даже данные читаем
     без записи: заполненная наполовину анкета обязана дожить до конца.
     """
-    locale = "ru"
+    locale = await _язык(callback.from_user.id, state)
     сценарий = "неизвестно"
     try:
-        data = await state.get_data()
-        locale = T.resolve_locale(data.get("onb_locale"))
         сценарий = await state.get_state() or "нет состояния"
-    except Exception as e:  # storage может быть недоступен — тап важнее локали
+    except Exception as e:  # storage может быть недоступен — тап важнее лога
         logger.debug("не прочитали state для устаревшего тапа: %s", e)
     await callback.answer(T.onboarding_stale_tap(locale))
     logger.info(

@@ -74,7 +74,7 @@
 | Подарки в чате | **Есть** | `api/services/gifting.py` |
 | Кейсы с наградами, наклейки, декор | **Есть** | `services/cases.py`, `stickers.py`, `decor.py` |
 | Инкогнито | **Частично** | `profile.is_incognito` (bool), гранулярной приватности нет |
-| СБП | **Нет** | заглушка, кнопка честно говорит «скоро» |
+| Рубли: карта и СБП | **Есть** | `bot/handlers/premium.py: pay_sbp` — счёт Telegram Payments, скрыт без `PAYMENT_PROVIDER_TOKEN` |
 
 ## 0.5 Аналитика — главный пробел
 

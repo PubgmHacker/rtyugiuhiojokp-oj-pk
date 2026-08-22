@@ -44,8 +44,15 @@ class User(Base):
     #: проверенной; nullable — привязка добровольная.
     email: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: Язык интерфейса с первого шага онбординга — см. api/models/models.py.
+    #: Схема обязана совпадать: бот тоже вызывает create_all() и, стартовав
+    #: первым на пустой базе, создал бы таблицу без этой колонки.
+    locale: Mapped[str] = mapped_column(String, default="ru", server_default=text("'ru'"))
     role: Mapped[str] = mapped_column(String, default="user")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Срок бана — см. api/models/models.py. NULL при is_banned=True — вечный;
+    #: истечение снимает бан лениво (get_or_create_user при любом апдейте).
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -89,6 +96,10 @@ class Profile(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     photos: Mapped[dict | list] = mapped_column(JSON, default=list)
+    # Опорное фото проверки — см. api/models/models.py: URL фото анкеты,
+    # с которым совпало лицо на живой съёмке. Бот сверяет с ним новые фото
+    # подтверждённых пользователей и снимает галочку, если его убрали.
+    verified_photo: Mapped[str] = mapped_column(String, default="")
     interests: Mapped[dict | list] = mapped_column(JSON, default=list)
     ai_bio: Mapped[str | None] = mapped_column(String, nullable=True)
     goal: Mapped[str] = mapped_column(String, default="")
@@ -108,6 +119,8 @@ class Profile(Base):
     )
     # Суперлайки из кейсов — см. api/models/models.py
     bonus_superlikes: Mapped[int] = mapped_column(Integer, default=0)
+    # Включения буста, купленные паком за Stars — см. api/models/models.py
+    bonus_boosts: Mapped[int] = mapped_column(Integer, default=0)
     #: Выбранная наклейка из коллекции — единственная, которую видят другие.
     #: Показывать все значило бы превратить карточку в витрину достижений, а
     #: смотрят на неё ради человека. Пусто — ничего не выбрано.
@@ -132,6 +145,12 @@ class Profile(Base):
     filter_city: Mapped[str] = mapped_column(String, default="")
     filter_height_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     filter_height_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Только подтверждённые анкеты в выдаче — см. api/models/models.py.
+    #: Обе стороны звонят create_all(), поэтому колонка обязана быть здесь
+    #: тоже: иначе бот пересоздаст таблицу без неё.
+    filter_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     # Случайное место анкеты в порядке выдачи деки — см. api/models/models.py
     sample_key: Mapped[float] = mapped_column(
         Float, default=random.random, server_default=text("random()"), nullable=False,
@@ -325,6 +344,9 @@ class BannedIdentity(Base):
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     apple_id: Mapped[str | None] = mapped_column(String, nullable=True)
     reason: Mapped[str] = mapped_column(String, default="")
+    #: Срок бана привязки — см. api/models/models.py: NULL — вечный,
+    #: дата — остаток срока для вернувшегося после удаления аккаунта.
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -474,9 +496,6 @@ class StickerOwned(Base):
     Дубликаты не храним отдельными строками: считаем, сколько раз выпала.
     Иначе таблица растёт линейно от числа открытий, а показать надо ровно один
     значок с числом.
-
-    Полезность за дубликат начисляется сразу при выпадении (суперлайк), поэтому
-    повтор не воспринимается как пустая трата попытки.
     """
 
     __tablename__ = "dating_stickers_owned"
@@ -491,6 +510,21 @@ class StickerOwned(Base):
     code: Mapped[str] = mapped_column(String)
     #: Сколько раз выпала. Первое выпадение — 1.
     count: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DecorOwned(Base):
+    """Лимитированная обложка карточки — см. api/models/models.py."""
+
+    __tablename__ = "dating_decor_owned"
+    __table_args__ = (
+        UniqueConstraint("user_id", "code", name="uq_decor_owner"),
+        Index("ix_decor_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    code: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -556,10 +590,14 @@ class ProcessedPayment(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    provider: Mapped[str] = mapped_column(String)  # cryptobot | stars
+    provider: Mapped[str] = mapped_column(String)  # cryptobot | stars | sbp | appstore
     external_id: Mapped[str] = mapped_column(String)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     days: Mapped[int] = mapped_column(Integer, default=30)
+    #: Сумма в минорных единицах валюты (XTR — звёзды, RUB — копейки,
+    #: USDT — сотые); по ней админка считает выручку. NULL — сумма неизвестна
+    amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -595,6 +633,9 @@ class AiModerationLog(Base):
     content: Mapped[str] = mapped_column(String)
     result: Mapped[str] = mapped_column(String)  # safe | warning | blocked
     action: Mapped[str] = mapped_column(String, default="none")  # none | warn | ban
+    # Категория нарушения при result="blocked": ad | heavy | text — зеркало
+    # api/models/models.py, по ней API считает страйки.
+    category: Mapped[str] = mapped_column(String, default="", server_default="")
     reason: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -733,3 +774,157 @@ class StoryView(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class VerificationAttempt(Base):
+    """Попытка живой проверки профиля (галочка) — см. api/models/models.py.
+
+    Кадры проверки в БД не попадают никогда: хранится только задание и итог.
+    Бот эту таблицу не читает, класс здесь ради совпадения схем: обе стороны
+    вызывают create_all() в одну базу.
+    """
+
+    __tablename__ = "dating_verification_attempts"
+    __table_args__ = (
+        Index("ix_verification_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=False
+    )
+    poses: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String, default="issued")
+    reason: Mapped[str] = mapped_column(String, default="")
+    # Кто проводил проверку: "builtin" (позы + автоматика) или "sumsub"
+    # (провайдер живости); provider_ref — id заявителя на стороне провайдера
+    provider: Mapped[str] = mapped_column(String, default="builtin")
+    provider_ref: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AdminAuditLog(Base):
+    """Журнал действий админов — см. api/models/models.py.
+
+    Бот эту таблицу не пишет и не читает, класс здесь ради совпадения схем:
+    обе стороны вызывают create_all() в одну базу. Нарочно без внешних
+    ключей — журнал обязан переживать удаление и админа, и цели, иначе
+    каскад стёр бы историю ровно тогда, когда она нужна.
+    """
+
+    __tablename__ = "dating_admin_audit"
+    __table_args__ = (
+        Index("ix_admin_audit_created", "created_at"),
+        Index("ix_admin_audit_admin", "admin_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    admin_id: Mapped[str] = mapped_column(String)
+    admin_name: Mapped[str] = mapped_column(String, default="")
+    action: Mapped[str] = mapped_column(String)
+    target_user_id: Mapped[str] = mapped_column(String, default="")
+    target_name: Mapped[str] = mapped_column(String, default="")
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Broadcast(Base):
+    """Рассылка через бота — см. api/models/models.py.
+
+    Единственная общая таблица, которую бот ПИШЕТ: админка создаёт задачу,
+    бот (services/broadcast.py) рассылает и обновляет счётчики — прогресс
+    виден в админке без отдельного канала связи. Без FK на создателя:
+    история рассылок переживает удаление админа, имя лежит снапшотом.
+    """
+
+    __tablename__ = "dating_broadcasts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_by: Mapped[str] = mapped_column(String)
+    created_by_name: Mapped[str] = mapped_column(String, default="")
+    text: Mapped[str] = mapped_column(String, nullable=False)
+    #: "all" — всем живым с Telegram; "test" — только создателю
+    segment: Mapped[str] = mapped_column(String, default="all")
+    status: Mapped[str] = mapped_column(String, default="queued")
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    sent: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class PromoCode(Base):
+    """Промокод на подписку — копия api/models/models.py::PromoCode.
+
+    Выпускает только админка через API; бот лишь активирует, поэтому
+    механика лимита (атомарный UPDATE со слотом в WHERE) повторена в
+    database/connection.py::activate_promo_code.
+    """
+
+    __tablename__ = "dating_promo_codes"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_promo_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    #: Всегда в верхнем регистре: активация нормализует ввод так же
+    code: Mapped[str] = mapped_column(String)
+    tier: Mapped[str] = mapped_column(String, default="plus")
+    days: Mapped[int] = mapped_column(Integer, default=7)
+    #: 0 — без лимита
+    max_uses: Mapped[int] = mapped_column(Integer, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Выключенный код отвечает «не найден», а не «закончился»
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    comment: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PromoActivation(Base):
+    """Кто и когда активировал промокод — копия из api/models/models.py.
+    Уникальность пары не даёт активировать один код дважды."""
+
+    __tablename__ = "dating_promo_activations"
+    __table_args__ = (
+        UniqueConstraint("promo_id", "user_id", name="uq_promo_activation"),
+        Index("ix_promo_activation_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    promo_id: Mapped[str] = mapped_column(String, ForeignKey("dating_promo_codes.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Notification(Base):
+    """Копия api/models/models.py::Notification — мета-тест сверяет колонки.
+
+    Бот в центр уведомлений пока не пишет: оба вида событий (итог жалобы,
+    галочка вебхуком) рождаются на стороне API. Копия нужна, чтобы схема
+    у бота и API не разъехалась.
+    """
+
+    __tablename__ = "dating_notifications"
+    __table_args__ = (
+        Index("ix_notification_user", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -170,24 +170,34 @@ async def test_пустая_дека_не_роняет_главный_экран
 
 
 async def test_кейс_выдаёт_наклейки_и_копит_коллекцию(клиент, живая_база, monkeypatch):
-    """Механика кейса на живой базе: и запись в коллекцию, и счётчик повторов.
+    """Механика кейса на живой базе: обе коллекции пополняются, дублей нет.
 
-    Заодно проверяется начисление буста — на нём падало сравнение времени.
+    Каждое открытие обязано дать ровно одну коллекционную вещь — наклейку или
+    обложку, и всегда новую, пока есть недостающие: месячных попыток мало, и
+    попытка, сгоревшая на дубликат, ощущалась бы как отобранная.
     """
     import routers.cases as cases_mod
-    from models.models import Profile, StickerOwned
+    from models.models import DecorOwned, Profile, StickerOwned
+    from services.decor import ОФОРМЛЕНИЯ
+    from services.stickers import каталог
 
     # Лимит попыток проверяется отдельно; здесь интересна механика наград.
     # Через monkeypatch, а не присваиванием: прямая замена утекала в соседние
     # тесты и ломала проверку «бесплатному кейс не открыть»
-    monkeypatch.setattr(cases_mod, "openings_per_day", lambda tier: 99)
+    monkeypatch.setattr(cases_mod, "openings_per_month", lambda tier: 99)
 
     наклеек = 0
+    обложек = 0
     for _ in range(25):
         r = await клиент.post("/api/cases/open")
         assert r.status_code == 200, r.text
-        if r.json()["reward"].get("sticker"):
+        награда = r.json()["reward"]
+        if награда.get("sticker"):
             наклеек += 1
+        if награда.get("decor"):
+            обложек += 1
+
+    assert наклеек + обложек == 25, "открытие без коллекционной награды"
 
     Session = живая_база["Session"]
     async with Session() as s:
@@ -196,18 +206,22 @@ async def test_кейс_выдаёт_наклейки_и_копит_коллек
                 select(StickerOwned).where(StickerOwned.user_id == живая_база["аня"])
             )
         ).scalars().all()
-        анкета = (
+        мои_обложки = (
             await s.execute(
-                select(Profile).where(Profile.user_id == живая_база["аня"])
+                select(DecorOwned).where(DecorOwned.user_id == живая_база["аня"])
             )
-        ).scalar_one()
+        ).scalars().all()
 
     assert наклеек > 0, "за 25 открытий не выпало ни одной наклейки"
     assert sum(x.count for x in мои) == наклеек, "счётчик коллекции разошёлся"
-    # Дубликат не пустой: за него начисляется суперлайк
-    дублей = sum(x.count - 1 for x in мои)
-    if дублей:
-        assert анкета.bonus_superlikes > 0, "за дубликаты ничего не начислили"
+    assert len(мои_обложки) == обложек, "обложки не легли во владение"
+    assert len(мои_обложки) <= len(ОФОРМЛЕНИЯ)
+    # Обложка не выпадает дважды: выбор идёт только среди недостающих
+    assert len({о.code for о in мои_обложки}) == len(мои_обложки)
+
+    # Дубликат наклейки допустим только когда собраны все
+    if len(мои) < len(каталог()):
+        assert all(x.count == 1 for x in мои), "дубликат при несобранной коллекции"
 
 
 @pytest.fixture

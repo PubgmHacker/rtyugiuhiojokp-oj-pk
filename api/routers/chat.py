@@ -12,6 +12,7 @@ from middleware.auth import verify_access_token
 from models.models import Match, Message, User
 from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
+from services.enforcement import TEXT_BAN_REASONS, register_text_strike
 from services.chat_delivery import ДоставкаОтклонена, fan_out, save_message
 from services.token_revocation import is_revoked
 from services.quotas import open_match
@@ -155,11 +156,46 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
                 verdict = await moderate_text(text)
                 await log_moderation(user_id, "chat_message", text, verdict)
                 if verdict["blocked"]:
+                    # Нарушение — страйк, как в REST-точках. Сессия своя:
+                    # у сокета нет сессии запроса, а бан должен закоммититься
+                    # немедленно, не дожидаясь конца соединения.
+                    исход = None
+                    try:
+                        async with async_session_factory() as ban_session:
+                            result = await ban_session.execute(
+                                select(User).where(User.id == user_id)
+                            )
+                            нарушитель = result.scalar_one_or_none()
+                            if нарушитель is not None:
+                                исход = await register_text_strike(
+                                    ban_session, нарушитель, verdict
+                                )
+                                await ban_session.commit()
+                    except Exception as e:
+                        # Сбой страйка не отменяет отказ: сообщение всё равно
+                        # не уходит, эскалация просто подождёт следующего раза
+                        logger.error(f"WS chat: страйк не записан: {e}")
+
+                    if исход is not None and исход.banned:
+                        # Токены уже отозваны баном — сокет доживал бы до
+                        # следующего сообщения; закрываем сразу и явно
+                        await websocket.send_json({
+                            "type": "banned",
+                            "reason": TEXT_BAN_REASONS[исход.category],
+                            "banned_until": (
+                                исход.banned_until.isoformat()
+                                if исход.banned_until else None
+                            ),
+                        })
+                        await websocket.close(code=4003, reason="Banned")
+                        break
+
                     # Не рвём сокет: человек мог ошибиться формулировкой, а
                     # разрыв соединения выглядит как поломка приложения
+                    счёт = f" {исход.warning_text()}" if исход is not None else ""
                     await websocket.send_json({
                         "type": "rejected",
-                        "reason": "Сообщение нарушает правила",
+                        "reason": f"Сообщение нарушает правила.{счёт}",
                     })
                     continue
 

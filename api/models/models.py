@@ -47,8 +47,20 @@ class User(Base):
     #: проверенной; nullable — привязка добровольная.
     email: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Язык интерфейса, выбранный на первом шаге онбординга бота.
+    #: Хранится на аккаунте, а не в анкете, по двум причинам: язык нужен
+    #: уведомлениям (бан, итог жалобы), где анкета не загружена вовсе, и он
+    #: остаётся при удалении и повторном заполнении анкеты — человек выбирал
+    #: язык, а не оформлял им профиль. До появления колонки выбор жил только
+    #: в FSM бота и терялся на первом же перезапуске: люди выбирали узбекский
+    #: и получали русский интерфейс.
+    locale: Mapped[str] = mapped_column(String, default="ru", server_default=text("'ru'"))
     role: Mapped[str] = mapped_column(String, default="user")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Срок бана. NULL при is_banned=True — вечный бан (катфишинг, ручной бан
+    #: админом); дата — временный, после неё любой вход снимает бан сам
+    #: (ленивое истечение в get_current_user и login-путях, фонового джоба нет).
+    banned_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -138,6 +150,13 @@ class Profile(Base):
     latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     photos: Mapped[str] = mapped_column(JSON, default=list)
+    #: Опорное фото проверки: та фотография анкеты, с которой совпало лицо на
+    #: живой съёмке (routers/verification.py). Пока она стоит в анкете, каждое
+    #: новое фото сверяется с ней — заменить подтверждённый профиль на чужие
+    #: снимки нельзя; убрали её — галочка снимается и проверка проходится
+    #: заново (routers/profiles.py). Пустая строка — проверки не было.
+    #: Это НЕ биометрия: здесь лежит URL уже публичного фото анкеты.
+    verified_photo: Mapped[str] = mapped_column(String, default="")
     interests: Mapped[str] = mapped_column(JSON, default=list)
     ai_bio: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Нишевые поля анкеты: по ним ищут не «кого-нибудь рядом», а своих.
@@ -175,6 +194,10 @@ class Profile(Base):
     #: квоте: квота считается по факту расхода за сутки, и прибавка к ней
     #: возобновлялась бы каждый день сама.
     bonus_superlikes: Mapped[int] = mapped_column(Integer, default=0)
+    #: Включения буста, купленные паком за Stars. Тот же принцип отдельного
+    #: пула, что у bonus_superlikes: суточная квота считается по факту
+    #: расхода и возобновляется сама, а купленное не сгорает в полночь.
+    bonus_boosts: Mapped[int] = mapped_column(Integer, default=0)
     #: Выбранная наклейка из коллекции — единственная, которую видят другие.
     #: Показывать все значило бы превратить карточку в витрину достижений, а
     #: смотрят на неё ради человека. Пусто — ничего не выбрано.
@@ -214,6 +237,18 @@ class Profile(Base):
     filter_city: Mapped[str] = mapped_column(String, default="")
     filter_height_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     filter_height_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    #: Показывать только анкеты с пройденной проверкой по видео (`User.is_verified`).
+    #: Единственный фильтр, который человек включает не по вкусу, а ради
+    #: безопасности: он отсекает не «неподходящих», а тех, кто не доказал, что
+    #: он на своих фото. Поэтому он бесплатный — брать деньги за право
+    #: разговаривать с подтверждёнными людьми нельзя.
+    #:
+    #: Живёт в анкете, а не в локальном хранилище: выбор безопасности обязан
+    #: доехать до второго устройства и до бота, где дека собирается тем же
+    #: кодом.
+    filter_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     # Случайное место анкеты в порядке выдачи деки: выборка идёт от случайной
     # точки этого ключа по индексу, а не сортировкой всей таблицы.
     sample_key: Mapped[float] = mapped_column(
@@ -543,6 +578,11 @@ class BannedIdentity(Base):
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     apple_id: Mapped[str | None] = mapped_column(String, nullable=True)
     reason: Mapped[str] = mapped_column(String, default="")
+    #: Срок бана привязки — копия users.banned_until на момент бана. Нужна
+    #: своя: удалённый аккаунт срок унести с собой не может, а вернувшийся
+    #: через повторную регистрацию должен получить остаток срока, а не вечность.
+    #: NULL — вечный бан; истёкшие строки чистятся лениво при проверке.
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -598,13 +638,14 @@ class VoiceCall(Base):
 class CaseOpening(Base):
     """Журнал открытий кейса и выпавших наград.
 
-    Награды — то, что уже работает в продукте: суперлайки и минуты буста.
-    Коллекционные картинки, как у конкурента, потребовали бы шестидесяти
-    рисунков, а ценность бы имели только для того, кто их собирает.
+    Награды — только коллекционные: лимитированная обложка карточки или
+    наклейка. Расходники (суперлайки, буст) из кейса убраны: их тратят и
+    забывают, а случайная выдача полезного делала кейс похожим на игровой
+    автомат, а не на коллекцию.
 
     Попытки не храним счётчиком: они даются за подписку и считаются как
-    «положено по уровню минус открыто за сутки» — тот же приём, что у
-    суперлайков и бустов, он не ломается от пропущенной уборки.
+    «положено по уровню минус открыто с начала месяца» — тот же приём, что
+    у суперлайков и бустов, он не ломается от пропущенной уборки.
     """
 
     __tablename__ = "dating_case_openings"
@@ -612,9 +653,10 @@ class CaseOpening(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
-    #: Код награды из services/cases.py: superlike | boost.
+    #: Что выпало: код конкретной наклейки или обложки.
     reward: Mapped[str] = mapped_column(String)
-    #: Сколько начислено — суперлайков или минут буста.
+    #: Сколько начислено. Для коллекционных наград всегда 1; колонка
+    #: осталась от расходников — в старых строках лежат их количества.
     amount: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -778,6 +820,32 @@ class StickerOwned(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DecorOwned(Base):
+    """Обложка карточки, выпавшая человеку из кейса.
+
+    Обложки лимитированные: их нельзя купить и нельзя открыть прогрессом —
+    только вытащить из кейса, попытки которого даёт подписка. Владение
+    поэтому хранится строкой, как у наклеек, а не выводится из числа
+    наклеек: вычисляемое право исчезало бы при смене условий каталога.
+
+    Счётчика повторов нет: кейс выбирает обложку среди НЕимеющихся, и дубль
+    невозможен по построению. Когда собраны все, вместо обложки выпадает
+    наклейка — см. routers/cases.py.
+    """
+
+    __tablename__ = "dating_decor_owned"
+    __table_args__ = (
+        UniqueConstraint("user_id", "code", name="uq_decor_owner"),
+        Index("ix_decor_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: Код обложки из services/decor.py — рисуется CSS на клиенте.
+    code: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Reel(Base):
     """Короткое видео в ленте — альтернатива свайпам.
 
@@ -867,10 +935,17 @@ class ProcessedPayment(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    provider: Mapped[str] = mapped_column(String)  # cryptobot | stars
+    provider: Mapped[str] = mapped_column(String)  # cryptobot | stars | sbp | appstore
     external_id: Mapped[str] = mapped_column(String)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
     days: Mapped[int] = mapped_column(Integer, default=30)
+    #: Сумма в минорных единицах валюты: XTR — звёзды, RUB — копейки,
+    #: USDT — сотые. По этим полям админка считает выручку
+    #: (/api/admin/metrics). NULL — сумма неизвестна: строки, записанные до
+    #: появления колонок, и платежи App Store — их выручку считает Apple
+    #: (валюта покупателя и комиссия магазина серверу не видны).
+    amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -950,7 +1025,44 @@ class AiModerationLog(Base):
     content: Mapped[str] = mapped_column(String)
     result: Mapped[str] = mapped_column(String)  # safe | warning | blocked
     action: Mapped[str] = mapped_column(String, default="none")  # none | warn | ban
+    # Категория нарушения при result="blocked": ad | heavy | text (см.
+    # TEXT_CATEGORIES в services/ai_moderation.py). По ней считаются страйки
+    # и выбирается лестница бана. "" — safe-записи и вердикты без категории
+    # (фото, старые строки до миграции).
+    category: Mapped[str] = mapped_column(String, default="", server_default="")
     reason: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AdminAuditLog(Base):
+    """Журнал действий админов: кто, что, с кем и когда сделал в админке.
+
+    Ответ на вопрос «почему этот человек забанен/разбанен и кем» — без него
+    любой спорный тикет упирается в память админов. Пишется в той же
+    транзакции, что и само действие: откатилось действие — не будет и записи.
+
+    Нарочно без внешних ключей: журнал обязан переживать удаление и админа,
+    и цели, иначе каскад стёр бы историю ровно тогда, когда она нужнее всего
+    (человек удалился после жалобы). Поэтому же имена лежат снапшотами —
+    после удаления аккаунта строка остаётся читабельной.
+    """
+
+    __tablename__ = "dating_admin_audit"
+    __table_args__ = (
+        # Листинг читает хвост по времени, фильтр — по конкретному админу
+        Index("ix_admin_audit_created", "created_at"),
+        Index("ix_admin_audit_admin", "admin_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    admin_id: Mapped[str] = mapped_column(String)
+    admin_name: Mapped[str] = mapped_column(String, default="")
+    # ban | unban | set_verified | report_action | reel_action
+    action: Mapped[str] = mapped_column(String)
+    target_user_id: Mapped[str] = mapped_column(String, default="")
+    target_name: Mapped[str] = mapped_column(String, default="")
+    # Параметры действия как есть: срок и причина бана, вердикт по жалобе...
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -1036,3 +1148,177 @@ class StoryView(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class VerificationAttempt(Base):
+    """Попытка подтвердить профиль живой съёмкой (галочка).
+
+    Сами кадры сюда НЕ попадают и вообще никуда не пишутся: это биометрия,
+    её хранение — отдельная юридическая ответственность, а для продукта
+    достаточно вердикта. Строка хранит только задание и итог.
+
+    Жизненный цикл: `issued` (задание выдано) → `approved` / `rejected`.
+    Выданное задание живёт ограниченное время (СРОК_ЗАДАНИЯ_МИНУТ в роутере);
+    просроченное просто перестаёт приниматься — отдельного статуса не нужно.
+    При недоступности AI строка остаётся `issued`: попытка не сожжена,
+    человек повторяет отправку по тому же заданию.
+    """
+
+    __tablename__ = "dating_verification_attempts"
+    __table_args__ = (
+        # Суточный лимит отказов считается по (user_id, created_at)
+        Index("ix_verification_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Заказанные позы по порядку, например ["straight", "left", "up"].
+    #: Порядок — часть проверки: кадры обязаны следовать заданию.
+    #: В провайдерском режиме (Sumsub) поз нет — пустой список.
+    poses: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String, default="issued")
+    #: Кто проверял: "builtin" (позы + GLM) или "sumsub" (WebSDK провайдера).
+    provider: Mapped[str] = mapped_column(String, default="builtin")
+    #: Идентификатор у провайдера (applicantId Sumsub) — для сверки и суппорта.
+    provider_ref: Mapped[str] = mapped_column(String, default="")
+    #: Причина отказа — человеку она показывается как есть.
+    reason: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    decided_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class Broadcast(Base):
+    """Рассылка через бота.
+
+    Создаёт админка (routers/admin.py), исполняет бот
+    (bot/services/broadcast.py): клиента к Telegram у API нет, а бот и так
+    его держит и знает лимиты отправки. Строка — и задача, и отчёт: бот по
+    ходу дела обновляет счётчики, и админка показывает прогресс без
+    отдельного канала связи.
+
+    Статусы: queued → running → done; error — рассылка не запустилась или
+    упала целиком (сбои по отдельным получателям — счётчик failed, не статус).
+
+    segment: "all" — всем живым с Telegram; "test" — только создателю,
+    чтобы посмотреть сообщение глазами получателя до отправки всем.
+    """
+
+    __tablename__ = "dating_broadcasts"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    #: Без FK: история рассылок должна переживать удаление админа,
+    #: поэтому рядом лежит имя-снапшот — как в AdminAuditLog.
+    created_by: Mapped[str] = mapped_column(String)
+    created_by_name: Mapped[str] = mapped_column(String, default="")
+    text: Mapped[str] = mapped_column(String, nullable=False)
+    segment: Mapped[str] = mapped_column(String, default="all")
+    status: Mapped[str] = mapped_column(String, default="queued")
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    sent: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class PromoCode(Base):
+    """Промокод на подписку. Выпускает админка, активирует пользователь.
+
+    От подарочного кода (GiftSubscription) отличается принципиально:
+    подарок — оплаченная одноразовая передача, промокод — маркетинговый
+    инструмент с лимитом активаций. Один код могут активировать max_uses
+    разных людей (0 — без лимита), но каждый — только один раз
+    (uq_promo_activation).
+
+    Код хранится открытым текстом, а не хешем, как у подарков: промокод —
+    не секрет, он печатается в постах и рассылках, а админке нужно видеть
+    и копировать его после выпуска.
+    """
+
+    __tablename__ = "dating_promo_codes"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_promo_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    #: Всегда в верхнем регистре: активация нормализует ввод так же
+    code: Mapped[str] = mapped_column(String)
+    tier: Mapped[str] = mapped_column(String, default="plus")
+    days: Mapped[int] = mapped_column(Integer, default=7)
+    #: 0 — без лимита. Слот списывается атомарным UPDATE c проверкой
+    #: остатка в WHERE — две одновременные активации не перепродадут
+    #: последний слот (services/promo.py)
+    max_uses: Mapped[int] = mapped_column(Integer, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Выключенный код отвечает «не найден», а не «закончился»: админ гасит
+    #: утёкший код, и подсказывать, что код настоящий, незачем
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: Зачем выпущен — админке при разборе, откуда пришла волна активаций
+    comment: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PromoActivation(Base):
+    """Кто и когда активировал промокод. Уникальность пары — защита от
+    повторной активации тем же человеком, в том числе двумя одновременными
+    запросами: второй INSERT падает на ключе и откатывает свою транзакцию
+    вместе со списанным слотом."""
+
+    __tablename__ = "dating_promo_activations"
+    __table_args__ = (
+        UniqueConstraint("promo_id", "user_id", name="uq_promo_activation"),
+        Index("ix_promo_activation_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    promo_id: Mapped[str] = mapped_column(String, ForeignKey("dating_promo_codes.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Notification(Base):
+    """Центр уведомлений: события, у которых нет своего экрана с бейджем.
+
+    Мэтчи, лайки и сообщения сюда не пишутся — их считает badges.py и
+    показывают вкладки «Чаты» и «Лайки»; дубль в ленте был бы шумом. Здесь
+    живёт то, что иначе терялось: итог жалобы (человек нажал
+    «Пожаловаться» и заслужил узнать, чем кончилось) и галочка
+    верификации, пришедшая вдогонку вебхуком, когда шторка давно закрыта.
+
+    Тексты собирает клиент из kind + payload: API не знает языка
+    интерфейса (та же доктрина, что у services/report_notify.py).
+    Неизвестный kind клиент молча прячет — старое приложение не падает
+    на событии нового вида.
+    """
+
+    __tablename__ = "dating_notifications"
+    __table_args__ = (
+        Index("ix_notification_user", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: report_outcome | verification_approved (services/notifications.py)
+    kind: Mapped[str] = mapped_column(String)
+    #: Детали для текста на клиенте: у report_outcome — {"outcome": "banned"}
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    #: Пусто — непрочитанное. Заполняется скопом при открытии центра
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

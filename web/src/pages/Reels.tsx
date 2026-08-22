@@ -10,7 +10,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { askConfirm } from "../lib/telegram";
 import {
   Heart, MessageCircle, Flag, Plus, Trash2, Volume2, VolumeX, EyeOff, Eye,
@@ -26,11 +25,11 @@ import {
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
-import { Button, EmptyState, ScreenHeader, Spinner } from "../components/ui";
+import { Button, EmptyState, LoadError, ScreenHeader, Spinner } from "../components/ui";
 import ReelUploader from "../components/ReelUploader";
 import ReelComments from "../components/ReelComments";
 import ReelForwardSheet from "../components/ReelForwardSheet";
-import { REPORT_REASONS } from "../lib/profileOptions";
+import ReportReasonSheet from "../components/ReportReasonSheet";
 
 export default function Reels() {
   useSectionOpen("reels");
@@ -45,6 +44,7 @@ export default function Reels() {
   const [error, setError] = useState("");
   // Успех — своя плашка: «Отправлено» в красной рамке читается как сбой
   const [notice, setNotice] = useState("");
+  const [сбой, setСбой] = useState(false);
   const loadingRef = useRef(false);
 
   const load = useCallback(
@@ -57,8 +57,14 @@ export default function Reels() {
         setBefore(page.next_before ?? null);
         if (!page.reels.length) setExhausted(true);
       } catch {
-        setError("Не удалось загрузить ленту");
-        setReels((cur) => cur ?? []);
+        if (cursor) {
+          // Догрузка следующей страницы: лента на месте, хватит плашки
+          setError("Не удалось загрузить ленту");
+        } else {
+          // Первая загрузка: пустую ленту подставлять нельзя — «Пока пусто»
+          // с кнопкой «Записать первое» при упавшей сети — ложь
+          setСбой(true);
+        }
       } finally {
         loadingRef.current = false;
       }
@@ -146,6 +152,19 @@ export default function Reels() {
   }, []);
 
   if (reels === null) {
+    if (сбой) {
+      return (
+        <div>
+          <ScreenHeader title="Видео" />
+          <LoadError
+            onRetry={() => {
+              setСбой(false);
+              load();
+            }}
+          />
+        </div>
+      );
+    }
     return (
       <div className="h-[calc(100dvh-68px)] flex items-center justify-center">
         <Spinner size={28} />
@@ -266,8 +285,10 @@ export default function Reels() {
         onCountChange={bumpComments}
       />
 
-      <ReelReportSheet
-        reel={reportFor}
+      <ReportReasonSheet
+        open={reportFor !== null}
+        title="Пожаловаться на видео"
+        subtitle="Модератор посмотрит ролик. Три жалобы снимают его с показа сразу."
         onClose={() => setReportFor(null)}
         onPick={(reason) => reportFor && handleReport(reportFor, reason)}
       />
@@ -278,71 +299,6 @@ export default function Reels() {
         onSent={(куда) => setNotice(`Отправлено: ${куда}`)}
       />
     </div>
-  );
-}
-
-/* ── Выбор причины жалобы на ролик ──────────────────────────── */
-
-function ReelReportSheet({
-  reel,
-  onClose,
-  onPick,
-}: {
-  reel: Reel | null;
-  onClose: () => void;
-  onPick: (reason: string) => void;
-}) {
-  return (
-    <AnimatePresence>
-      {reel && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/60"
-          />
-          <motion.div
-            role="dialog"
-            aria-label="Причина жалобы"
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 380, damping: 36 }}
-            className="fixed bottom-0 left-0 right-0 z-50 bg-bg-elevated
-                       rounded-t-[var(--radius-sheet)] border-t border-hairline
-                       px-5 pt-3 pb-7 safe-bottom max-h-[80dvh]
-                       overflow-y-auto no-scrollbar"
-          >
-            <div className="w-10 h-1 rounded-full bg-surface-3 mx-auto mb-5" />
-
-            <h2 className="text-heading font-bold mb-1.5">Пожаловаться на видео</h2>
-            <p className="text-caption text-text-muted mb-4">
-              Модератор посмотрит ролик. Три жалобы снимают его с показа сразу.
-            </p>
-
-            <div className="flex flex-col gap-1.5 mb-4">
-              {REPORT_REASONS.map((r) => (
-                <button
-                  key={r.value}
-                  onClick={() => onPick(r.value)}
-                  className="w-full px-4 py-3 rounded-[var(--radius-tile)] text-left
-                             bg-surface-2 border border-hairline text-[15px]
-                             active:bg-surface transition-colors"
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-
-            <Button variant="secondary" size="lg" fullWidth onClick={onClose}>
-              Отмена
-            </Button>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
   );
 }
 

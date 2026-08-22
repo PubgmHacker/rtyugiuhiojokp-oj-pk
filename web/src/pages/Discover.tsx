@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { SlidersHorizontal, X, Flame, MapPin, Zap } from "lucide-react";
+import { SlidersHorizontal, X, Flame, MapPin, Zap, Bell } from "lucide-react";
 import SwipeDeck from "../components/SwipeDeck";
 import DailyCardBanner from "../components/DailyCard";
 import { useStore } from "../lib/store";
@@ -15,7 +15,7 @@ import {
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { useIsMounted } from "../hooks/useSafeAsync";
-import { Button, Chip, Spinner } from "../components/ui";
+import { Button, Chip, Spinner, Toggle, VerifiedBadge } from "../components/ui";
 import {
   GOALS,
   RELATION_TYPES,
@@ -42,7 +42,8 @@ export default function Discover() {
       user?.filter_relation_type ||
       user?.filter_city ||
       user?.filter_height_min ||
-      user?.filter_height_max
+      user?.filter_height_max ||
+      user?.filter_verified
   );
 
   return (
@@ -67,6 +68,8 @@ export default function Discover() {
           </span>
 
           <div className="flex items-center gap-2">
+            <NotificationsBell />
+
             {/* Буст живёт в шапке, а не на карточке: он поднимает СВОЮ
                 анкету, и среди кнопок, действующих на человека с фото,
                 читался как действие про него */}
@@ -109,6 +112,32 @@ export default function Discover() {
 
 /* ── Буст своей анкеты ──────────────────────────────────────── */
 
+/** Колокольчик центра уведомлений. Точка вместо числа: в шапке место на
+ *  глиф, а точное количество человек увидит на самой странице. */
+function NotificationsBell() {
+  const unread = useStore((s) => s.unreadNotifications);
+
+  return (
+    <Link
+      to="/notifications"
+      aria-label={unread > 0 ? `Уведомления, ${unread} новых` : "Уведомления"}
+      onClick={() => haptic("light")}
+      className="relative inline-flex items-center justify-center w-9 h-9
+                 rounded-full glass-strong text-text-secondary
+                 active:scale-95 transition-transform"
+    >
+      <Bell size={17} />
+      {unread > 0 && (
+        <span
+          aria-hidden
+          className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent
+                     ring-2 ring-bg"
+        />
+      )}
+    </Link>
+  );
+}
+
 function BoostButton() {
   const isMounted = useIsMounted();
   const [boost, setBoost] = useState<BoostState | null>(null);
@@ -130,7 +159,9 @@ function BoostButton() {
     // уточняем это здесь, а не заводим для этого отдельный контрол
     ? "Буст активен: анкета выше и в деке, и в очереди на оценку фото"
     : boost.left_today
-      ? `Поднять анкету на ${boost.minutes} минут (и в деке, и в оценке фото)`
+      ? `Поднять анкету на ${boost.minutes} минут (и в деке, и в оценке фото)` +
+        // Купленные паком — не возобновляются, их остаток человеку важен
+        (boost.bonus ? ` — куплено: ${boost.bonus}` : "")
       : boost.per_day
         ? "Бусты на сегодня закончились"
         // Имя уровня — с сервера: гейт живёт в FEATURE_MIN_TIER, и
@@ -174,6 +205,18 @@ function BoostButton() {
             className="absolute top-1 right-1 w-2 h-2 rounded-full bg-success
                        ring-2 ring-bg"
           />
+        )}
+        {/* Счётчик только для купленных паком: суточные и так вернутся, а
+            за потраченные Stars остаток должен быть на виду */}
+        {!boost.active && boost.bonus > 0 && (
+          <span
+            aria-hidden
+            className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full
+                       bg-accent text-white text-[10px] font-bold leading-4
+                       text-center ring-2 ring-bg"
+          >
+            {boost.bonus}
+          </span>
         )}
       </button>
 
@@ -225,6 +268,7 @@ function FilterSheet({
   );
   const [heightMin, setHeightMin] = useState(user?.filter_height_min ?? 155);
   const [heightMax, setHeightMax] = useState(user?.filter_height_max ?? 195);
+  const [verifiedOnly, setVerifiedOnly] = useState(user?.filter_verified ?? false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -242,6 +286,7 @@ function FilterSheet({
     setHeightOn(user.filter_height_min != null || user.filter_height_max != null);
     setHeightMin(user.filter_height_min ?? 155);
     setHeightMax(user.filter_height_max ?? 195);
+    setVerifiedOnly(user.filter_verified ?? false);
     setSaveError("");
   }, [open, user]);
 
@@ -258,6 +303,7 @@ function FilterSheet({
     setHeightOn(false);
     setHeightMin(155);
     setHeightMax(195);
+    setVerifiedOnly(false);
   }, []);
 
   const save = useCallback(async () => {
@@ -275,6 +321,7 @@ function FilterSheet({
         filter_city: city.trim(),
         filter_height_min: heightOn ? heightMin : null,
         filter_height_max: heightOn ? heightMax : null,
+        filter_verified: verifiedOnly,
       });
       const fresh = await getMyProfile();
       setUser(fresh);
@@ -302,6 +349,7 @@ function FilterSheet({
     heightOn,
     heightMin,
     heightMax,
+    verifiedOnly,
     setUser,
     onClose,
   ]);
@@ -362,6 +410,29 @@ function FilterSheet({
                 ))}
               </div>
             </div>
+
+            {/* Только подтверждённые. Стоит выше возраста и вкусовых фильтров:
+                это единственный фильтр про безопасность, а не про предпочтения,
+                и он должен попадаться на глаза без прокрутки. Та же галочка,
+                что на карточках, — чтобы связь читалась без объяснений */}
+            <button
+              type="button"
+              aria-pressed={verifiedOnly}
+              onClick={() => {
+                haptic("select");
+                setVerifiedOnly((v) => !v);
+              }}
+              className="w-full flex items-center gap-3 mb-7 text-left"
+            >
+              <VerifiedBadge size={22} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[15px] font-medium">Только подтверждённые</p>
+                <p className="text-caption text-text-muted leading-snug">
+                  Анкеты, прошедшие проверку по видео
+                </p>
+              </div>
+              <Toggle on={verifiedOnly} />
+            </button>
 
             {/* Возраст */}
             <div className="mb-7">

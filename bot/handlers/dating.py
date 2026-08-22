@@ -16,6 +16,12 @@ from keyboards import (
     dating_action_kb, like_locked_kb, limit_reached_kb, main_kb,
     no_more_profiles_kb, profile_kb, report_reasons_kb,
 )
+from services.enforcement import (
+    TEXT_BAN_REASONS,
+    answer_ban_screen,
+    apply_text_strike,
+    strike_suffix,
+)
 from services.moderation import moderate_text, humanize
 from services.plans import видно_кто_лайкнул
 from states import DatingStates
@@ -319,20 +325,30 @@ async def process_like_message(message: Message, state: FSMContext):
         await message.answer(T.ERROR_GENERIC, reply_markup=main_kb())
         return
 
-    # Получатель увидит текст до мэтча, то есть до того, как сможет
-    # заблокировать отправителя — модерируем перед отправкой
-    verdict = await moderate_text(note)
-    if verdict.get("blocked"):
-        await message.answer(
-            T.LIKE_MESSAGE_REJECTED.format(reason=humanize(verdict.get("reason", "")))
-        )
-        return
-
+    # Пользователь нужен ДО модерации: нарушение пишется в журнал страйков
+    # на его id (тип "like_message" — как у API в routers/likes.py)
     db_user = await get_or_create_user(
         message.from_user.id,
         message.from_user.username or "",
         message.from_user.first_name or "",
     )
+
+    # Получатель увидит текст до мэтча, то есть до того, как сможет
+    # заблокировать отправителя — модерируем перед отправкой
+    verdict = await moderate_text(note)
+    исход = await apply_text_strike(db_user["id"], "like_message", note, verdict)
+    if verdict.get("blocked"):
+        if исход is not None and исход.banned:
+            await answer_ban_screen(
+                message, TEXT_BAN_REASONS[исход.category], исход.banned_until
+            )
+            return
+        await message.answer(
+            T.LIKE_MESSAGE_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+            + strike_suffix(исход)
+        )
+        return
+
     like_result = await like_and_match(db_user["id"], target_id, "like", note)
 
     await state.set_state(DatingStates.viewing_profile)

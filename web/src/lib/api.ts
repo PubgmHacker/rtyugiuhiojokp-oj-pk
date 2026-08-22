@@ -40,6 +40,17 @@ api.interceptors.response.use(
       // именно аккаунт закрыт, — по нему человек пишет в поддержку. Во-вторых,
       // выкидывать на вход значит сказать «аккаунта нет», а он есть, и после
       // разбора он должен открыться без повторного входа.
+      //
+      // Срок бана кладём рядом со снимком аккаунта: экран блокировки запросов
+      // не делает (любой вернулся бы тем же 403) и берёт срок отсюда.
+      // Отсутствие срока в ответе — вечный бан, ключ убираем.
+      try {
+        const до = error.response?.data?.banned_until;
+        if (до) localStorage.setItem("sd_banned_until", String(до));
+        else localStorage.removeItem("sd_banned_until");
+      } catch {
+        // приватный режим: без срока экран покажет «бессрочная»
+      }
       if (window.location.pathname !== "/banned") {
         window.location.href = "/banned";
       }
@@ -69,6 +80,9 @@ export interface UserProfile {
   ai_bio?: string | null;
   looking_for: string;
   is_incognito: boolean;
+  // Пауза: анкета убрана из выдачи по своей воле. Приходит только в своей
+  // анкете (/auth/me и /profiles/me) — чужую паузу сервер не отдаёт.
+  is_paused?: boolean;
   hide_age?: boolean;
   hide_distance?: boolean;
   hide_from_visitors?: boolean;
@@ -89,6 +103,8 @@ export interface UserProfile {
   filter_city?: string;
   filter_height_min?: number | null;
   filter_height_max?: number | null;
+  /** «Только подтверждённые» в выдаче — защитный фильтр, без гейта по тарифу. */
+  filter_verified?: boolean;
   /** Только в списке «кто меня лайкнул»: текст, приложенный к лайку. */
   like_message?: string;
   /** Карточка скрыта до подписки: имени и фото в ответе нет. */
@@ -102,6 +118,13 @@ export interface UserProfile {
   decor?: string | null;
   /** Схема оформления приложения: переезжает с человеком между устройствами. */
   app_theme?: string;
+  /**
+   * Язык интерфейса — код из `ЯЗЫКИ` в lib/i18n. Приезжает уже в ответе на
+   * вход, а не отдельным запросом: мини-апп выбирает язык до первой отрисовки,
+   * и лишний круг успел бы мигнуть русским тому, кто выбрал другой язык.
+   * Живёт на аккаунте, а не на анкете, поэтому есть и во время онбординга.
+   */
+  locale?: string;
   invited_count?: number;
   referral_boost?: boolean;
   referral_target?: number;
@@ -133,6 +156,8 @@ export interface DeckProfile {
   sticker?: string | null;
   /** Код рамки карточки; пусто — рамки нет. */
   decor?: string | null;
+  /** Профиль прошёл живую проверку лица — галочка на карточке. */
+  is_verified?: boolean;
 }
 
 export interface MatchResponse {
@@ -245,14 +270,118 @@ export async function resetDeck(): Promise<void> {
   await api.post("/profiles/deck/reset");
 }
 
-/** Счётчики для бейджей таббара. Лёгкий: два числа вместо списка чатов. */
+// ── Верификация профиля (галочка) ──────────────────────────────
+
+/** Код позы задания. Подписи к позам живут в VerificationSheet. */
+export type VerificationPose = "straight" | "left" | "right" | "up" | "smile";
+
+export interface VerificationChallenge {
+  id: string;
+  poses: VerificationPose[];
+  /** Секунд до истечения задания. */
+  expires_in: number;
+}
+
+export interface VerificationStatus {
+  is_verified: boolean;
+  /** Сколько неудачных попыток осталось на сегодня. */
+  attempts_left: number;
+  /** Есть ли фото в анкете — без него сравнивать не с чем. */
+  has_photo: boolean;
+  /** Кто проверяет: "builtin" — позы + AI на сервере, "sumsub" — WebSDK провайдера. */
+  provider: "builtin" | "sumsub";
+  /** Есть начатая провайдерская попытка без вердикта — стоит сразу опросить finalize. */
+  provider_pending: boolean;
+  challenge: VerificationChallenge | null;
+}
+
+export async function getVerificationStatus(): Promise<VerificationStatus> {
+  const { data } = await api.get("/verification/status");
+  return data;
+}
+
+export async function requestVerificationChallenge(): Promise<
+  VerificationChallenge & { attempts_left: number }
+> {
+  const { data } = await api.post("/verification/challenge");
+  return data;
+}
+
+/** Отправить кадры по заданию. Сервер их не сохраняет — только вердикт.
+ *  Таймаут длиннее обычного: AI разбирает четыре изображения. */
+export async function submitVerification(
+  frames: Blob[]
+): Promise<{ verified: boolean }> {
+  const form = new FormData();
+  frames.forEach((f, i) => form.append("frames", f, `frame-${i}.jpg`));
+  const { data } = await api.post("/verification/submit", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 60000,
+  });
+  return data;
+}
+
+/** Токен для WebSDK Sumsub (провайдерский режим). Заводит попытку на сервере. */
+export async function requestSumsubToken(): Promise<{
+  token: string;
+  expires_in: number;
+  attempts_left: number;
+}> {
+  const { data } = await api.post("/verification/sumsub/token");
+  return data;
+}
+
+/** Опрос вердикта провайдера: зовём после WebSDK, пока не решится.
+ *  200 {verified} — галочка; 200 {pending} — ещё думает; 422 — отказ с причиной. */
+export async function finalizeSumsub(): Promise<{
+  verified?: boolean;
+  pending?: boolean;
+}> {
+  const { data } = await api.post("/verification/sumsub/finalize", undefined, {
+    // Внутри сервер ходит к Sumsub и сверяет лицо — дольше обычного запроса
+    timeout: 45000,
+  });
+  return data;
+}
+
+/** Счётчики для бейджей таббара. Лёгкий: три числа вместо трёх списков. */
 export interface BadgeCounts {
   messages: number;
   likes: number;
+  /** Красная точка колокольчика — непрочитанное в центре уведомлений. */
+  notifications: number;
 }
 
 export async function getBadges(): Promise<BadgeCounts> {
   const { data } = await api.get("/badges");
+  return data;
+}
+
+/** Событие центра уведомлений. Текст собирает клиент из kind+payload:
+ *  API не знает языка интерфейса. Неизвестный kind — молча спрятать
+ *  (старый клиент переживает новые виды событий без «undefined»). */
+export interface NotificationItem {
+  id: string;
+  kind: string;
+  payload: Record<string, string>;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationsPage {
+  items: NotificationItem[];
+  /** По всей ленте, не по срезу — бейдж не должен обещать меньше, чем есть. */
+  unread: number;
+}
+
+export async function getNotifications(): Promise<NotificationsPage> {
+  const { data } = await api.get("/notifications");
+  return data;
+}
+
+/** Погасить всё непрочитанное разом. Идемпотентно — повторный вызов ноль. */
+export async function markNotificationsRead(): Promise<{ read: number }> {
+  const { data } = await api.post("/notifications/read");
   return data;
 }
 
@@ -531,6 +660,34 @@ export async function reportReel(
   await api.post(`/reels/${reelId}/report`, { reason, description });
 }
 
+/** Жалоба на комментарий: у зрителя должна быть не только кнопка автора
+    «удалить», иначе грубость висит, пока владелец ролика не зайдёт. */
+export async function reportReelComment(
+  reelId: string,
+  commentId: string,
+  reason: string
+): Promise<void> {
+  await api.post(`/reels/${reelId}/comments/${commentId}/report`, {
+    reason,
+    description: "",
+  });
+}
+
+export async function reportStory(storyId: string, reason: string): Promise<void> {
+  await api.post(`/stories/${storyId}/report`, { reason, description: "" });
+}
+
+export async function reportRoomMessage(
+  roomId: string,
+  messageId: string,
+  reason: string
+): Promise<void> {
+  await api.post(`/rooms/${roomId}/messages/${messageId}/report`, {
+    reason,
+    description: "",
+  });
+}
+
 /** Просмотр: ошибку глушим, статистика не должна мешать смотреть. */
 export async function recordReelView(reelId: string): Promise<void> {
   try {
@@ -658,6 +815,8 @@ export interface CaseReward {
   chance_percent: number;
   /** Заполнено, только если выпала наклейка. */
   sticker?: Sticker | null;
+  /** Заполнено, только если выпала обложка карточки. */
+  decor?: DecorItem | null;
 }
 
 export interface StickerCollection {
@@ -669,19 +828,22 @@ export interface StickerCollection {
 }
 
 export interface CaseState {
-  left_today: number;
-  per_day: number;
+  left: number;
+  per_month: number;
+  /** Когда квота обновится — первое число следующего месяца (UTC). */
+  resets_at?: string | null;
   rewards: CaseReward[];
+  /** Уровень, с которого кейсы открываются, — с сервера, не словом в клиенте. */
+  required_tier_name: string;
 }
 
 export interface CaseOpenResult {
   reward: CaseReward;
-  left_today: number;
-  per_day: number;
-  boost_minutes: number;
-  /** Такая наклейка уже была — вместо неё начислен суперлайк. */
+  left: number;
+  per_month: number;
+  resets_at?: string | null;
+  /** Повтор наклейки. Возможен только у полностью собранной коллекции. */
   duplicate?: boolean;
-  duplicate_superlikes?: number;
 }
 
 export async function getStickers(): Promise<StickerCollection> {
@@ -813,8 +975,11 @@ export interface BoostState {
   active: boolean;
   until?: string | null;
   minutes: number;
+  /** Суточные включения плюс купленные паком. */
   left_today: number;
   per_day: number;
+  /** Сколько из left_today куплено за Stars — не возобновляются. */
+  bonus: number;
   /** Уровень, который открывает буст — приходит с сервера, чтобы не писать
    *  имя тарифа словом: гейт живёт в FEATURE_MIN_TIER. */
   required_tier_name: string;
@@ -908,6 +1073,23 @@ export interface IAPVerifyResponse {
  */
 export async function getPlans(): Promise<PlansOut> {
   const { data } = await api.get("/iap/plans");
+  return data;
+}
+
+/** Что дала активация промокода. plan/expires_at — итоговая подписка:
+ *  если уровень человека уже выше, plan останется прежним, а срок вырастет. */
+export interface PromoActivateOut {
+  tier: string;
+  days: number;
+  plan: string;
+  expires_at: string;
+}
+
+/** Активировать промокод. Регистр, пробелы и дефисы нормализует сервер.
+ *  Отказы приходят статусами: 404 нет такого, 409 уже активировал,
+ *  410 истёк или закончился — текст для человека лежит в detail. */
+export async function activatePromo(code: string): Promise<PromoActivateOut> {
+  const { data } = await api.post("/promo/activate", { code });
   return data;
 }
 
@@ -1142,16 +1324,17 @@ export async function deleteStory(storyId: string): Promise<void> {
 export interface DecorItem {
   code: string;
   title: string;
-  hint: string;
+  rarity: string;
+  rarity_title: string;
+  /** Есть ли обложка в коллекции. Носить можно только свою. */
   unlocked: boolean;
-  have: number;
-  need: number;
 }
 
 export interface DecorCollection {
   decors: DecorItem[];
   selected?: string | null;
-  stickers_owned: number;
+  owned: number;
+  total: number;
 }
 
 export async function getDecor(): Promise<DecorCollection> {

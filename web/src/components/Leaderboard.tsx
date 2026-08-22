@@ -8,10 +8,10 @@
  * ты себя не находишь, только расстраивает.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Crown, Trophy } from "lucide-react";
 import { getLeaderboard, type LeaderboardOut } from "../lib/api";
-import { Chip, EmptyState, Skeleton } from "./ui";
+import { Chip, EmptyState, LoadError, Skeleton } from "./ui";
 import { useSectionOpen } from "../lib/useSectionOpen";
 
 export default function Leaderboard() {
@@ -21,13 +21,15 @@ export default function Leaderboard() {
   const [data, setData] = useState<LeaderboardOut | null>(null);
   const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
+  const загрузить = useCallback(() => {
     setData(null);
     setFailed(false);
     getLeaderboard(period)
       .then(setData)
       .catch(() => setFailed(true));
   }, [period]);
+
+  useEffect(загрузить, [загрузить]);
 
   // Переключатель периода нужен всегда, даже пока данные грузятся или не
   // пришли: иначе переключение работает только когда рейтинг уже непустой,
@@ -47,11 +49,7 @@ export default function Leaderboard() {
     return (
       <div className="px-4 pt-3">
         {переключатель}
-        <EmptyState
-          emoji="📊"
-          title="Рейтинг недоступен"
-          description="Попробуйте зайти позже."
-        />
+        <LoadError title="Рейтинг недоступен" onRetry={загрузить} />
       </div>
     );
   }

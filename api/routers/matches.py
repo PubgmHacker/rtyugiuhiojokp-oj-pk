@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, desc, func, or_, select
@@ -14,6 +14,7 @@ from models.schemas import (
 )
 from services.ai_matchmaker import generate_icebreakers
 from services.ai_moderation import log_moderation, moderate_text
+from services.enforcement import enforce_text_verdict
 from services.chat_delivery import (
     ДоставкаОтклонена, fan_out, reel_preview, save_message,
 )
@@ -21,6 +22,7 @@ from services.streaks import (
     can_revive as стрик_оживим, revive_streak, streak_emoji, get_streak,
 )
 from services.direct_messages import direct_quota_left, start_direct_message
+from services.matching import ОНЛАЙН_МИНУТ
 from services.plans import (
     FEATURE_MIN_TIER,
     TIERS,
@@ -127,6 +129,28 @@ async def get_matches(
     )
     profiles = {p.user_id: p for p in result.scalars().all()}
 
+    # Галочка и «в сети» — тем же пакетом: карточки людей в чатах читаются
+    # как карточки деки, а там оба сигнала есть. Порог онлайна общий
+    # (ОНЛАЙН_МИНУТ), чтобы сосед по экрану не спорил с декой.
+    недавно = datetime.now(timezone.utc) - timedelta(minutes=ОНЛАЙН_МИНУТ)
+    верифицированные: set[str] = set()
+    онлайн: set[str] = set()
+    result = await session.execute(
+        select(User.id, User.is_verified, User.last_seen_at).where(
+            User.id.in_(partner_ids)
+        )
+    )
+    for uid, verified, last_seen in result.all():
+        if verified:
+            верифицированные.add(uid)
+        if last_seen is not None and last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        if last_seen is not None and last_seen >= недавно:
+            p = profiles.get(uid)
+            # Инкогнито и пауза гасят флаг — то же правило, что в деке
+            if p and not p.is_incognito and not p.is_paused:
+                онлайн.add(uid)
+
     # Последнее сообщение каждого чата
     last_ts = (
         select(func.max(Message.created_at).label("ts"), Message.match_id)
@@ -194,6 +218,8 @@ async def get_matches(
                 interests=as_list(profile.interests) if profile else [],
                 sticker=картинка_наклейки(profile.sticker if profile else None),
                 decor=безопасный_код(profile.decor if profile else None),
+                is_verified=partner_id in верифицированные,
+                is_online=partner_id in онлайн,
             )
 
         last = last_messages.get(m.id)
@@ -307,8 +333,11 @@ async def post_message(
     if text:
         verdict = await moderate_text(text)
         await log_moderation(user.id, "chat_message", text, verdict)
-        if verdict["blocked"]:
-            raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+        ответ_бана = await enforce_text_verdict(
+            session, user, verdict, "Сообщение нарушает правила"
+        )
+        if ответ_бана is not None:
+            return ответ_бана
 
     # Мэтч читался этой сессией, а `save_message` пишет своей: без коммита её
     # транзакция не увидит незакоммиченных изменений (например, флага ответа)
@@ -362,8 +391,11 @@ async def send_direct_message(
 
     verdict = await moderate_text(text)
     await log_moderation(user.id, "direct_message", text, verdict)
-    if verdict["blocked"]:
-        raise HTTPException(status_code=422, detail="Сообщение нарушает правила")
+    ответ_бана = await enforce_text_verdict(
+        session, user, verdict, "Сообщение нарушает правила"
+    )
+    if ответ_бана is not None:
+        return ответ_бана
 
     match = await start_direct_message(session, user.id, data.target_id)
     if not isinstance(match, Match):

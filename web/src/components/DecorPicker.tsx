@@ -1,10 +1,11 @@
 /**
- * Витрина рамок. Живёт рядом с коллекцией наклеек: условие открытия —
- * размер той же коллекции, и человек должен видеть цель там, где видит
- * прогресс.
+ * Витрина рамок. Живёт под коллекцией наклеек: рамка выпадает из того же
+ * кейса, и цель должна быть видна там, где виден прогресс.
  *
- * Закрытые рамки показываем с полоской «12 из 15». Скрывать их — терять
- * весь смысл: рамка мотивирует, только если о ней известно заранее.
+ * Ещё не выпавшие рамки показываем приглушёнными, с замком и редкостью.
+ * Скрывать их — терять весь смысл: рамка мотивирует, только если о ней
+ * известно заранее. Прогресса у рамок нет сознательно — это не награда за
+ * счётчик, а лимитированный дроп, и полоска «12 из 15» тут врала бы.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -13,33 +14,34 @@ import { Check, Lock } from "lucide-react";
 import { getDecor, selectDecor, type DecorCollection, type DecorItem } from "../lib/api";
 import { decorPreviewShadow } from "../lib/decor";
 import { haptic } from "../lib/haptics";
+import { Button } from "./ui";
+
+/** Почему рамку нельзя надеть. Одной строкой — и в подсказке, и для читалки. */
+function условие(item: DecorItem): string {
+  return `выпадает из кейса · ${item.rarity_title.toLowerCase()}`;
+}
 
 export default function DecorPicker() {
   const [данные, setДанные] = useState<DecorCollection | null>(null);
   const [занято, setЗанято] = useState<string | null>(null);
   const [ошибка, setОшибка] = useState("");
 
-  useEffect(() => {
-    let отменено = false;
-    (async () => {
-      try {
-        const d = await getDecor();
-        if (!отменено) setДанные(d);
-      } catch {
-        if (!отменено) setОшибка("Не удалось загрузить оформления");
-      }
-    })();
-    return () => {
-      отменено = true;
-    };
+  const загрузить = useCallback(() => {
+    setОшибка("");
+    setДанные(null);
+    getDecor()
+      .then(setДанные)
+      .catch(() => setОшибка("Не удалось загрузить оформления"));
   }, []);
+
+  useEffect(загрузить, [загрузить]);
 
   const выбрать = useCallback(
     async (item: DecorItem | null) => {
       const код = item?.code ?? "";
       if (item && !item.unlocked) {
         haptic("warning");
-        setОшибка(item.hint);
+        setОшибка(`«${item.title}» ещё не ваша: ${условие(item)}`);
         return;
       }
       haptic("light");
@@ -61,7 +63,16 @@ export default function DecorPicker() {
   );
 
   if (ошибка && !данные) {
-    return <p className="text-[13px] text-text-muted px-1">{ошибка}</p>;
+    // Секция вспомогательная — без полноэкранной заглушки, но с повтором:
+    // тупиковый текст заставлял перезагружать весь экран кейсов
+    return (
+      <div className="px-1">
+        <p className="text-[13px] text-text-muted mb-2">{ошибка}</p>
+        <Button variant="secondary" size="sm" onClick={загрузить}>
+          Повторить
+        </Button>
+      </div>
+    );
   }
   if (!данные) {
     return <div className="h-28 rounded-2xl skeleton" />;
@@ -74,7 +85,7 @@ export default function DecorPicker() {
           Рамка карточки
         </h3>
         <span className="text-[12px] text-text-muted">
-          {данные.stickers_owned} наклеек
+          {данные.owned} из {данные.total}
         </span>
       </div>
 
@@ -112,7 +123,9 @@ export default function DecorPicker() {
               disabled={занято !== null}
               aria-pressed={надета}
               aria-label={
-                item.unlocked ? `Рамка «${item.title}»` : `${item.title} — ${item.hint}`
+                item.unlocked
+                  ? `Рамка «${item.title}» · ${item.rarity_title}`
+                  : `${item.title} — ${условие(item)}`
               }
               whileTap={item.unlocked ? { scale: 0.97 } : undefined}
               className={`relative aspect-[3/4] rounded-2xl overflow-hidden
@@ -146,17 +159,14 @@ export default function DecorPicker() {
                                    bg-black/55 flex items-center justify-center">
                     <Lock size={11} className="text-white/90" />
                   </span>
-                  {/* Полоска вместо подписи «нужно 15»: «12 из 15» читается
-                      как «почти», а требование — как «не для меня» */}
-                  {item.need > 0 && (
-                    <span className="absolute bottom-6 left-1.5 right-1.5 h-[3px]
-                                     rounded-full bg-white/25 overflow-hidden">
-                      <span
-                        className="block h-full rounded-full bg-white/85"
-                        style={{ width: `${(item.have / item.need) * 100}%` }}
-                      />
-                    </span>
-                  )}
+                  {/* Редкость вместо полоски прогресса: рамка не набирается
+                      счётчиком, а выпадает — и редкость единственное, что
+                      честно объясняет, почему её ещё нет */}
+                  <span className="absolute top-1.5 left-1.5 px-1.5 py-[1px]
+                                   rounded-full bg-black/55 text-[9.5px] font-bold
+                                   uppercase tracking-wide text-white/90">
+                    {item.rarity_title}
+                  </span>
                 </>
               )}
             </motion.button>

@@ -71,6 +71,8 @@ async def activate_premium(
     provider: str,
     expires_at: datetime | None = None,
     tier: str = TIER_PLUS,
+    amount: int | None = None,
+    currency: str | None = None,
 ) -> dict:
     """Начислить или продлить Premium ровно один раз на платёж.
 
@@ -78,6 +80,11 @@ async def activate_premium(
     он приходит в самой транзакции, и считать его самим означало бы разойтись
     с Apple после продления или возврата. Иначе продлеваем на `days` поверх
     остатка — купленное время не должно сгорать.
+
+    `amount`/`currency` — цена в минорных единицах для выручки в админке.
+    На начисление не влияют — только запись. У App Store остаются None:
+    валюту покупателя и комиссию магазина сервер не видит, эту выручку
+    считает App Store Connect.
     """
     # Отдельная транзакция: при гонке двух проверок одного платежа второй
     # INSERT упадёт на уникальном ключе и начисления не произойдёт
@@ -88,6 +95,8 @@ async def activate_premium(
                 external_id=payment_id,
                 user_id=user_id,
                 days=days,
+                amount=amount,
+                currency=currency,
             ))
     except IntegrityError:
         result = await session.execute(

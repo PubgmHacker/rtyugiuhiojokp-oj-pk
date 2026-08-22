@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, SlidersHorizontal, MessageCircleHeart } from "lucide-react";
+import { X, Heart, Star, SlidersHorizontal, MessageCircleHeart, RotateCcw } from "lucide-react";
 import type { DeckProfile, MatchResponse, DailyLimits } from "../lib/api";
 import {
   likeProfile,
@@ -19,7 +19,7 @@ import MatchModal from "./MatchModal";
 import DirectMessageSheet from "./DirectMessageSheet";
 import LimitSheet from "./LimitSheet";
 import SafetySheet from "./SafetySheet";
-import { Button, IconButton, EmptyState, Skeleton } from "./ui";
+import { Button, IconButton, EmptyState, LoadError, Skeleton } from "./ui";
 
 interface MatchData {
   partnerName: string;
@@ -56,6 +56,25 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   const [directFor, setDirectFor] = useState<DeckProfile | null>(null);
   // Жалоба/блокировка с карточки — обязательный вход безопасности из деки
   const [safetyFor, setSafetyFor] = useState<DeckProfile | null>(null);
+  /* Последнее решение — для возврата карточки.
+   *
+   * Один шаг назад, а не история: промах бывает ровно на той анкете, которая
+   * только что уехала, а «отмотать пять» уже не исправление, а обход деки.
+   *
+   * Мэтч не откатываем сознательно: сервер на смену решения мэтч не гасит
+   * (routers/likes.py возвращается раньше на `pass`), и кнопка «вернуть»
+   * оставила бы человеку живую беседу с тем, кого он «развзаимнил». Разорвать
+   * мэтч можно там, где это и ожидается — в самой беседе.
+   *
+   * Возврат бесплатный. У Tinder это платная функция, у Мимолёта и Дайвинчика
+   * тоже — а промахнувшийся палец не повод продавать подписку: людям, которые
+   * только что случайно пропустили того, кто им понравился, продукт должен
+   * помогать, а не выставлять счёт.
+   */
+  const [откат, setОткат] = useState<{
+    profile: DeckProfile;
+    type: "pass" | "like" | "superlike";
+  } | null>(null);
 
   const loadingRef = useRef(false);
   // Долгое удержание лайка открывает «лайк с сообщением» — отдельной
@@ -198,6 +217,9 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
           });
           addMatch(result.match as MatchResponse);
         }
+        // Возврат предлагаем ровно для последнего решения — и только если оно
+        // не обернулось мэтчем: см. комментарий у состояния
+        setОткат(result.matched ? null : { profile, type });
       } catch (e: any) {
         // Карточку возвращаем всегда: решение пользователя не должно
         // пропадать ни от сбоя сети, ни от исчерпанного лимита
@@ -244,6 +266,52 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
     [deck, handleSwipe]
   );
 
+  /** Вернуть последнюю карточку и отозвать решение по ней. */
+  const откатить = useCallback(async () => {
+    const шаг = откат;
+    if (!шаг || busyRef.current) return;
+    busyRef.current = true;
+    setОткат(null);
+    setError(null);
+    haptic("light");
+
+    // Карточку возвращаем сразу: возврат — исправление промаха, и ждать сеть
+    // здесь значит несколько секунд смотреть на анкету, которую уже отверг.
+    // Фильтром страхуемся от дубликата, если сервер успел выдать её заново
+    setDeck([
+      шаг.profile,
+      ...useStore.getState().deck.filter((p) => p.id !== шаг.profile.id),
+    ]);
+
+    // Пропуск отзывать нечем и не нужно: он ничего не тратит и никому не
+    // показывается. А лайк уже ушёл получателю в «вы понравились» и занял
+    // суточную квоту — его переводим в пропуск, иначе «вернул» означало бы
+    // «вернул себе карточку, но лайк у него остался»
+    if (шаг.type === "pass") {
+      busyRef.current = false;
+      return;
+    }
+
+    try {
+      await likeProfile(шаг.profile.id, "pass");
+      // Остатки спрашиваем у сервера, а не прибавляем единицу локально:
+      // суперлайк мог уйти из бонусных (кейсы), и они назад не возвращаются —
+      // угаданный счётчик обещал бы то, чего нет
+      const [лимиты, квота] = await Promise.all([
+        getDailyLimits().catch(() => null),
+        getSuperlikeQuota().catch(() => null),
+      ]);
+      if (!isMounted()) return;
+      if (лимиты) setLimits(лимиты);
+      if (квота) setSuperlikesLeft(квота.left);
+    } catch {
+      haptic("error");
+      setError("Лайк не удалось отозвать — решите по анкете ещё раз");
+    } finally {
+      busyRef.current = false;
+    }
+  }, [isMounted, откат, setDeck]);
+
   /* ── Первая загрузка ───────────────────────────────────────── */
   if (isLoading && deck.length === 0) {
     return (
@@ -265,6 +333,18 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
 
   /* ── Анкеты закончились ────────────────────────────────────── */
   if (deck.length === 0) {
+    // Сбой — не «Анкеты закончились»: приветливое ✨ при упавшей сети врёт,
+    // и человек уходит, решив, что смотреть некого
+    if (error) {
+      return (
+        <LoadError
+          onRetry={() => {
+            setIsLoading(true);
+            loadDeck();
+          }}
+        />
+      );
+    }
     return (
       <EmptyState
         // Разбитое сердце тут читалось как отказ, хотя ничего плохого не
@@ -279,6 +359,15 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         }
         action={
           <div className="flex flex-col gap-3 w-full max-w-[280px]">
+            {/* Возврат нужен здесь не меньше, чем в деке: чаще всего палец
+                промахивается именно на последней анкете, а после неё дека
+                пуста и рейл с кнопками уже не показывается */}
+            {откат && (
+              <Button onClick={откатить} variant="secondary" size="lg" fullWidth>
+                <RotateCcw size={17} />
+                Вернуть последнюю
+              </Button>
+            )}
             <Button onClick={handleRefresh} size="lg" fullWidth>
               Обновить
             </Button>
@@ -322,6 +411,47 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
                 />
               );
             })}
+        </AnimatePresence>
+
+        {/* Возврат последней карточки. Слева и сверху — напротив жалобы и
+            подальше от рейла решений: там все кнопки действуют на того, кто
+            сейчас на фото, а эта — на предыдущего человека.
+            С фотографией вместо имени: «Вернуть Аню» требует падежа, которого
+            из display_name не вывести, а лицо узнаётся быстрее любой подписи */}
+        <AnimatePresence>
+          {откат && (
+            <motion.button
+              key="rewind"
+              type="button"
+              initial={{ opacity: 0, x: -12, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 420, damping: 30 }}
+              onClick={откатить}
+              aria-label={`Вернуть анкету: ${откат.profile.display_name}`}
+              className="absolute top-7 left-3 z-30 flex items-center gap-2 pl-1.5 pr-3.5
+                         py-1.5 rounded-full glass-strong text-[13.5px] font-semibold
+                         text-text-secondary active:scale-95 transition-transform"
+            >
+              {откат.profile.photos?.[0] ? (
+                <img
+                  src={откат.profile.photos[0]}
+                  alt=""
+                  className="w-6 h-6 rounded-full object-cover"
+                />
+              ) : (
+                <span
+                  aria-hidden
+                  className="w-6 h-6 rounded-full bg-surface-2 flex items-center
+                             justify-center text-[11px] font-bold"
+                >
+                  {откат.profile.display_name.slice(0, 1)}
+                </span>
+              )}
+              <RotateCcw size={14} strokeWidth={2.6} />
+              Вернуть
+            </motion.button>
+          )}
         </AnimatePresence>
 
         {/* Действия — вертикальным столбцом поверх карточки: так до них

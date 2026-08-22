@@ -32,10 +32,14 @@ def _user(uid: str = "u-me", telegram_id: int = 111, banned: bool = False):
         apple_id=None,
         role="user",
         is_banned=banned,
+        # None = вечный: lift_ban_if_expired читает поле у каждого забаненного
+        banned_until=None,
         is_verified=False,
         created_at=datetime.now(timezone.utc),
         phone=None,
         last_seen_at=None,
+        # Как в новой строке БД: язык интерфейса до выбора — русский
+        locale="ru",
     )
 
 
@@ -59,12 +63,15 @@ def _profile(uid: str, **over):
         mbti="",
         height_cm=170,
         is_incognito=False,
+        is_paused=False,
         hide_age=False,
         hide_distance=False,
         hide_from_visitors=False,
         boost_until=None,
         bonus_superlikes=0,
+        bonus_boosts=0,
         sticker=None,
+        verified_photo="",
         # Как в новой строке БД: рамки нет (NULL), схема не выбрана ("")
         decor=None,
         app_theme="",
@@ -78,11 +85,23 @@ def _profile(uid: str, **over):
         filter_city="",
         filter_height_min=None,
         filter_height_max=None,
+        filter_verified=False,
         sample_key=0.5,
         tg_channel="",
     )
     поля.update(over)
     return SimpleNamespace(**поля)
+
+
+def _входящий_лайк(лайк, *, verified: bool = False, last_seen=None):
+    """Строка выборки «кто меня лайкнул».
+
+    Роутер читает из запроса тройку `(Like, is_verified, last_seen)`: галочку
+    и признак «в сети» он отдаёт тем же ответом, что и саму карточку. Тесты
+    держат last_seen=None — «в сети» тогда False, и путь не трогает поля
+    анкеты, которых нет в облегчённой фикстуре `_profile`.
+    """
+    return (лайк, verified, last_seen)
 
 
 class _Result:
@@ -167,7 +186,7 @@ async def test_бесплатному_не_отдаём_имя_лайкнувш�
     )
     session = _Session([
         _Result(rows=[]),          # кого я уже оценил
-        _Result(rows=[лайк]),      # входящие лайки
+        _Result(rows=[_входящий_лайк(лайк)]),      # входящие лайки
     ])
 
     async with await _client(app, session, _user()) as client:
@@ -193,7 +212,7 @@ async def test_подписчику_отдаём_имя_и_текст_лайка
     )
     session = _Session([
         _Result(rows=[]),                       # кого я оценил
-        _Result(rows=[лайк]),                   # входящие
+        _Result(rows=[_входящий_лайк(лайк, verified=True)]),    # входящие
         _Result(scalar=_profile("u-fan")),      # анкета лайкнувшего
     ])
 
@@ -204,6 +223,8 @@ async def test_подписчику_отдаём_имя_и_текст_лайка
     assert карточка["is_locked"] is False
     assert карточка["display_name"] == "Имя-u-fan"
     assert карточка["like_message"] == "привет"
+    # Галочка из JOIN должна дойти до карточки в списке «кто меня лайкнул».
+    assert карточка["is_verified"] is True, "галочка не дошла до списка лайков"
 
 
 # ── Приватность на живых ответах ────────────────────────────────
@@ -222,7 +243,7 @@ async def test_скрытый_возраст_не_приходит_в_ответ
     )
     session = _Session([
         _Result(rows=[]),
-        _Result(rows=[лайк]),
+        _Result(rows=[_входящий_лайк(лайк)]),
         _Result(scalar=_profile("u-fan", hide_age=True)),
     ])
 
@@ -293,7 +314,9 @@ async def test_гости_с_ultra_раскрываются(app, monkeypatch):
     monkeypatch.setattr(
         profiles,
         "list_visitors",
-        _async_return([(_profile("u-guest"), "u-guest", 3, datetime.now(timezone.utc))]),
+        _async_return(
+            [(_profile("u-guest"), "u-guest", 3, datetime.now(timezone.utc), True)]
+        ),
     )
 
     session = _Session([])
@@ -305,6 +328,11 @@ async def test_гости_с_ultra_раскрываются(app, monkeypatch):
     assert данные["revealed"] is True
     assert данные["visitors"][0]["profile"]["display_name"] == "Имя-u-guest"
     assert данные["visitors"][0]["visits"] == 3
+    # Галочка должна доходить и до раздела «Гости», а не только до деки и
+    # списка лайков: list_visitors отдаёт is_verified пятым полем строки.
+    assert данные["visitors"][0]["profile"]["is_verified"] is True, (
+        "галочка гостя потерялась — is_verified не дошёл до карточки"
+    )
 
 
 # ── Кейсы: гейт по уровню ───────────────────────────────────────
@@ -854,28 +882,42 @@ async def test_своё_загруженное_фото_в_анкету_прин
 
 
 async def test_фото_из_бота_переживают_обновление_анкеты(app, monkeypatch):
-    """Без R2 бот кладёт file_id Telegram — это не ссылка, и принимать её надо:
-    иначе у пришедших из бота анкета молча осталась бы без фотографий.
+    """Без R2 бот кладёт file_id Telegram — это не ссылка, но выбрасывать её
+    нельзя: иначе у пришедших из бота анкета молча осталась бы без фотографий.
 
-    Новый file_id, которого в анкете ещё нет: если проверять только «было
-    раньше», бот перестал бы добавлять фото вообще.
+    Прежние file_id принимаются (перестановка, удаление соседних). А вот
+    ПРИСЛАТЬ НОВЫЙ file_id через PATCH — нет: бот пишет фото своим слоем,
+    веб грузит через /upload/photo, значит новый не-URL в PATCH — это
+    инъекция мимо модерации и проверки лица.
     """
     from config import get_settings
 
     настройки = get_settings()
     monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
 
-    анкета = _profile("u-me", photos=["AgACAgIAAxkBAAI-старое"])
+    анкета = _profile("u-me", photos=["AgACAgIAAxkBAAI-старое", "AgACAgIAAxkBAAI-второе"])
     session = _Session([_Result(scalar=анкета)])
 
     async with await _client(app, session, _user()) as client:
         r = await client.patch(
             "/api/profiles/me",
-            json={"photos": ["AgACAgIAAxkBAAI-старое", "AgACAgIAAxkBAAI-новое"]},
+            json={"photos": ["AgACAgIAAxkBAAI-второе", "AgACAgIAAxkBAAI-старое"]},
         )
 
     assert r.status_code == 200, r.text
-    assert "AgACAgIAAxkBAAI-новое" in анкета.photos
+    assert анкета.photos == ["AgACAgIAAxkBAAI-второе", "AgACAgIAAxkBAAI-старое"]
+
+    # Новый file_id, которого в анкете не было, — отказ без записи
+    анкета2 = _profile("u-me", photos=["AgACAgIAAxkBAAI-старое"])
+    session2 = _Session([_Result(scalar=анкета2)])
+    async with await _client(app, session2, _user()) as client:
+        r2 = await client.patch(
+            "/api/profiles/me",
+            json={"photos": ["AgACAgIAAxkBAAI-старое", "AgACAgIAAxkBAAI-новое"]},
+        )
+
+    assert r2.status_code == 400
+    assert анкета2.photos == ["AgACAgIAAxkBAAI-старое"]
 
 
 async def test_автобан_по_жалобам_отзывает_токены(app, monkeypatch):
@@ -884,8 +926,13 @@ async def test_автобан_по_жалобам_отзывает_токены(
     Ручной бан в админке это делал, а автобан по жалобам — нет: у забаненного
     оставался живой WebSocket, и жертва харассмента продолжала получать от
     него сообщения до истечения токена (до 72 часов).
+
+    Сам бан собран не здесь, а в services/enforcement.py: report.py звал его
+    руками (флаг, память банов, отзыв токенов) и заодно не проверял роль —
+    пятеро сговорившихся блокировали админа. Патчим побочные эффекты там же,
+    где они теперь живут.
     """
-    from routers import report
+    from services import enforcement
 
     отозваны: list[str] = []
 
@@ -893,14 +940,16 @@ async def test_автобан_по_жалобам_отзывает_токены(
         отозваны.append(user_id)
         return True
 
-    monkeypatch.setattr(report, "revoke_all_for_user", _revoke)
-    monkeypatch.setattr(report, "remember_ban", _async_return(None))
+    monkeypatch.setattr(enforcement, "revoke_all_for_user", _revoke)
+    monkeypatch.setattr(enforcement, "remember_ban", _async_return(None))
 
     нарушитель = _user("u-нарушитель", telegram_id=222)
     session = _Session([
         _Result(scalar=нарушитель),   # на кого жалуются
         _Result(scalar=None),         # своей жалобы ещё не было
-        _Result(scalar=5),            # пять разных жалобщиков — порог автобана
+        # Пять разных жалобщиков — порог автобана. Ручка забирает их id, а не
+        # COUNT: этим же людям уходит ответ, чем закончилась жалоба
+        _Result(rows=["ж1", "ж2", "ж3", "ж4", "ж5"]),
     ])
 
     async with await _client(app, session, _user()) as client:
@@ -971,6 +1020,7 @@ async def test_буст_берёт_блокировку_до_подсчёта(ap
     monkeypatch.setattr(profiles, "current_tier", _async_return("plus"))
 
     session = _SessionСЖурналом([
+        _Result(scalar=0),                  # купленных бустов нет (гейт пака)
         _Result(scalar=_profile("u-me")),   # анкета
         _Result(scalar=None),               # advisory-lock
         _Result(scalar=0),                  # включений за сутки
@@ -1042,7 +1092,7 @@ async def test_подделанный_токен_apple_не_пускает(app, 
         raise AppleAuthError("подпись не сошлась")
 
     monkeypatch.setattr(auth, "verify_identity_token", _не_прошёл)
-    monkeypatch.setattr(auth, "is_banned_identity", _async_return(False))
+    monkeypatch.setattr(auth, "banned_identity_record", _async_return(None))
 
     session = _SessionСДефолтами([_Result(scalar=None), _Result(scalar=None)])
     async with await _client(app, session, _user()) as client:
@@ -1063,7 +1113,7 @@ async def test_вход_через_apple_создаёт_аккаунт_без_т
         return {"sub": "apple-подпись-12345", "email": "x@privaterelay.appleid.com"}
 
     monkeypatch.setattr(auth, "verify_identity_token", _прошёл)
-    monkeypatch.setattr(auth, "is_banned_identity", _async_return(False))
+    monkeypatch.setattr(auth, "banned_identity_record", _async_return(None))
 
     session = _SessionСДефолтами([
         _Result(scalar=None),   # такого apple_id ещё нет
@@ -1088,14 +1138,20 @@ async def test_вход_через_apple_создаёт_аккаунт_без_т
 
 async def test_забаненный_не_возвращается_через_apple(app, monkeypatch):
     """Бан живёт отдельно от аккаунта. Если это не проверить, забаненный
-    заходит через Apple и получает чистую историю."""
+    заходит через Apple и получает чистую историю. Временному бану новый
+    аккаунт наследует остаток срока, а не вечность."""
     from routers import auth
 
     async def _прошёл(_токен: str):
         return {"sub": "apple-забаненный"}
 
+    остаток = datetime(2027, 1, 1, tzinfo=timezone.utc)
     monkeypatch.setattr(auth, "verify_identity_token", _прошёл)
-    monkeypatch.setattr(auth, "is_banned_identity", _async_return(True))
+    monkeypatch.setattr(
+        auth,
+        "banned_identity_record",
+        _async_return(SimpleNamespace(banned_until=остаток, reason="спам")),
+    )
 
     session = _SessionСДефолтами([_Result(scalar=None), _Result(scalar=None)])
 
@@ -1104,6 +1160,7 @@ async def test_забаненный_не_возвращается_через_app
 
     юзер = next(o for o in session.added if type(o).__name__ == "User")
     assert юзер.is_banned is True, "забаненный вернулся через Apple с чистой историей"
+    assert юзер.banned_until == остаток, "новый аккаунт не унаследовал срок бана"
 
 
 async def test_поддельное_уведомление_apple_не_гасит_подписку(app, monkeypatch):
@@ -1378,7 +1435,7 @@ async def test_почта_не_видна_в_чужой_анкете(app, monkey
     )
     session = _Session([
         _Result(rows=[]),
-        _Result(rows=[лайк]),
+        _Result(rows=[_входящий_лайк(лайк)]),
         _Result(scalar=_profile("u-fan")),
     ])
 
@@ -1484,7 +1541,7 @@ async def test_наклейка_видна_везде_где_видно_чужу
     )
     session = _Session([
         _Result(rows=[]),
-        _Result(rows=[лайк]),
+        _Result(rows=[_входящий_лайк(лайк)]),
         _Result(scalar=_profile("u-fan", sticker="dawn")),
     ])
 
@@ -1509,7 +1566,7 @@ async def test_наклейка_не_утекает_мимо_платного_г
         liker_id="u-fan", liked_id="u-me", type="like", message="",
         id="l1", created_at=datetime.now(timezone.utc),
     )
-    session = _Session([_Result(rows=[]), _Result(rows=[лайк])])
+    session = _Session([_Result(rows=[]), _Result(rows=[_входящий_лайк(лайк)])])
 
     async with await _client(app, session, _user()) as client:
         r = await client.get("/api/likes/received")

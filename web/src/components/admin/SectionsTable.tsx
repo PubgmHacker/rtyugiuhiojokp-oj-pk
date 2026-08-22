@@ -26,6 +26,7 @@ export default function SectionsTable() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<SectionStats | null>(null);
   const [failed, setFailed] = useState(false);
+  const [попытка, setПопытка] = useState(0);
 
   useEffect(() => {
     setData(null);
@@ -33,13 +34,7 @@ export default function SectionsTable() {
     getSectionStats(days)
       .then(setData)
       .catch(() => setFailed(true));
-  }, [days]);
-
-  if (failed) {
-    return (
-      <p className="text-[14px] text-text-muted">Не удалось загрузить сводку.</p>
-    );
-  }
+  }, [days, попытка]);
 
   return (
     <div>
@@ -61,7 +56,19 @@ export default function SectionsTable() {
         ))}
       </div>
 
-      {!data ? (
+      {/* Кнопки периода живут и при сбое: смена периода — это тоже повтор */}
+      {failed ? (
+        <div className="py-6 text-center">
+          <p className="text-[14px] text-text-muted mb-3">📡 Не удалось загрузить</p>
+          <button
+            onClick={() => setПопытка((x) => x + 1)}
+            className="px-4 py-2 rounded-xl bg-surface-2 border border-hairline
+                       text-[13.5px] font-semibold text-text-secondary"
+          >
+            Повторить
+          </button>
+        </div>
+      ) : !data ? (
         <p className="text-[14px] text-text-muted">Загрузка…</p>
       ) : (
         <>

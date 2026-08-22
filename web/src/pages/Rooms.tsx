@@ -9,10 +9,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, Send, Users } from "lucide-react";
+import { ChevronLeft, Flag, Send, Users } from "lucide-react";
 import {
   getRoomMessages,
   getRooms,
+  reportRoomMessage,
   sendRoomMessage,
   type Room,
   type RoomMessage,
@@ -20,8 +21,16 @@ import {
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { useIsMounted } from "../hooks/useSafeAsync";
-import { Button, EmptyState, ScreenHeader, Skeleton, Spinner } from "../components/ui";
+import {
+  Button,
+  EmptyState,
+  LoadError,
+  ScreenHeader,
+  Skeleton,
+  Spinner,
+} from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
+import ReportReasonSheet from "../components/ReportReasonSheet";
 
 export default function Rooms() {
   useSectionOpen("rooms");
@@ -133,9 +142,12 @@ export default function Rooms() {
 
 function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
   const [messages, setMessages] = useState<RoomMessage[] | null>(null);
+  const [сбой, setСбой] = useState(false);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [reportFor, setReportFor] = useState<RoomMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const isMounted = useIsMounted();
   // Опрос раз в 7с может наложиться сам на себя, если сеть подтормозила:
@@ -148,10 +160,14 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
     try {
       const page = await getRoomMessages(room.id);
       if (!isMounted() || seq !== requestSeqRef.current) return;
+      setСбой(false);
       setMessages(page.messages);
     } catch {
       if (!isMounted() || seq !== requestSeqRef.current) return;
-      setMessages([]);
+      // Переписку не трогаем: сбой фонового опроса не должен стирать уже
+      // показанные сообщения (опрос сам повторится через 7с). Флаг нужен
+      // только первой загрузке — отличить «не приехало» от «пока тихо».
+      setСбой(true);
     }
   }, [room.id, isMounted]);
 
@@ -185,6 +201,24 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
     }
   }, [text, sending, room.id]);
 
+  const пожаловаться = useCallback(
+    async (reason: string) => {
+      const message = reportFor;
+      setReportFor(null);
+      if (!message) return;
+      setError("");
+      try {
+        await reportRoomMessage(room.id, message.id, reason);
+        haptic("success");
+        setNotice("Жалоба отправлена — модератор разберётся");
+      } catch (e: any) {
+        haptic("error");
+        setError(e?.response?.data?.detail ?? "Не удалось отправить жалобу");
+      }
+    },
+    [room.id, reportFor]
+  );
+
   return (
     <div className="flex flex-col h-[calc(100dvh-68px)]">
       <header className="chrome safe-top border-b border-hairline/60 shrink-0">
@@ -210,11 +244,15 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
 
       <div className="flex-1 overflow-y-auto px-4 py-3 no-scrollbar">
         {!messages ? (
-          <div className="flex flex-col gap-2">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-12 rounded-[var(--radius-tile)]" />
-            ))}
-          </div>
+          сбой ? (
+            <LoadError onRetry={load} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-12 rounded-[var(--radius-tile)]" />
+              ))}
+            </div>
+          )
         ) : !messages.length ? (
           <p className="text-center text-[14px] text-text-muted py-10">
             Пока тихо. Напишите первым — это заметят.
@@ -261,6 +299,23 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
                     {m.text}
                   </p>
                 </div>
+
+                {/* Жалоба — на каждой поверхности с чужим контентом (App
+                    Store, Guideline 1.2). Блокировка убирает обидчика только
+                    из своей ленты, а тут его читают все. */}
+                {!m.is_mine && (
+                  <button
+                    aria-label="Пожаловаться на сообщение"
+                    onClick={() => {
+                      haptic("light");
+                      setReportFor(m);
+                    }}
+                    className="self-center shrink-0 text-text-faint
+                               active:scale-90 transition-transform"
+                  >
+                    <Flag size={14} />
+                  </button>
+                )}
               </div>
             ))}
             <div ref={bottomRef} />
@@ -275,6 +330,16 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
                      bg-danger/12 border border-danger/30 text-danger text-[13px]"
         >
           {error}
+        </p>
+      )}
+
+      {notice && (
+        <p
+          role="status"
+          className="mx-4 mb-2 px-3.5 py-2 rounded-[var(--radius-tile)]
+                     bg-surface-2 border border-hairline text-text-secondary text-[13px]"
+        >
+          {notice}
         </p>
       )}
 
@@ -303,6 +368,14 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
           </button>
         </div>
       </div>
+
+      <ReportReasonSheet
+        open={reportFor !== null}
+        title={`Пожаловаться${reportFor?.sender_name ? ` на ${reportFor.sender_name}` : ""}`}
+        subtitle="Модератор прочитает сообщение. Три жалобы снимают его с показа для всех."
+        onClose={() => setReportFor(null)}
+        onPick={пожаловаться}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
@@ -17,13 +18,17 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import Match, Profile, Story, User
 from models.schemas import (
-    StoriesFeed, StoryAuthorOut, StoryOut, StoryReplyTarget, StoryViewerOut,
-    StoryViewers,
+    ContentReport, StoriesFeed, StoryAuthorOut, StoryOut, StoryReplyTarget,
+    StoryViewerOut, StoryViewers,
 )
 from services import stories as S
 from services.ai_moderation import log_moderation, moderate_image, moderate_text
+from services.content_reports import подать_жалобу_на_контент
+from services.enforcement import enforce_text_verdict, register_content_strike
 from services.image_sanitizer import ImageRejected, sanitize_image
 from services.r2_storage import upload_photo_to_r2
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stories", tags=["stories"])
 
@@ -78,6 +83,21 @@ async def publish_story(
 
     mod = await moderate_image(contents)
     await log_moderation(user.id, "story", file.filename or "story", mod)
+    if mod.get("unavailable"):
+        # Сервис проверки лежит — кадр не виноват: 503 и «позже», а не 422
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка кадра сейчас недоступна — попробуйте через пару минут",
+        )
+    # Реклама в кадре (юзернеймы, ссылки, QR) — тот же страйк, что за рекламный
+    # текст. Только "ad": блок с пустой категорией — отказ без страйка, иначе
+    # enforce_text_verdict нормализовал бы её в "text" и копил бы шаги к бану
+    if mod.get("category") == "ad":
+        ответ_бана = await enforce_text_verdict(
+            session, user, mod, "Кадр нарушает правила"
+        )
+        if ответ_бана is not None:
+            return ответ_бана
     if mod["blocked"]:
         raise HTTPException(status_code=422, detail="Кадр нарушает правила")
 
@@ -87,8 +107,11 @@ async def publish_story(
     if caption:
         tmod = await moderate_text(caption)
         await log_moderation(user.id, "story_caption", caption[:64], tmod)
-        if tmod["blocked"]:
-            raise HTTPException(status_code=422, detail="Подпись нарушает правила")
+        ответ_бана = await enforce_text_verdict(
+            session, user, tmod, "Подпись нарушает правила"
+        )
+        if ответ_бана is not None:
+            return ответ_бана
 
     object_key = f"stories/{user.id}/{uuid.uuid4()}.{file_ext}"
     url = await upload_photo_to_r2(object_key, contents, content_type)
@@ -247,5 +270,43 @@ async def remove_story(
         raise HTTPException(status_code=404, detail="Историй нет")
 
     await S.удалить(session, story)
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/{story_id}/report", status_code=204)
+async def report_story(
+    story_id: str,
+    data: ContentReport,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Пожаловаться на историю.
+
+    Порог снятия ниже, чем у ролика: историю с аудиторией «пары» видят
+    считанные люди, и трёх разных жалобщиков нарушение могло бы не собрать
+    за все свои сутки. Модератор при этом видит каждую жалобу сразу —
+    порог решает только автоматическое снятие с показа.
+    """
+    story = await session.get(Story, story_id)
+    if story is None:
+        raise HTTPException(status_code=404, detail="История не найдена")
+    if story.user_id == user.id:
+        raise HTTPException(status_code=400, detail="Это ваша история")
+
+    порог = await подать_жалобу_на_контент(
+        session,
+        reporter_id=user.id,
+        author_id=story.user_id,
+        reason=data.reason,
+        description=data.description,
+        метка=f"story:{story_id}",
+        порог=2,
+    )
+    if порог and not story.is_hidden:
+        story.is_hidden = True
+        await register_content_strike(session, story.user_id, f"story:{story_id}")
+        logger.warning(f"История {story_id} снята с показа по жалобам")
+
     await session.commit()
     return Response(status_code=204)

@@ -9,6 +9,7 @@ import { haptic } from "../lib/haptics";
 import { clearNotificationBadge } from "../lib/native";
 import { StoriesRail } from "../components/StoriesRail";
 import LimitSheet from "../components/LimitSheet";
+import { useЯзык, перевести, форматВремени, форматДаты, type Язык } from "../lib/i18n";
 import {
   ScreenHeader,
   EmptyState,
@@ -19,6 +20,7 @@ import {
 
 export default function Matches() {
   const navigate = useNavigate();
+  const язык = useЯзык();
   const { matches, setMatches, setUnreadMessages } = useStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -254,7 +256,7 @@ export default function Matches() {
                       )}
                       {m.last_message_at && (
                         <span className="ml-auto text-[11.5px] text-text-faint shrink-0">
-                          {formatTime(m.last_message_at)}
+                          {formatTime(m.last_message_at, язык)}
                         </span>
                       )}
                       {/* Стрик: серия общения — эмбиент-индикатор. Рядом с
@@ -372,20 +374,21 @@ function Avatar({
 }
 
 /** Сегодня — часы, вчера — «вчера», раньше — дата. */
-function formatTime(iso: string): string {
+function formatTime(iso: string, язык: Язык): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
 
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    return форматВремени(d, язык);
   }
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return "вчера";
+  if (d.toDateString() === yesterday.toDateString())
+    return перевести(язык, "date.yesterdayShort");
 
-  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return форматДаты(d, язык);
 }
 
 function plural(n: number, one: string, few: string, many: string): string {

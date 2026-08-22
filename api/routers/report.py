@@ -8,8 +8,9 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import User, Report
 from models.schemas import ReportRequest, ReportResponse
-from services.ban_memory import remember_ban
-from services.token_revocation import revoke_all_for_user
+from services.enforcement import ban_user_for_violation
+from services.report_notify import notify_report_outcome
+from services.notifications import записать_уведомление
 
 router = APIRouter(prefix="/report", tags=["report"])
 
@@ -58,7 +59,7 @@ async def create_report(
     # (лайк в любую сторону или мэтч). Без этого пять свежесозданных
     # Telegram-аккаунтов банили любого пользователя за секунды, ни разу
     # не открыв его анкету — дешёвая и полностью автоматизируемая атака.
-    from sqlalchemy import func, or_
+    from sqlalchemy import or_
     from models.models import Profile, Like, Match
 
     interacted = (
@@ -80,29 +81,39 @@ async def create_report(
         .exists()
     )
 
+    # Забираем сами id, а не COUNT: те же жалобщики получат ответ о том, чем
+    # их жалоба закончилась (services/report_notify.py)
     result = await session.execute(
-        select(func.count(func.distinct(Report.reporter_id))).where(
+        select(Report.reporter_id)
+        .where(
             and_(
                 Report.reported_id == data.reported_id,
                 Report.status == "pending",
                 or_(interacted, liked_by_target, matched),
             )
         )
+        .distinct()
     )
-    distinct_reporters = result.scalar() or 0
+    reporter_ids = list(result.scalars().all())
+    distinct_reporters = len(reporter_ids)
+
+    # Итог рассылаем на ПЕРЕХОДЕ через порог, а не при каждой жалобе выше него:
+    # иначе шестая жалоба прислала бы «аккаунт заблокирован» предыдущим пятерым
+    # по второму разу, а вместе с ней и бот повторил бы бан-уведомление цели
+    итог = ""
 
     if distinct_reporters >= 5:
-        target.is_banned = True
-        await remember_ban(
-            session,
-            telegram_id=target.telegram_id,
-            apple_id=target.apple_id,
-            reason="автобан по жалобам",
-        )
-        # Автобан — такой же бан, как ручной (routers/admin.py: ban_user), и
-        # токены отзывать надо так же. Иначе жертва харассмента продолжает
-        # получать сообщения через уже открытый сокет обидчика
-        await revoke_all_for_user(target.id)
+        if not target.is_banned:
+            # Через общий ban_user_for_violation, а не флагом руками: он держит
+            # весь бан целиком — память банов (переживает удаление аккаунта),
+            # отзыв токенов (иначе жертва харассмента продолжает получать
+            # сообщения через уже открытый сокет обидчика) и уведомление цели
+            # в Telegram. И он же не даёт автоматике снести админа: пять
+            # сговорившихся аккаунтов не должны блокировать команду
+            if await ban_user_for_violation(
+                session, target, "автобан по жалобам", category="reports"
+            ):
+                итог = "banned"
     elif distinct_reporters >= 3:
         result = await session.execute(
             select(Profile).where(Profile.user_id == data.reported_id)
@@ -110,6 +121,18 @@ async def create_report(
         reported_profile = result.scalar_one_or_none()
         if reported_profile:
             reported_profile.is_incognito = True  # скрыт из деки до ревью модератором
+        if distinct_reporters == 3:
+            итог = "hidden"
     await session.flush()
+
+    if итог:
+        # В центр уведомлений — каждому жаловавшемуся, в этой же сессии:
+        # бот-сообщение живёт только у Telegram-входа, пуш — только в
+        # нативке, а лента доступна всем и не теряется
+        for reporter_id in reporter_ids:
+            await записать_уведомление(
+                session, reporter_id, "report_outcome", {"outcome": итог}
+            )
+        await notify_report_outcome(reporter_ids, итог)
 
     return ReportResponse(success=True, message="Report submitted. Thank you for keeping our community safe.")

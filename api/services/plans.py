@@ -336,3 +336,64 @@ def superlikes_for(tier: str) -> int:
 
 def plan_for_appstore_id(product_id: str) -> Plan | None:
     return PLANS_BY_APPSTORE_ID.get(product_id)
+
+
+# ── Паки: разовые покупки за Telegram Stars ──────────────────────
+
+#: Виды паков. Суперлайки падают в Profile.bonus_superlikes, бусты — в
+#: Profile.bonus_boosts; оба пула тратятся ПОСЛЕ суточной квоты, чтобы
+#: купленное не сгорало вместо того, что и так вернётся завтра.
+PACK_SUPERLIKES = "superlikes"
+PACK_BOOSTS = "boosts"
+
+
+@dataclass(frozen=True)
+class Pack:
+    """Один пак: что начисляет и почём в Stars.
+
+    Цена в Stars, а не в рублях, — единственное исключение из правила
+    «цены в рублях»: паки продаются только за Stars (импульсная покупка
+    внутри Telegram, у СБП-провайдеров мелкие суммы упираются в минималки,
+    у крипты — в комиссии), и пересчёт по курсу давал бы кривые 24⭐/26⭐
+    при каждом сдвиге RUB_PER_STAR.
+    """
+
+    code: str
+    kind: str
+    qty: int
+    price_stars: int
+
+    @property
+    def title(self) -> str:
+        """«5 суперлайков» / «1 буст» — имя для счёта и кнопки."""
+        if self.kind == PACK_SUPERLIKES:
+            return f"{self.qty} {_склонение(self.qty, 'суперлайк', 'суперлайка', 'суперлайков')}"
+        return f"{self.qty} {_склонение(self.qty, 'буст', 'буста', 'бустов')}"
+
+    @property
+    def price_per_item(self) -> float:
+        """Цена за штуку — по ней тест закрепляет скидку за объём."""
+        return self.price_stars / self.qty
+
+
+def _склонение(n: int, один: str, два: str, пять: str) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return один
+    if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        return два
+    return пять
+
+
+#: Крупный пак дешевле за штуку — иначе его покупать незачем. Бусты дороже
+#: суперлайков: буст — полчаса приоритета в деке и очереди оценки фото,
+#: суперлайк — одно уведомление.
+PACKS: tuple[Pack, ...] = (
+    Pack("superlikes_5", PACK_SUPERLIKES, 5, 25),
+    Pack("superlikes_15", PACK_SUPERLIKES, 15, 59),
+    Pack("superlikes_50", PACK_SUPERLIKES, 50, 149),
+    Pack("boosts_1", PACK_BOOSTS, 1, 29),
+    Pack("boosts_3", PACK_BOOSTS, 3, 69),
+    Pack("boosts_10", PACK_BOOSTS, 10, 179),
+)
+
+PACKS_BY_CODE: dict[str, Pack] = {p.code: p for p in PACKS}

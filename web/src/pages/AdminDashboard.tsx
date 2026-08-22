@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   LayoutDashboard, Users, AlertTriangle, ShieldCheck, LayoutGrid, LogOut,
-  Clapperboard,
+  Clapperboard, ScrollText, BadgeCheck, Images, Megaphone, BarChart3,
+  TicketPercent,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getAdminStats, type AdminStats } from "../lib/admin";
@@ -13,16 +14,31 @@ import ReportsTable from "../components/admin/ReportsTable";
 import ModerationLogsTable from "../components/admin/ModerationLogsTable";
 import ReelsTable from "../components/admin/ReelsTable";
 import SectionsTable from "../components/admin/SectionsTable";
+import AuditTable from "../components/admin/AuditTable";
+import VerificationQueueTable from "../components/admin/VerificationQueueTable";
+import StoriesTable from "../components/admin/StoriesTable";
+import BroadcastPanel from "../components/admin/BroadcastPanel";
+import MetricsPanel from "../components/admin/MetricsPanel";
+import PromosPanel from "../components/admin/PromosPanel";
 
-type Tab = "overview" | "users" | "reports" | "reels" | "moderation" | "sections";
+type Tab =
+  | "overview" | "metrics" | "users" | "reports" | "reels" | "stories"
+  | "moderation" | "verification" | "broadcast" | "promos" | "sections"
+  | "audit";
 
 const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
   { id: "overview", label: "Обзор", icon: LayoutDashboard },
+  { id: "metrics", label: "Метрики", icon: BarChart3 },
   { id: "users", label: "Пользователи", icon: Users },
   { id: "reports", label: "Жалобы", icon: AlertTriangle },
   { id: "reels", label: "Ролики", icon: Clapperboard },
+  { id: "stories", label: "Истории", icon: Images },
   { id: "moderation", label: "Модерация", icon: ShieldCheck },
+  { id: "verification", label: "Верификация", icon: BadgeCheck },
+  { id: "broadcast", label: "Рассылка", icon: Megaphone },
+  { id: "promos", label: "Промокоды", icon: TicketPercent },
   { id: "sections", label: "Разделы", icon: LayoutGrid },
+  { id: "audit", label: "Аудит", icon: ScrollText },
 ];
 
 export default function AdminDashboard() {
@@ -31,13 +47,19 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
+  // Сбой показываем, только пока цифр нет вовсе: без этого StatCards крутит
+  // скелетон вечно. Упавший фоновый рефреш показанную статистику не стирает —
+  // интервал сам повторит через минуту
+  const [сбой, setСбой] = useState(false);
 
   const loadStats = useCallback(async () => {
     try {
       const data = await getAdminStats();
       setStats(data);
+      setСбой(false);
     } catch (e) {
       console.error("Failed to load stats:", e);
+      setСбой(true);
     } finally {
       setLoading(false);
     }
@@ -129,30 +151,50 @@ export default function AdminDashboard() {
         {/* Content */}
         {tab === "overview" && (
           <div className="space-y-6">
-            <StatCards stats={stats} loading={loading} />
-            <RegistrationsChart stats={stats} />
-            {stats && stats.pending_reports > 0 && (
-              <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center gap-3">
-                <AlertTriangle className="text-danger" size={20} />
-                <p className="text-sm">
-                  <span className="font-semibold">{stats.pending_reports} новых жалоб</span> ожидают обработки.
-                </p>
+            {!stats && сбой ? (
+              <div className="bg-surface rounded-2xl px-4 py-12 text-center text-text-muted">
+                <p className="mb-3">📡 Не удалось загрузить</p>
                 <button
-                  onClick={() => setTab("reports")}
-                  className="ml-auto px-3 py-1.5 bg-danger/20 text-danger text-sm rounded-lg hover:bg-danger/30"
+                  onClick={() => { setСбой(false); setLoading(true); loadStats(); }}
+                  className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"
                 >
-                  Открыть →
+                  Повторить
                 </button>
               </div>
+            ) : (
+              <>
+                <StatCards stats={stats} loading={loading} />
+                <RegistrationsChart stats={stats} loading={loading && !stats} />
+                {stats && stats.pending_reports > 0 && (
+                  <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center gap-3">
+                    <AlertTriangle className="text-danger" size={20} />
+                    <p className="text-sm">
+                      <span className="font-semibold">{stats.pending_reports} новых жалоб</span> ожидают обработки.
+                    </p>
+                    <button
+                      onClick={() => setTab("reports")}
+                      className="ml-auto px-3 py-1.5 bg-danger/20 text-danger text-sm rounded-lg hover:bg-danger/30"
+                    >
+                      Открыть →
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
 
+        {tab === "metrics" && <MetricsPanel />}
         {tab === "users" && <UsersTable />}
         {tab === "reports" && <ReportsTable />}
         {tab === "reels" && <ReelsTable />}
+        {tab === "stories" && <StoriesTable />}
         {tab === "moderation" && <ModerationLogsTable />}
+        {tab === "verification" && <VerificationQueueTable />}
+        {tab === "broadcast" && <BroadcastPanel />}
+        {tab === "promos" && <PromosPanel />}
         {tab === "sections" && <SectionsTable />}
+        {tab === "audit" && <AuditTable />}
       </div>
     </div>
   );

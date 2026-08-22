@@ -416,3 +416,19 @@ def back_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[[InlineKeyboardButton(text="← Меню", callback_data="menu")]]
     )
 
+
+def unban_kb(price_rub: int) -> InlineKeyboardMarkup:
+    """Единственное действие забаненного — оплатить досрочную разблокировку.
+
+    Кнопка «в меню» здесь была бы обманом: любое нажатие всё равно упрётся
+    в бан-гейт (middlewares/ban_gate.py).
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text=f"🔓 Разблокировать за {price_rub} ₽",
+                callback_data="unban:pay",
+            )
+        ]]
+    )
+

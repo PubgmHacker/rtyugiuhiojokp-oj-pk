@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { askConfirm } from "../lib/telegram";
 import {
+  BadgeCheck,
   LogOut,
   Pencil,
   Shield,
@@ -24,6 +25,7 @@ import {
   Send,
   X,
   Palette,
+  Languages,
 } from "lucide-react";
 import {
   getMyProfile,
@@ -41,11 +43,14 @@ import {
 } from "../lib/api";
 import { useStore } from "../lib/store";
 import { AppearanceSheet } from "../components/AppearanceSheet";
+import { LanguageSheet } from "../components/LanguageSheet";
+import { НАЗВАНИЯ, useT, useЯзык } from "../lib/i18n";
+import { VerificationSheet } from "../components/VerificationSheet";
 import { appearanceByKey, loadAppearance } from "../lib/appearance";
 import { haptic } from "../lib/haptics";
 import { legalUrl } from "../lib/legal";
 import { getCurrentPosition, openExternal } from "../lib/native";
-import { Button, Card, Chip, Skeleton, VerifiedBadge, Spinner } from "../components/ui";
+import { Button, Card, Chip, LoadError, Skeleton, Toggle, VerifiedBadge, Spinner } from "../components/ui";
 import EmailRecovery from "../components/EmailRecovery";
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
@@ -53,6 +58,12 @@ const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
 export default function Profile() {
   const navigate = useNavigate();
   const { logout } = useStore();
+  // Пауза видна и в оболочке приложения (PauseBanner), а та читает store.
+  // Поэтому переключатель обязан обновить и его: иначе плашка «анкета на
+  // паузе» осталась бы висеть после того, как паузу здесь уже сняли
+  const setUser = useStore((s) => s.setUser);
+  const t = useT();
+  const язык = useЯзык();
   const [выходВезде, setВыходВезде] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,11 +75,22 @@ export default function Profile() {
   // не может исправить случайный тап
   const [blocked, setBlocked] = useState<UserProfile[] | null>(null);
   const [blockedOpen, setBlockedOpen] = useState(false);
+  // Сбой показываем, только пока списка нет вовсе: провалившееся фоновое
+  // обновление уже показанных не стирает
+  const [blockedСбой, setBlockedСбой] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [languageOpen, setLanguageOpen] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "busy" | "fail">("idle");
   // Какой тумблер приватности сейчас сохраняется — блокируем только его,
   // а не всю секцию: остальные переключать можно
   const [privacyBusy, setPrivacyBusy] = useState<string | null>(null);
+  // Пауза — отдельным состоянием от privacyBusy: у неё есть видимый текст
+  // ошибки, которого у остальных тумблеров нет. Молча провалившаяся пауза
+  // хуже любой другой молча провалившейся настройки — человек уверен, что
+  // скрылся, а он на витрине
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const [pauseError, setPauseError] = useState("");
   // Что открываем после входа: лента или видео (как у референса)
   const [mainScreen, setMainScreen] = useState<"feed" | "reels">(
     () => (localStorage.getItem("sd_main_screen") as "feed" | "reels" | null) ?? "feed",
@@ -93,15 +115,49 @@ export default function Profile() {
     []
   );
 
+  // Пауза: убрать анкету из выдачи, не удаляя аккаунт. Уровнем подписки не
+  // ограничена — уйти с витрины должен уметь каждый, иначе единственная
+  // альтернатива у бесплатного аккаунта — удаление.
+  const togglePause = useCallback(
+    async (value: boolean) => {
+      if (pauseBusy) return;
+      haptic("light");
+      setPauseBusy(true);
+      setPauseError("");
+      try {
+        const свежий = await updateMyProfile({ is_paused: value });
+        setProfile(свежий);
+        // И в store — плашку в оболочке рисует он
+        setUser(свежий);
+        haptic("success");
+      } catch {
+        setPauseError(
+          value
+            ? "Не удалось поставить на паузу. Анкета по-прежнему видна — попробуйте ещё раз"
+            : "Не удалось снять паузу. Анкета всё ещё скрыта — попробуйте ещё раз"
+        );
+        haptic("error");
+      } finally {
+        setPauseBusy(false);
+      }
+    },
+    [pauseBusy, setUser]
+  );
+
   const load = useCallback(async () => {
     try {
-      setProfile(await getMyProfile());
+      const свежий = await getMyProfile();
+      setProfile(свежий);
+      // Store тоже: паузу можно включить в боте, и тогда единственный способ
+      // узнать о ней — этот запрос. Плашку в оболочке рисует store, поэтому
+      // без синхронизации она молчала бы до следующего входа
+      setUser(свежий);
     } catch {
       /* экран останется с прежними данными */
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setUser]);
 
   useEffect(() => {
     load();
@@ -110,10 +166,13 @@ export default function Profile() {
   const openBlocked = useCallback(async () => {
     haptic("light");
     setBlockedOpen(true);
+    setBlockedСбой(false);
     try {
       setBlocked(await getBlockedUsers());
     } catch {
-      setBlocked([]);
+      // Пустой список при упавшей сети читался бы как «вы никого не
+      // блокировали» — а человек пришёл сюда именно разблокировать
+      setBlockedСбой(true);
     }
   }, []);
 
@@ -217,6 +276,21 @@ export default function Profile() {
 
   const photo = profile?.photos?.[0];
 
+  // Скелетон уже позади, а профиля нет — значит, первая загрузка упала.
+  // Экран из «?» и пустых тумблеров выглядел бы как стёртая анкета
+  if (!profile) {
+    return (
+      <div className="max-w-[440px] mx-auto px-4 safe-top">
+        <LoadError
+          onRetry={() => {
+            setLoading(true);
+            load();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-[440px] mx-auto px-4 safe-top pb-8">
       {/* ── Шапка профиля ─────────────────────────────────────── */}
@@ -288,6 +362,44 @@ export default function Profile() {
       <NudgeBanner
         profile={profile}
         onJump={() => navigate("/onboarding")}
+      />
+
+      {/* ── Проверка профиля (галочка) ────────────────────────── */}
+      {/* Только пока галочки нет: подтверждённому этот вход не нужен,
+          его галочка уже стоит рядом с именем */}
+      {profile && !profile.is_verified && (
+        <button
+          onClick={() => {
+            haptic("light");
+            setVerifyOpen(true);
+          }}
+          className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
+                     bg-surface border border-hairline flex items-center gap-3"
+        >
+          <BadgeCheck
+            size={18}
+            className="shrink-0"
+            style={{ color: "var(--color-verified)" }}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-[15px]">Подтвердите профиль</p>
+            <p className="text-caption text-text-muted">
+              Галочка за живую проверку — займёт полминуты
+            </p>
+          </div>
+          <ChevronRight size={18} className="text-text-faint shrink-0" />
+        </button>
+      )}
+      <VerificationSheet
+        open={verifyOpen}
+        onClose={() => setVerifyOpen(false)}
+        onVerified={() =>
+          setProfile((p) => (p ? { ...p, is_verified: true } : p))
+        }
+        onAddPhoto={() => {
+          setVerifyOpen(false);
+          navigate("/onboarding");
+        }}
       />
 
       {/* ── О себе ────────────────────────────────────────────── */}
@@ -460,6 +572,32 @@ export default function Profile() {
         </div>
 
         <div className="flex flex-col gap-3.5">
+          {/* Пауза стоит первой и отделена линией: она сильнее трёх тумблеров
+              ниже и делает их бессмысленными. Скрытому целиком человеку
+              незачем прятать возраст */}
+          <div className="pb-3.5 border-b border-hairline">
+            <PrivacyToggle
+              label="Поставить анкету на паузу"
+              hint={
+                profile?.is_paused
+                  ? "Анкета скрыта: вас не видно ни в ленте, ни в лайках, ни в оценке фото. Переписки с мэтчами продолжают работать"
+                  : "Убрать анкету из выдачи, не удаляя аккаунт. Включить обратно можно в любой момент"
+              }
+              on={!!profile?.is_paused}
+              busy={pauseBusy}
+              onToggle={() => togglePause(!profile?.is_paused)}
+            />
+            {pauseError && (
+              <p
+                role="alert"
+                className="mt-2.5 px-3 py-2 rounded-[var(--radius-tile)]
+                           bg-danger/12 border border-danger/30 text-danger text-[12.5px]"
+              >
+                {pauseError}
+              </p>
+            )}
+          </div>
+
           <PrivacyToggle
             label="Скрыть возраст"
             hint="В карточке возраста не будет, но подбор по нему останется"
@@ -515,6 +653,30 @@ export default function Profile() {
             <span className="text-[14px] text-text-muted">
               {appearanceByKey(loadAppearance()).name}
             </span>
+          </span>
+        </button>
+      </div>
+
+      {/* ── Язык ──────────────────────────────────────────────── */}
+      {/* Сразу под оформлением: обе строки про то, каким человек видит
+          приложение. И это единственное место, где язык можно сменить — бот
+          спрашивает его один раз на первом /start и команды смены не имеет. */}
+      <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
+        <button
+          onClick={() => {
+            haptic("light");
+            setLanguageOpen(true);
+          }}
+          className="w-full flex items-center gap-3 px-4 py-3.5 bg-surface text-left
+                     active:bg-surface-2 transition-colors"
+        >
+          <Languages size={17} className="shrink-0 text-text-muted" />
+          <span className="flex-1 text-[15px] text-text">{t("lang.title")}</span>
+          {/* Название на самом языке, как в списке: «Türkçe», а не «турецкий» —
+              так человек находит строку, даже не читая подпись слева. lang
+              нужен читалке, иначе она произнесёт его по правилам интерфейса. */}
+          <span className="text-[14px] text-text-muted" lang={язык}>
+            {НАЗВАНИЯ[язык]}
           </span>
         </button>
       </div>
@@ -587,7 +749,16 @@ export default function Profile() {
               transition={{ duration: 0.2 }}
               className="overflow-hidden border-t border-hairline bg-surface-2"
             >
-              {blocked === null ? (
+              {blockedСбой && blocked === null ? (
+                <div className="px-4 py-3.5">
+                  <p className="text-[13.5px] text-text-muted mb-2.5">
+                    📡 Не удалось загрузить
+                  </p>
+                  <Button variant="secondary" size="sm" onClick={openBlocked}>
+                    Повторить
+                  </Button>
+                </div>
+              ) : blocked === null ? (
                 <div className="flex justify-center py-4">
                   <Spinner size={18} />
                 </div>
@@ -753,6 +924,8 @@ export default function Profile() {
         }}
       />
 
+      <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
+
       <DeleteAccountDialog
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
@@ -803,23 +976,6 @@ function PrivacyToggle({
       </div>
       {busy ? <Spinner size={18} /> : <Toggle on={on} />}
     </button>
-  );
-}
-
-function Toggle({ on }: { on: boolean }) {
-  return (
-    <span
-      className={`w-[46px] h-[27px] rounded-full relative shrink-0 transition-colors ${
-        on ? "bg-success" : "bg-surface-3"
-      }`}
-    >
-      <motion.span
-        layout
-        transition={{ type: "spring", stiffness: 520, damping: 32 }}
-        className="absolute top-[3px] w-[21px] h-[21px] bg-white rounded-full"
-        style={{ left: on ? 22 : 3 }}
-      />
-    </span>
   );
 }
 

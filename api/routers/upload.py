@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.auth import get_current_user
-from models.models import User
+from models.models import Profile, User
 from services.r2_storage import upload_photo_to_r2, delete_photo_from_r2
-from services.ai_moderation import log_moderation, moderate_image
+from services.ai_moderation import log_moderation, moderate_image, verify_profile_photo
+from services.enforcement import enforce_text_verdict
 from services.image_sanitizer import ImageRejected, sanitize_image
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -41,8 +43,53 @@ async def upload_photo(
     # В журнал уходит не картинка, а имя файла — читать бинарь в админке
     # бессмысленно, а разобрать спорную блокировку по имени можно.
     await log_moderation(user.id, "photo", file.filename or "photo", mod_result)
+    if mod_result.get("unavailable"):
+        # Проверка не состоялась — фото не «нарушает правила», сервису нужно
+        # время. 503, а не 422: человек должен повторить, а не менять снимок
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка фото сейчас недоступна — попробуйте через пару минут",
+        )
+    # Реклама на снимке (category "ad": юзернеймы, ссылки, QR в кадре) — тот же
+    # страйк, что за рекламный текст. Только "ad": прочие блокировки фото идут
+    # с пустой категорией, а enforce_text_verdict нормализовал бы её в "text"
+    # и превратил каждый отказ по фото в шаг к бану
+    if mod_result.get("category") == "ad":
+        ответ_бана = await enforce_text_verdict(
+            session, user, mod_result, "Image violates content policy"
+        )
+        if ответ_бана is not None:
+            return ответ_бана
     if mod_result["blocked"]:
         raise HTTPException(status_code=422, detail="Image violates content policy")
+
+    # Гейт анкеты: модерация выше отвечает «нет ли запрещённого», а анкете
+    # нужен живой человек — кот, чёрный фон, пейзаж и скриншот из интернета
+    # модерацию проходят, но в выдачу попасть не должны.
+    gate = await verify_profile_photo(contents)
+    if gate.get("unavailable"):
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка фото сейчас недоступна — попробуйте через пару минут",
+        )
+    if not gate.get("face"):
+        await log_moderation(
+            user.id, "photo_gate", file.filename or "photo",
+            {"blocked": True, "reason": gate.get("reason", "no face")},
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="На фото анкеты должно быть хорошо видно ваше лицо",
+        )
+    if not gate.get("authentic"):
+        await log_moderation(
+            user.id, "photo_gate", file.filename or "photo",
+            {"blocked": True, "reason": gate.get("reason", "not authentic")},
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Похоже, это не ваша фотография — загрузите собственный снимок, а не картинку из интернета",
+        )
 
     object_key = f"photos/{user.id}/{uuid.uuid4()}.{file_ext}"
 
@@ -57,6 +104,7 @@ async def upload_photo(
 async def delete_photo(
     data: dict,
     user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """Удалить фото из R2."""
     key = data.get("key", "")
@@ -66,6 +114,16 @@ async def delete_photo(
     # Verify user owns this photo (key contains user.id)
     if f"/{user.id}/" not in key:
         raise HTTPException(status_code=403, detail="Cannot delete photos you don't own")
+
+    # Галочка верификации привязана к конкретному фото: удалил тот снимок,
+    # с которым совпало лицо на живой проверке, — совпадение больше нечем
+    # подтвердить, галочка снимается. Пройти проверку заново можно всегда.
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+    if profile and profile.verified_photo and profile.verified_photo.endswith(f"/{key}"):
+        profile.verified_photo = ""
+        user.is_verified = False
+        await session.flush()
 
     await delete_photo_from_r2(key)
     return {"success": True}

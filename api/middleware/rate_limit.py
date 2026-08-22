@@ -21,6 +21,7 @@ import time
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import get_settings
@@ -55,6 +56,10 @@ LIMITS: list[tuple[str, str, int, int]] = [
     ("/api/rooms", "POST", 200, 3600),
     # Свайпы — частое действие, лимит только против явных ботов
     ("/api/likes", "POST", 600, 3600),
+    # Живая проверка: три кадра на запрос — дорого и по AI, и по CPU.
+    # Суточный лимит отказов живёт в БД (routers/verification.py) и переживает
+    # сбой Redis, поэтому путь не входит в _CRITICAL_PREFIXES.
+    ("/api/verification", "POST", 20, 3600),
 ]
 
 # Пути, где открытый лимит опаснее короткой недоступности сервиса: перебор кода
@@ -105,15 +110,32 @@ def _client_ip(request: Request) -> str:
 def _client_key(request: Request) -> str:
     """Идентификатор источника запроса.
 
+    Ключ — user_id из ПРОВЕРЕННОГО токена, иначе IP. Раньше ключом служил
+    хвост заголовка Authorization как есть, без проверки подписи, — и на
+    неавторизованных путях это отдавало атакующему ручку от счётчика: меняя
+    выдуманный «токен» на каждый запрос, он каждый раз начинал счёт с нуля и
+    перебирал шестизначный код /api/auth/link без ограничений (лимит попыток
+    в самих кодах — на каждый код отдельно и от перебора разных кодов не
+    спасает). Проверка подписи закрывает и вторую лазейку: свежий валидный
+    JWT на каждый запрос (iat/jti в нём меняются) давал новый хвост — а
+    user_id у всех токенов одного человека один, ключ не сдвигается.
+
     Токен предпочтительнее IP: за одним мобильным NAT сидят тысячи людей,
     и лимит по адресу задел бы их всех. IP остаётся для неавторизованных
-    путей — там токена ещё нет.
+    путей и для мусорных токенов.
     """
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer "):
-        # Хвоста подписи достаточно для различения сессий, и он не пишется
-        # в логи целиком
-        return f"t:{auth[-32:]}"
+        try:
+            payload = jwt.decode(
+                auth[7:], settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
+            )
+            uid = payload.get("sub")
+            if uid:
+                return f"u:{uid}"
+        except JWTError:
+            # Подделка, мусор или истёкший токен — считаем как анонима, по IP
+            pass
 
     return f"ip:{_client_ip(request)}"
 

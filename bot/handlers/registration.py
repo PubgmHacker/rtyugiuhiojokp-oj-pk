@@ -18,8 +18,8 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from config import BANNERS
-from database import get_or_create_user, update_profile, set_profile_ready, get_profile
+from config import BANNERS, MAX_AGE, MIN_AGE
+from database import clear_verification, get_or_create_user, update_profile, get_profile
 from keyboards import (
     main_kb,
     reg_gender_kb,
@@ -32,7 +32,19 @@ from keyboards import (
     reg_bio_kb,
     remove_kb,
 )
-from services.moderation import moderate_image, moderate_text, humanize
+from services.enforcement import (
+    TEXT_BAN_REASONS,
+    answer_ban_screen,
+    apply_text_strike,
+    log_moderation,
+    strike_suffix,
+)
+from services.moderation import (
+    humanize,
+    moderate_image,
+    moderate_text,
+    verify_profile_photo,
+)
 from states import RegistrationStates
 import texts as T
 
@@ -162,7 +174,7 @@ async def start_registration(callback: CallbackQuery, state: FSMContext):
 # ── Имя ─────────────────────────────────────────────────────────
 
 @router.message(RegistrationStates.waiting_name, F.text)
-async def process_name(message: Message, state: FSMContext):
+async def process_name(message: Message, state: FSMContext, db_user: dict | None = None):
     name = (message.text or "").strip()
     if len(name) < 2:
         await message.answer(T.REG_NAME_TOO_SHORT)
@@ -172,9 +184,20 @@ async def process_name(message: Message, state: FSMContext):
     # чаще, чем анкету целиком, а модерация стояла только на био — через имя
     # уходили реклама, контакты и брань
     verdict = await moderate_text(name)
+    # db_user кладёт RegistrationMiddleware; тип записи — "display_name",
+    # как у API (routers/profiles.py): счёт страйков общий на оба канала
+    исход = await apply_text_strike(
+        db_user["id"] if db_user else None, "display_name", name, verdict
+    )
     if verdict.get("blocked"):
+        if исход is not None and исход.banned:
+            await answer_ban_screen(
+                message, TEXT_BAN_REASONS[исход.category], исход.banned_until
+            )
+            return
         await message.answer(
             T.REG_NAME_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+            + strike_suffix(исход)
         )
         return
 
@@ -197,10 +220,10 @@ async def process_age(message: Message, state: FSMContext):
         return
 
     age = int(raw)
-    if age < 16:
+    if age < MIN_AGE:
         await message.answer(T.REG_AGE_TOO_YOUNG)
         return
-    if age > 99:
+    if age > MAX_AGE:
         await message.answer(T.REG_AGE_TOO_OLD)
         return
 
@@ -353,7 +376,9 @@ async def _reverse_geocode(lat: float, lon: float) -> str:
 # ── Фото ────────────────────────────────────────────────────────
 
 @router.message(RegistrationStates.waiting_photo, F.photo)
-async def process_photo(message: Message, state: FSMContext):
+async def process_photo(
+    message: Message, state: FSMContext, db_user: dict | None = None
+):
     data = await state.get_data()
     photos: list[str] = list(data.get("reg_photos") or [])
 
@@ -373,31 +398,74 @@ async def process_photo(message: Message, state: FSMContext):
     except Exception as e:
         logger.warning(f"Не удалось скачать фото из Telegram: {e}")
 
-    if buf:
-        verdict = await moderate_image(buf)
-        if verdict.get("blocked"):
-            await message.answer(
-                T.REG_PHOTO_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+    # Без байтов фото ни проверить, ни перезалить. Раньше оно молча уходило
+    # в анкету голым file_id — непроверенный снимок попадал в общую выдачу.
+    if not buf:
+        await message.answer(T.REG_PHOTO_FETCH_FAILED)
+        return
+
+    verdict = await moderate_image(buf)
+    if verdict.get("unavailable"):
+        # Проверка не состоялась — это не «фото плохое», человеку нужна
+        # другая формулировка: виноват сервис, а не снимок
+        await message.answer(T.REG_PHOTO_MOD_UNAVAILABLE)
+        return
+
+    # Журнал — как в API-канале (routers/upload.py пишет вердикт каждого
+    # фото, в записи file_id — по нему админ найдёт снимок). Страйк — только
+    # за рекламу в кадре ("ad"), тем же счётом, что за рекламный текст: блок
+    # с пустой категорией (нудити и прочее) — отказ без страйка, иначе
+    # register_text_strike нормализовал бы "" в "text"
+    исход = None
+    if db_user:
+        if verdict.get("category") == "ad":
+            исход = await apply_text_strike(
+                db_user["id"], "photo", photo.file_id, verdict
             )
-            return
+        else:
+            await log_moderation(db_user["id"], "photo", photo.file_id, verdict)
+    if исход is not None and исход.banned:
+        await answer_ban_screen(
+            message, TEXT_BAN_REASONS[исход.category], исход.banned_until
+        )
+        return
+    if verdict.get("blocked"):
+        await message.answer(
+            T.REG_PHOTO_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+            + strike_suffix(исход)
+        )
+        return
+
+    # Гейт анкеты: модерация выше отвечает «нет ли запрещённого», а анкете
+    # нужен живой человек — кот, чёрный фон или скриншот из интернета
+    # модерацию проходят, но в общую выдачу попасть не должны
+    gate = await verify_profile_photo(buf)
+    if gate.get("unavailable"):
+        await message.answer(T.REG_PHOTO_MOD_UNAVAILABLE)
+        return
+    if not gate.get("face"):
+        await message.answer(T.REG_PHOTO_NO_FACE)
+        return
+    if not gate.get("authentic"):
+        await message.answer(T.REG_PHOTO_NOT_AUTHENTIC)
+        return
 
     # Перезаливаем в R2, чтобы фото было видно в вебе и в iOS-приложении;
     # если хранилище не настроено, остаётся file_id — бот его покажет
     stored = photo.file_id
-    if buf:
-        try:
-            from services.r2_storage import upload_photo as r2_upload
+    try:
+        from services.r2_storage import upload_photo as r2_upload
 
-            db_user = await get_or_create_user(
-                message.from_user.id,
-                message.from_user.username or "",
-                message.from_user.first_name or "",
-            )
-            url = await r2_upload(db_user["id"], buf)
-            if url:
-                stored = url
-        except Exception as e:
-            logger.warning(f"Перезаливка фото в R2 не удалась: {e}")
+        db_user = await get_or_create_user(
+            message.from_user.id,
+            message.from_user.username or "",
+            message.from_user.first_name or "",
+        )
+        url = await r2_upload(db_user["id"], buf)
+        if url:
+            stored = url
+    except Exception as e:
+        logger.warning(f"Перезаливка фото в R2 не удалась: {e}")
 
     photos.append(stored)
     await state.update_data(reg_photos=photos)
@@ -431,14 +499,24 @@ async def photo_wrong_type(message: Message):
 # ── О себе ──────────────────────────────────────────────────────
 
 @router.message(RegistrationStates.waiting_bio, F.text)
-async def process_bio(message: Message, state: FSMContext):
+async def process_bio(message: Message, state: FSMContext, db_user: dict | None = None):
     bio = (message.text or "").strip()[:500]
 
     if bio:
         verdict = await moderate_text(bio)
+        # Тип записи — "bio", как у API (routers/profiles.py)
+        исход = await apply_text_strike(
+            db_user["id"] if db_user else None, "bio", bio, verdict
+        )
         if verdict.get("blocked"):
+            if исход is not None and исход.banned:
+                await answer_ban_screen(
+                    message, TEXT_BAN_REASONS[исход.category], исход.banned_until
+                )
+                return
             await message.answer(
                 T.REG_BIO_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+                + strike_suffix(исход)
             )
             return
 
@@ -464,6 +542,7 @@ async def _finish_registration(message: Message, state: FSMContext):
     """Сохранить анкету и вернуть человека в меню."""
     data = await state.get_data()
 
+    сброс_галочки = False
     try:
         # message может принадлежать боту (после callback), поэтому
         # идентифицируем пользователя по chat.id, а не by from_user
@@ -480,6 +559,30 @@ async def _finish_registration(message: Message, state: FSMContext):
             "photos": data.get("reg_photos", []),
         }
 
+        # Галочка «проверенный» обещает: все фото анкеты принадлежат человеку,
+        # прошедшему живую проверку. API при добавлении фото сверяет его с
+        # опорным (api/routers/profiles.py), бот сверять лица не умеет —
+        # поэтому правило проще и жёстче: верифицированный добавил новое фото
+        # или убрал опорное — галочка снимается, вернёт её повторная проверка
+        # в мини-аппе. Удаление и перестановка прочих фото галочку не трогают:
+        # эти снимки уже были в анкете, когда проверка проходила. Сравниваем
+        # со свежим состоянием базы, а не с тем, что легло в state на старте:
+        # анкету могли параллельно править из мини-аппа.
+        if db_user.get("is_verified"):
+            прежний = await get_profile(db_user["id"]) or {}
+            прежние_фото = set(прежний.get("photos") or [])
+            опорное = прежний.get("verified_photo") or ""
+            новые_фото = fields["photos"]
+            добавлено = any(ф not in прежние_фото for ф in новые_фото)
+            опорное_убрано = bool(опорное) and опорное not in новые_фото
+            сброс_галочки = добавлено or опорное_убрано
+
+        # Снимаем ДО записи фото: если снять галочку не вышло, исключение
+        # не даст сохраниться и фотографиям — непроверенный снимок не может
+        # оказаться в анкете с галочкой даже на сбое
+        if сброс_галочки:
+            await clear_verification(db_user["id"])
+
         age = data.get("reg_age")
         if age:
             # Точный день рождения не спрашиваем: для подбора по возрасту
@@ -492,18 +595,22 @@ async def _finish_registration(message: Message, state: FSMContext):
             fields["latitude"] = data["reg_lat"]
             fields["longitude"] = data["reg_lon"]
 
+        # Галочку «проверенный» конец анкеты больше не даёт: is_verified
+        # выдаёт только живая проверка лица в мини-аппе
         await update_profile(db_user["id"], **fields)
-        await set_profile_ready(db_user["id"])
     except Exception as e:
         logger.exception(f"Не удалось сохранить анкету: {e}")
         await message.answer(T.ERROR_GENERIC)
         return
 
     await state.clear()
+    итог = T.REG_DONE
+    if сброс_галочки:
+        итог = f"{T.REG_DONE}\n\n{T.REG_VERIFY_RESET}"
     try:
         await message.answer_photo(
-            photo=BANNERS["welcome"], caption=T.REG_DONE, reply_markup=main_kb()
+            photo=BANNERS["welcome"], caption=итог, reply_markup=main_kb()
         )
     except Exception:
         # Баннер может не загрузиться — текст важнее картинки
-        await message.answer(T.REG_DONE, reply_markup=main_kb())
+        await message.answer(итог, reply_markup=main_kb())

@@ -5,18 +5,27 @@ import {
   Route,
   Navigate,
   useLocation,
+  useNavigate,
   Link,
 } from "react-router-dom";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { Flame, MessageCircle, User, Sparkles, LayoutGrid, WifiOff } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
+import PauseBanner from "./components/PauseBanner";
 import { useStore } from "./lib/store";
-import { applyAppearance, isAppearance, loadAppearance } from "./lib/appearance";
+import {
+  applyAppearance,
+  followTelegramTheme,
+  isAppearance,
+  loadAppearance,
+} from "./lib/appearance";
 import { initTelegram } from "./lib/telegram";
+import { useTelegramBack } from "./lib/useTelegramBack";
 import { initNative, registerPushNotifications } from "./lib/native";
 import { startTransactionListener } from "./lib/iap";
 import { getBadges, registerDevice } from "./lib/api";
 import { haptic } from "./lib/haptics";
+import { useT, useЯзыкДокумента, type Ключ } from "./lib/i18n";
 import { Spinner } from "./components/ui";
 
 // Discover — стартовый экран, грузим сразу; остальное по требованию,
@@ -37,6 +46,7 @@ const Cases = lazy(() => import("./pages/Cases"));
 const Tarot = lazy(() => import("./pages/Tarot"));
 const VoiceRoulette = lazy(() => import("./pages/VoiceRoulette"));
 const More = lazy(() => import("./pages/More"));
+const Notifications = lazy(() => import("./pages/Notifications"));
 const Habits = lazy(() => import("./pages/Habits"));
 const Banned = lazy(() => import("./pages/Banned"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
@@ -44,22 +54,25 @@ const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 // Пять вкладок, как в референсе: Лента, Лайки, Чаты, Ещё, Профиль.
 // Знакомства делаются в первых трёх — остальные разделы собраны в «Ещё»,
 // иначе навигация конкурирует за внимание с тем, что вообще продаёт продукт.
-const NAV_ITEMS = [
-  { path: "/discover", icon: Flame, label: "Лента" },
-  { path: "/likes", icon: Sparkles, label: "Лайки" },
-  { path: "/matches", icon: MessageCircle, label: "Чаты" },
-  { path: "/more", icon: LayoutGrid, label: "Ещё" },
-  { path: "/profile", icon: User, label: "Профиль" },
+// Подпись хранится ключом словаря, а не готовой строкой: массив живёт на
+// уровне модуля, где языка человека ещё нет, и перевод берётся при отрисовке.
+const NAV_ITEMS: { path: string; icon: typeof Flame; label: Ключ }[] = [
+  { path: "/discover", icon: Flame, label: "nav.feed" },
+  { path: "/likes", icon: Sparkles, label: "nav.likes" },
+  { path: "/matches", icon: MessageCircle, label: "nav.chats" },
+  { path: "/more", icon: LayoutGrid, label: "nav.more" },
+  { path: "/profile", icon: User, label: "nav.profile" },
 ];
 
 function BottomNav() {
   const { pathname } = useLocation();
   const unreadLikes = useStore((s) => s.unreadLikes);
   const unreadMessages = useStore((s) => s.unreadMessages);
+  const t = useT();
 
   return (
     <nav
-      aria-label="Основная навигация"
+      aria-label={t("nav.aria")}
       className="fixed bottom-0 left-0 right-0 z-40 chrome
                  border-t border-hairline/70 safe-bottom safe-x"
     >
@@ -123,7 +136,7 @@ function BottomNav() {
                   isActive ? "text-accent" : "text-text-faint"
                 }`}
               >
-                {item.label}
+                {t(item.label)}
               </span>
             </Link>
           );
@@ -183,12 +196,48 @@ function OfflineBanner() {
   );
 }
 
+/** Корневые экраны: с них назад некуда, кнопка в шапке была бы обманом. */
+function корневой(pathname: string): boolean {
+  const главный =
+    localStorage.getItem("sd_main_screen") === "reels" ? "/reels" : "/discover";
+  return (
+    pathname === "/" ||
+    pathname === главный ||
+    pathname === "/login" ||
+    // Онбординг и экран блокировки водят кнопкой сами: в первом «назад» — это
+    // предыдущий шаг анкеты, из второго выходить некуда
+    pathname === "/onboarding" ||
+    pathname === "/banned" ||
+    NAV_ITEMS.some((i) => i.path === pathname)
+  );
+}
+
+/**
+ * Нативная кнопка «назад» Telegram на вложенных экранах.
+ *
+ * Одним местом на всё приложение, а не по экрану: внутри Telegram нет ни
+ * системного жеста «назад», ни кнопки браузера, а своя стрелка нарисована не
+ * везде — из чата (там нижняя навигация скрыта) выйти было нечем, кроме
+ * закрытия Mini App. Вне Telegram хук — no-op.
+ */
+function TelegramBack() {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  useTelegramBack(корневой(pathname) ? null : () => navigate(-1));
+  return null;
+}
+
 function Protected({ children, nav = true }: { children: React.ReactNode; nav?: boolean }) {
   const token = useStore((s) => s.token);
   if (!token) return <Navigate to="/login" replace />;
   return (
     <div className={`min-h-screen-safe ${nav ? "pb-nav" : ""}`}>
       <Suspense fallback={<ScreenFallback />}>{children}</Suspense>
+      {/* Пауза скрывает анкету отовсюду, поэтому и предупреждение живёт
+          в оболочке, а не на одном экране: с какого бы места человек ни
+          начал, он узнаёт, что его не видно. Плавающий пузырь — чтобы не
+          трогать вёрстку экранов с фиксированной высотой (дека) */}
+      <PauseBanner />
       {nav && <BottomNav />}
     </div>
   );
@@ -197,11 +246,20 @@ function Protected({ children, nav = true }: { children: React.ReactNode; nav?: 
 export default function App() {
   const { token, user, isOnboarded } = useStore();
 
+  // `<html lang>` держим в согласии с выбором языка. Это не косметика: от
+  // атрибута зависят экранные читалки (турецкий текст, прочитанный английскими
+  // правилами, — каша), переносы слов и подбор шрифта для 中文. В index.html
+  // зашит `ru` — верный для большинства и для первого кадра, дальше правим.
+  useЯзыкДокумента();
+
   useEffect(() => {
     // Профиль из localStorage гидрируется синхронно в store.ts: здесь его
     // читать поздно — редирект /login уже отработал по первому рендеру.
     initTelegram();
     initNative();
+    // Тему Telegram догоняем здесь, а не в main.tsx: SDK приезжает асинхронно
+    // и на первом кадре colorScheme ещё неизвестен (см. followTelegramTheme).
+    return followTelegramTheme();
   }, []);
 
   // Разрешение на уведомления спрашиваем только после входа: системный
@@ -243,6 +301,7 @@ export default function App() {
           const s = useStore.getState();
           s.setUnreadMessages(b.messages);
           s.setUnreadLikes(b.likes);
+          s.setUnreadNotifications(b.notifications);
         })
         .catch(() => {
           // Бейдж — украшение: без сети он просто не обновится
@@ -265,6 +324,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <BrowserRouter>
       <OfflineBanner />
+      <TelegramBack />
       {/* Исключение в любом экране не должно оставлять белый экран без выхода */}
       <ErrorBoundary>
       <Suspense fallback={<ScreenFallback />}>
@@ -298,6 +358,7 @@ export default function App() {
           {/* В чате нижняя навигация мешает полю ввода */}
           <Route path="/chat/:matchId" element={<Protected nav={false}><Chat /></Protected>} />
           <Route path="/plans" element={<Protected><Plans /></Protected>} />
+          <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
           {/* Лента роликов сама во весь экран — своя нижняя навигация остаётся */}
           <Route path="/more" element={<Protected><More /></Protected>} />
           <Route path="/reels" element={<Protected><Reels /></Protected>} />

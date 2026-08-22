@@ -10,18 +10,25 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Crown, Gem, RotateCcw, Sparkles } from "lucide-react";
-import { getMyProfile, getPlans, type PlanOut, type PlansOut } from "../lib/api";
+import { Check, Crown, Gem, Gift, RotateCcw, Sparkles } from "lucide-react";
+import {
+  activatePromo,
+  getMyProfile,
+  getPlans,
+  type PlanOut,
+  type PlansOut,
+} from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { isNative, openExternal } from "../lib/native";
 import {
   isPurchaseAvailable,
+  loadProducts,
   purchaseGift,
   purchasePremium,
   restorePurchases,
 } from "../lib/iap";
 import { useStore } from "../lib/store";
-import { Button, Card, ScreenHeader, Skeleton, Spinner } from "../components/ui";
+import { Button, Card, LoadError, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
 
@@ -36,6 +43,10 @@ export default function Plans() {
   const [data, setData] = useState<PlansOut | null>(null);
   const [tier, setTier] = useState<string>("plus");
   const [canBuy, setCanBuy] = useState(false);
+  // Цены App Store по id товара: в нативной сборке показывать надо цену,
+  // которую назовёт Apple в валюте региона покупателя, — рубль с сервера
+  // там и не спишется, и ревью не пройдёт (Guideline 3.1.1)
+  const [storePrices, setStorePrices] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   // Подарок: переключаем режим, а не верим гейту в каждой строке плана
@@ -43,9 +54,15 @@ export default function Plans() {
   // тариф выбран тому, кому он окажется.
   const [gifting, setGifting] = useState(false);
   const [giftCode, setGiftCode] = useState<string | null>(null);
+  // Сбой первой загрузки — не message: message рендерится только внутри
+  // загруженной витрины, и скелетоны висели бы вечно. Счётчик перезапускает
+  // эффект загрузки кнопкой «Повторить».
+  const [сбой, setСбой] = useState(false);
+  const [попытка, setПопытка] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setСбой(false);
 
     (async () => {
       try {
@@ -59,18 +76,26 @@ export default function Plans() {
           setTier(plans.current_tier);
         }
       } catch {
-        if (!cancelled) setMessage("Не удалось загрузить тарифы");
+        if (!cancelled) setСбой(true);
       }
       if (isNative()) {
         const available = await isPurchaseAvailable();
         if (!cancelled) setCanBuy(available);
+        if (available) {
+          const products = await loadProducts();
+          if (!cancelled) {
+            setStorePrices(
+              Object.fromEntries(products.map((p) => [p.id, p.price]))
+            );
+          }
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [попытка]);
 
   const handle = useCallback(
     async (action: () => Promise<any>, key: string) => {
@@ -111,11 +136,15 @@ export default function Plans() {
     return (
       <div className="pb-4">
         <ScreenHeader title="Подписка" />
-        <div className="px-4 flex flex-col gap-3">
-          <Skeleton className="h-12 rounded-full" />
-          <Skeleton className="h-40 rounded-[var(--radius-tile)]" />
-          <Skeleton className="h-40 rounded-[var(--radius-tile)]" />
-        </div>
+        {сбой ? (
+          <LoadError onRetry={() => setПопытка((x) => x + 1)} />
+        ) : (
+          <div className="px-4 flex flex-col gap-3">
+            <Skeleton className="h-12 rounded-full" />
+            <Skeleton className="h-40 rounded-[var(--radius-tile)]" />
+            <Skeleton className="h-40 rounded-[var(--radius-tile)]" />
+          </div>
+        )}
       </div>
     );
   }
@@ -139,11 +168,7 @@ export default function Plans() {
         )}
 
         {/* Подарок: показываем подарочный код после успешной покупки,
-            причём тот самый, что сервер вернул. Копия в буфер — потому что
-            потерянное никто не ищет в чеке. */}
-        {/* Подарок: показываем подарочный код после успешной покупки,
-            причём тот самый, что сервер вернул. Копия в буфер — потому что
-            потерянное никто не ищет в чеке. */}
+            причём тот самый, что сервер вернул. */}
         {giftCode && (
           <div className="mb-4 p-4 rounded-[var(--radius-tile)] bg-success/12 border border-success/30">
             <p className="font-semibold text-success text-[13px] mb-1">
@@ -228,24 +253,15 @@ export default function Plans() {
               </ul>
             </Card>
 
-          {giftCode && (
-              <div className="rounded-[var(--radius-tile)] border border-success/30 bg-success/12 p-3.5 mb-4">
-                <p className="text-[13px] font-semibold text-success">Ваш подарочный код</p>
-                <p className="font-mono text-[17px] tracking-wider break-all mb-2">
-                  {giftCode}
-                </p>
-                <p className="text-[11.5px] text-text-muted">
-                  Отправьте его собеседнику — введёт в своём профиле, и подписка у него
-                </p>
-              </div>
-            )}
-
             <div className="flex flex-col gap-2.5 mb-4">
               {shown.plans.map((plan) => (
                 <PlanRow
                   key={plan.code}
                   plan={plan}
                   monthly={shown.plans.find((p) => p.months === 1)?.price_rub}
+                  storePrice={
+                    canBuy ? storePrices[plan.appstore_id] : undefined
+                  }
                   busy={busy === plan.code}
                   disabled={busy !== null}
                   onBuy={() => {
@@ -297,6 +313,23 @@ export default function Plans() {
           </>
         )}
 
+        {/* Промокод: из поста, рассылки или от поддержки. Активация — здесь,
+            а не в боте: человек уже смотрит на тарифы, уводить его в чат
+            ради восьми знаков незачем. */}
+        <PromoField
+          onActivated={async () => {
+            haptic("success");
+            // Уровень изменился — перечитываем профиль и витрину: от них
+            // зависят гейты и плашка «у вас активен»
+            try {
+              setUser(await getMyProfile());
+              setData(await getPlans());
+            } catch {
+              /* профиль подтянется при следующем открытии */
+            }
+          }}
+        />
+
         {message && (
           <p className="text-caption text-text-muted mt-4 text-center">{message}</p>
         )}
@@ -306,6 +339,80 @@ export default function Plans() {
           {isNative() ? " Apple ID" : " бота"} в любой момент.
         </p>
       </div>
+    </div>
+  );
+}
+
+/* ── Промокод ───────────────────────────────────────────────── */
+
+function PromoField({ onActivated }: { onActivated: () => Promise<void> }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async () => {
+    const trimmed = code.trim();
+    if (!trimmed || busy) return;
+    haptic("light");
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await activatePromo(trimmed);
+      setCode("");
+      setNote({
+        ok: true,
+        text: `Промокод принят — подписка активна до ${res.expires_at.slice(0, 10)}`,
+      });
+      await onActivated();
+    } catch (e: any) {
+      haptic("warning");
+      // Текст отказа пишет сервер: «нет такого», «уже активировали», «истёк»
+      setNote({
+        ok: false,
+        text: e?.response?.data?.detail ?? "Не получилось активировать промокод",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-5">
+      <p className="text-[13px] text-text-muted mb-2 flex items-center gap-1.5">
+        <Gift size={14} className="shrink-0" />
+        Есть промокод?
+      </p>
+      <div className="flex gap-2">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          placeholder="ПРОМОКОД"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="go"
+          className="flex-1 min-w-0 px-3.5 py-2.5 rounded-[var(--radius-tile)]
+                     bg-surface-2 border border-hairline font-mono tracking-wider
+                     text-[15px] placeholder:text-text-faint outline-none
+                     focus:border-accent"
+        />
+        <Button size="md" disabled={!code.trim() || busy} onClick={submit}>
+          {busy ? <Spinner size={16} /> : "Активировать"}
+        </Button>
+      </div>
+      {note && (
+        <p
+          className={`text-caption mt-2 ${
+            note.ok ? "text-success" : "text-danger"
+          }`}
+          role="status"
+        >
+          {note.text}
+        </p>
+      )}
     </div>
   );
 }
@@ -326,6 +433,7 @@ function TierIcon({ tier }: { tier: string }) {
 function PlanRow({
   plan,
   monthly,
+  storePrice,
   busy,
   disabled,
   onBuy,
@@ -333,11 +441,17 @@ function PlanRow({
   plan: PlanOut;
   /** Цена месячного варианта — база для расчёта выгоды. */
   monthly?: number;
+  /** Цена App Store в валюте региона покупателя — в нативной сборке
+      списывается именно она, и показывать рубли там нельзя: человек видел
+      бы одну цену, а платил другую (Guideline 3.1.1). */
+  storePrice?: string;
   busy: boolean;
   disabled: boolean;
   onBuy: () => void;
 }) {
-  // Выгоду показываем явно: без неё «2590 ₽» читается просто как «дороже»
+  // Выгоду показываем явно: без неё «2590 ₽» читается просто как «дороже».
+  // Пропорции уровней в App Store повторяют рублёвые, поэтому процент
+  // считается по ценам сервера и для нативной сборки.
   const saving =
     monthly && plan.months > 1
       ? Math.round(100 - (plan.price_per_month * 100) / monthly)
@@ -353,13 +467,18 @@ function PlanRow({
     >
       <div className="flex-1 min-w-0">
         <p className="font-bold text-[15px]">{plan.title}</p>
-        <p className="text-caption text-text-muted">
-          {plan.price_per_month} ₽ в месяц
-          {/* Цена за день — на длинных сроках она и продаёт: «4 ₽ в день»
-              читается как мелочь, а «1290 ₽» как крупная трата. У месячного
-              плана не показываем: там это не выгода, а лишний шум */}
-          {plan.months > 1 && ` · ${plan.price_per_day} ₽ в день`}
-        </p>
+        {/* С ценой App Store рублёвую раскладку не показываем совсем:
+            разложить чужую валюту «в месяц и в день» без парсинга её формата
+            нельзя, а срок и так в заголовке, выгода — в бейдже */}
+        {!storePrice && (
+          <p className="text-caption text-text-muted">
+            {plan.price_per_month} ₽ в месяц
+            {/* Цена за день — на длинных сроках она и продаёт: «4 ₽ в день»
+                читается как мелочь, а «1290 ₽» как крупная трата. У месячного
+                плана не показываем: там это не выгода, а лишний шум */}
+            {plan.months > 1 && ` · ${plan.price_per_day} ₽ в день`}
+          </p>
+        )}
       </div>
 
       {saving > 0 && (
@@ -370,7 +489,7 @@ function PlanRow({
       )}
 
       <span className="font-bold text-[16px] shrink-0">
-        {busy ? <Spinner size={16} /> : `${plan.price_rub} ₽`}
+        {busy ? <Spinner size={16} /> : storePrice ?? `${plan.price_rub} ₽`}
       </span>
     </button>
   );

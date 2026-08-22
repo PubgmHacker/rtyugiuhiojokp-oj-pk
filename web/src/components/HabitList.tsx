@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Plus, Trash2, Undo2 } from "lucide-react";
-import { Button, EmptyState, Skeleton } from "./ui";
+import { Button, EmptyState, LoadError, Skeleton } from "./ui";
 import { haptic } from "../lib/haptics";
 import {
   checkHabit,
@@ -36,16 +36,21 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  // Сбой загрузки — отдельно от error: плашка error живёт над списком, а при
+  // несуществующем списке ветка «План дня пуст» с подсказками — ложь
+  const [сбойЗагрузки, setСбойЗагрузки] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const загрузить = useCallback(async () => {
+    setLoading(true);
+    setСбойЗагрузки(false);
     try {
       const r = await getHabits();
       setHabits(r.habits);
       setLimit(r.limit);
       setError(null);
     } catch {
-      setError("Не удалось загрузить план");
+      setСбойЗагрузки(true);
     } finally {
       setLoading(false);
     }
@@ -126,6 +131,10 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
         ))}
       </div>
     );
+  }
+
+  if (сбойЗагрузки) {
+    return <LoadError onRetry={загрузить} />;
   }
 
   return (
