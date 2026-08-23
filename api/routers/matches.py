@@ -16,7 +16,7 @@ from services.ai_matchmaker import generate_icebreakers
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import enforce_text_verdict
 from services.chat_delivery import (
-    ДоставкаОтклонена, fan_out, reel_preview, save_message,
+    ДоставкаОтклонена, check_chat_flood, fan_out, reel_preview, save_message,
 )
 from services.streaks import (
     can_revive as стрик_оживим, revive_streak, streak_emoji, get_streaks_bulk,
@@ -336,6 +336,13 @@ async def post_message(
     image_url = data.get("image_url")
     if not text and not image_url:
         raise HTTPException(status_code=400, detail="Пустое сообщение")
+
+    # Антифлуд до модерации: залп сообщений — это прежде всего залп платных
+    # AI-запросов, отсекаем раньше, чем платим
+    try:
+        await check_chat_flood(user.id)
+    except ДоставкаОтклонена as отказ:
+        raise HTTPException(status_code=429, detail=отказ.detail)
 
     if text:
         verdict = await moderate_text(text)

@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 from sqlalchemy import and_, select
@@ -37,7 +38,7 @@ from services.direct_messages import (
 )
 from services.public_profile import наша_картинка
 from services.push import is_configured, notify_new_message
-from services.realtime import publish_bot_event
+from services.realtime import get_redis, publish_bot_event
 from services.streaks import touch_streak_for_message
 from services.ws_manager import manager
 
@@ -75,6 +76,48 @@ class ДоставкаОтклонена(Exception):
     @property
     def detail(self) -> str:
         return self.отказ.detail
+
+
+#: Антифлуд лички: сообщений в минуту от одного человека суммарно по всем его
+#: чатам. Комнаты считают SQL-запросом (routers/rooms.py::check_flood), но для
+#: лички так нельзя: Message — самая большая таблица, индекса по sender_id у
+#: неё нет, и каждый флуд-чек превращался бы в скан. Поэтому Redis.
+#:
+#: 20 — вдвое щедрее комнатных десяти: там лимит на одну комнату, здесь — на
+#: все чаты разом, а живая переписка репликами по слову легко даёт сообщение
+#: раз в три-четыре секунды. Боту-спамеру всё равно не хватит.
+CHAT_FLOOD_PER_MINUTE = 20
+
+DENIED_FLOOD = DirectDenied(
+    "flood", "Слишком много сообщений подряд — подождите минуту"
+)
+
+
+async def check_chat_flood(sender_id: str) -> None:
+    """Антифлуд лички. Зовётся в роутерах ДО модерации текста, не здесь.
+
+    Не внутри `save_message`: до него сообщение уже прошло `moderate_text`, а
+    главный расход при флуде — именно платные AI-вызовы, их и надо отсечь
+    первыми. Поэтому каждая точка отправки (WebSocket, HTTP-отправка, пересыл
+    ролика) обязана позвать проверку сама; что ни одна не забыла — сторожит
+    tests/test_chat_flood.py: незакрытая точка обнуляет лимит целиком.
+
+    Окно фиксированное, как в middleware/rate_limit: ключ включает номер
+    минуты и истекает сам. При сбое Redis пропускаем: личка — не перебор
+    кодов, минута без антифлуда лучше чата, лежащего вместе с кешем.
+    """
+    try:
+        r = await get_redis()
+        bucket = int(time.time()) // 60
+        key = f"dating:chatflood:{sender_id}:{bucket}"
+        used = await r.incr(key)
+        if used == 1:
+            await r.expire(key, 60)
+    except Exception as e:
+        logger.error(f"Chat flood check failed ({sender_id}): {e}")
+        return
+    if used > CHAT_FLOOD_PER_MINUTE:
+        raise ДоставкаОтклонена(DENIED_FLOOD)
 
 
 def reel_preview(reel: Reel | None) -> dict | None:

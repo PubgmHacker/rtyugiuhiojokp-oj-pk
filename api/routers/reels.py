@@ -47,7 +47,8 @@ from services.ai_moderation import log_moderation, moderate_image, moderate_text
 from services.enforcement import enforce_text_verdict, register_content_strike
 from services.content_reports import подать_жалобу_на_контент
 from services.chat_delivery import (
-    REEL_FALLBACK_TEXT, ДоставкаОтклонена, fan_out, save_message,
+    REEL_FALLBACK_TEXT, ДоставкаОтклонена, check_chat_flood, fan_out,
+    save_message,
 )
 from services.image_sanitizer import ImageRejected, sanitize_image
 from services.public_profile import публичный_возраст
@@ -710,6 +711,15 @@ async def forward_reel(
     )
     if result.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Переслать нельзя")
+
+    # Антифлуд лички до модерации подписи: пересыл — такое же сообщение, и
+    # залп пересылов с текстом — залп платных AI-запросов. Комнатная ветка
+    # получает свой check_flood ниже, как и обычная отправка в комнату.
+    if data.match_id:
+        try:
+            await check_chat_flood(user.id)
+        except ДоставкаОтклонена as отказ:
+            raise HTTPException(status_code=429, detail=отказ.detail)
 
     caption = (data.text or "").strip()
     if caption:

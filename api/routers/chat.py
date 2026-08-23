@@ -13,7 +13,9 @@ from models.models import Match, Message, User
 from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import TEXT_BAN_REASONS, register_text_strike
-from services.chat_delivery import ДоставкаОтклонена, fan_out, save_message
+from services.chat_delivery import (
+    ДоставкаОтклонена, check_chat_flood, fan_out, save_message,
+)
 from services.token_revocation import is_revoked
 from services.quotas import open_match
 
@@ -146,6 +148,16 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             text = str(data.get("text", "")).strip()[:2000]
             image_url = data.get("image_url")
             if not text and not image_url:
+                continue
+
+            # Антифлуд до модерации: залп сообщений — это прежде всего залп
+            # платных AI-запросов, отсекаем раньше, чем платим
+            try:
+                await check_chat_flood(user_id)
+            except ДоставкаОтклонена as отказ:
+                await websocket.send_json(
+                    {"type": "rejected", "reason": отказ.detail}
+                )
                 continue
 
             # Личный чат — самый объёмный канал, и до сих пор единственный
