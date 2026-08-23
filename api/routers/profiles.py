@@ -687,9 +687,18 @@ async def update_my_profile(
         for поле in ("bio", "display_name", "tg_channel")
     }
 
+    # Явный null в PATCH — осознанное «стереть значение», но разрешён только
+    # там, где колонка nullable и другого способа стереть нет: рост из анкеты
+    # («Оставьте пустым» на экране редактирования) и границы фильтра по росту
+    # (тумблер «Не важен» в Discover всегда слал null — и до этого списка он
+    # молча не долетал до базы). Строковые поля (goal, mbti, bio…) сбрасываются
+    # пустой строкой, а null для остальных по-прежнему пропускается: Optional
+    # в схеме значит «поле можно не присылать», и явный null не должен ронять
+    # 500 на NOT NULL-колонке.
+    СБРАСЫВАЕМЫЕ = {"height_cm", "filter_height_min", "filter_height_max"}
     for key, value in update_fields.items():
-        if value is None:
-            continue  # explicit null не затирает non-nullable колонки (иначе 500)
+        if value is None and key not in СБРАСЫВАЕМЫЕ:
+            continue
         setattr(profile, key, value)
 
     if len(as_list(profile.photos)) > settings.MAX_PHOTOS:

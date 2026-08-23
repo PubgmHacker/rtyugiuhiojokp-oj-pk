@@ -341,7 +341,7 @@ export default function Profile() {
           variant="secondary"
           size="sm"
           className="mt-4"
-          onClick={() => navigate("/onboarding")}
+          onClick={() => navigate("/edit")}
         >
           <Pencil size={15} />
           Редактировать анкету
@@ -356,12 +356,12 @@ export default function Profile() {
       </div>
 
       {/* ── Заполненность анкеты ──────────────────────────────── */}
-      <ProfileCompleteness profile={profile} onEdit={() => navigate("/onboarding")} />
+      <ProfileCompleteness profile={profile} onEdit={() => navigate("/edit")} />
       {/* Точечный nudge: подталкивает закрыть одно дешёвое поле, а не весь %
           прогресса сразу — конверсия выше */}
       <NudgeBanner
         profile={profile}
-        onJump={() => navigate("/onboarding")}
+        onJump={(field) => navigate(`/edit?focus=${field}`)}
       />
 
       {/* ── Проверка профиля (галочка) ────────────────────────── */}
@@ -398,7 +398,7 @@ export default function Profile() {
         }
         onAddPhoto={() => {
           setVerifyOpen(false);
-          navigate("/onboarding");
+          navigate("/edit?focus=photos");
         }}
       />
 

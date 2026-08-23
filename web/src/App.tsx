@@ -34,6 +34,7 @@ import Discover from "./pages/Discover";
 import Login from "./pages/Login";
 
 const Onboarding = lazy(() => import("./pages/Onboarding"));
+const EditProfile = lazy(() => import("./pages/EditProfile"));
 const Matches = lazy(() => import("./pages/Matches"));
 const Likes = lazy(() => import("./pages/Likes"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -352,6 +353,9 @@ export default function App() {
           <Route path="/banned" element={<Banned />} />
 
           <Route path="/onboarding" element={<Protected nav={false}><Onboarding /></Protected>} />
+          {/* Точечная правка анкеты: свой экран, чтобы не гонять человека
+              одиннадцатью шагами онбординга ради одного поля */}
+          <Route path="/edit" element={<Protected nav={false}><EditProfile /></Protected>} />
           <Route path="/discover" element={<Protected><Discover /></Protected>} />
           <Route path="/matches" element={<Protected><Matches /></Protected>} />
           <Route path="/likes" element={<Protected><Likes /></Protected>} />

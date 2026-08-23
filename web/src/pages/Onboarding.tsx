@@ -1,13 +1,10 @@
-import { useState, useCallback, useMemo, useId, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import {
-  Camera, X, ChevronLeft, ChevronDown, MapPin, Check, Star,
-} from "lucide-react";
+import { X, ChevronLeft, MapPin, Check } from "lucide-react";
 import {
   updateMyProfile,
   getMyProfile,
-  uploadPhoto,
   type UserProfile,
 } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -23,6 +20,8 @@ import {
   type DraftFields,
 } from "../lib/onboardingDraft";
 import { Button, Chip, Spinner } from "../components/ui";
+import PhotoGrid, { usePhotoSlots } from "../components/PhotoGrid";
+import InterestsPicker from "../components/InterestsPicker";
 import {
   GOALS,
   RELATION_TYPES,
@@ -30,23 +29,12 @@ import {
   MBTI_TYPES,
   HEIGHT_MIN,
   HEIGHT_MAX,
-  INTEREST_CATEGORIES,
+  MAX_INTERESTS,
+  MAX_PHOTOS,
+  MAX_BIO,
+  MIN_AGE,
+  MAX_AGE,
 } from "../lib/profileOptions";
-
-// Было 8 при 24 тегах в одном списке (треть списка). Список интересов
-// расширен до ~110 по категориям, а лимит выбора сознательно уменьшен, а
-// не увеличен вместе с ним: у конкурента («Мимолёт») лимит 3-5, и это
-// работает лучше — чем меньше тегов, тем осмысленнее совпадение в подборе
-// (см. matching._compatibility: там считаются общие интересы, и 12 тегов
-// почти у всех пересекались бы хоть чем-то, обесценивая совпадение).
-const MAX_INTERESTS = 5;
-const MAX_PHOTOS = 6;
-const MAX_BIO = 500;
-// Те же числа, что MIN_AGE/MAX_AGE в api/config.py: сервер отклонит анкету
-// вне границ, а клиент обязан сказать это до отправки, теми же числами.
-// Синхронность с сервером и текстами проверяет api/tests/test_age_floor.py.
-const MIN_AGE = 18;
-const MAX_AGE = 99;
 
 type StepId =
   | "name"
@@ -76,16 +64,6 @@ const STEPS: StepId[] = [
   "terms",
   "done",
 ];
-
-interface PhotoSlot {
-  /** Свой идентификатор: индекс в массиве не годится, пока идёт загрузка. */
-  id: string;
-  url?: string;
-  uploading?: boolean;
-  error?: string;
-}
-
-let photoSeq = 0;
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -118,27 +96,11 @@ export default function Onboarding() {
     draft?.coords ?? null
   );
   const [geoBusy, setGeoBusy] = useState(false);
-  const [photos, setPhotos] = useState<PhotoSlot[]>(() =>
-    (draft?.photos ?? user?.photos ?? []).map((url) => ({
-      id: `init-${photoSeq++}`,
-      url,
-    }))
-  );
+  const { photos, addPhoto, removePhoto, makePrimary, reset: resetPhotos } =
+    usePhotoSlots(draft?.photos ?? user?.photos ?? []);
   const [interests, setInterests] = useState<string[]>(
     draft?.interests ?? user?.interests ?? []
   );
-  // Категории интересов сворачиваемые: на экране 320px список из ~110 тегов
-  // одной простыней не читается. Открытые по умолчанию — те, где у человека
-  // уже есть выбранный тег (правка анкеты), плюс первая категория для новых.
-  const [openCategories, setOpenCategories] = useState<Set<string>>(() => {
-    const initial = new Set<string>();
-    const mine = new Set(interests);
-    for (const [cat, tags] of Object.entries(INTEREST_CATEGORIES)) {
-      if (tags.some((t) => mine.has(t))) initial.add(cat);
-    }
-    if (initial.size === 0) initial.add(Object.keys(INTEREST_CATEGORIES)[0]);
-    return initial;
-  });
   const [goal, setGoal] = useState(draft?.goal ?? user?.goal ?? "");
   const [relationType, setRelationType] = useState(
     draft?.relationType ?? user?.relation_type ?? ""
@@ -300,7 +262,7 @@ export default function Onboarding() {
     setLookingFor(user?.looking_for ?? "");
     setCity(user?.city ?? "");
     setCoords(null);
-    setPhotos((user?.photos ?? []).map((url) => ({ id: `init-${photoSeq++}`, url })));
+    resetPhotos(user?.photos ?? []);
     setInterests(user?.interests ?? []);
     setGoal(user?.goal ?? "");
     setRelationType(user?.relation_type ?? "");
@@ -309,7 +271,7 @@ export default function Onboarding() {
     setHeight(user?.height_cm != null ? String(user.height_cm) : "");
     setBio(user?.bio ?? "");
     haptic("light");
-  }, [user]);
+  }, [user, resetPhotos]);
 
   /* ── Геопозиция ──────────────────────────────────────────── */
   const detectLocation = useCallback(async () => {
@@ -323,78 +285,6 @@ export default function Onboarding() {
     setCoords({ lat: pos.latitude, lon: pos.longitude });
     haptic("success");
   }, []);
-
-  /* ── Фото ────────────────────────────────────────────────── */
-  const addPhoto = useCallback(async (file: File) => {
-    const id = `up-${photoSeq++}`;
-    setPhotos((p) => [...p, { id, uploading: true }]);
-    try {
-      const { url } = await uploadPhoto(file);
-      setPhotos((p) => p.map((s) => (s.id === id ? { id, url } : s)));
-      haptic("success");
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail ?? "Фото не подошло";
-      setPhotos((p) => p.map((s) => (s.id === id ? { id, error: detail } : s)));
-      haptic("error");
-    }
-  }, []);
-
-  const removePhoto = useCallback((id: string) => {
-    haptic("light");
-    setPhotos((p) => p.filter((s) => s.id !== id));
-  }, []);
-
-  /** Сделать фото главным — переносом в начало списка.
-   *
-   *  Порядок массива и есть порядок показа: `photos[0]` — то, что видно на
-   *  карточке в деке, в лайках, в чатах и в «Гостях». До этой кнопки главным
-   *  было то фото, которое загрузили первым, и поменять его можно было
-   *  единственным способом: удалить всё, что стоит перед нужным, и залить
-   *  заново — вместе с повторной AI-проверкой каждого снимка. Для самого
-   *  решающего поля анкеты (по нему и свайпают) это абсурдная цена.
-   *
-   *  Только вверх, без произвольного перетаскивания: жест drag конфликтует со
-   *  свайпом шагов онбординга, а «главное» — единственный порядок, который
-   *  человеку правда важен. Остальные фото сдвигаются, сохраняя свой порядок. */
-  const makePrimary = useCallback((id: string) => {
-    setPhotos((p) => {
-      const i = p.findIndex((s) => s.id === id);
-      // Уже главное или ещё грузится — двигать нечего
-      if (i <= 0 || !p[i].url) return p;
-      haptic("success");
-      const next = [...p];
-      const [фото] = next.splice(i, 1);
-      next.unshift(фото);
-      return next;
-    });
-  }, []);
-
-  const toggleInterest = useCallback((tag: string) => {
-    setInterests((cur) => {
-      if (cur.includes(tag)) return cur.filter((t) => t !== tag);
-      if (cur.length >= MAX_INTERESTS) return cur;
-      return [...cur, tag];
-    });
-  }, []);
-
-  const toggleCategory = useCallback((cat: string) => {
-    haptic("light");
-    setOpenCategories((cur) => {
-      const next = new Set(cur);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
-      return next;
-    });
-  }, []);
-
-  // Теги из старой анкеты, не входящие ни в одну текущую категорию
-  // (например, интерес отменили при реорганизации списка). Их нельзя молча
-  // потерять при следующем сохранении — показываем отдельной секцией,
-  // всегда открытой, чтобы человек видел, что выбрано, и мог снять галочку.
-  const legacyInterests = useMemo(() => {
-    const known = new Set(Object.values(INTEREST_CATEGORIES).flat());
-    return interests.filter((t) => !known.has(t));
-  }, [interests]);
 
   /* ── Сохранение ──────────────────────────────────────────── */
   const finish = useCallback(async () => {
@@ -639,19 +529,13 @@ export default function Onboarding() {
                     : "Первое станет главным. Нужно хотя бы одно"
                 }
               >
-                <div className="grid grid-cols-3 gap-2.5">
-                  {Array.from({ length: MAX_PHOTOS }).map((_, i) => (
-                    <PhotoTile
-                      key={photos[i]?.id ?? `empty-${i}`}
-                      slot={photos[i]}
-                      isPrimary={i === 0}
-                      onPick={addPhoto}
-                      onRemove={() => photos[i] && removePhoto(photos[i].id)}
-                      onMakePrimary={() => photos[i] && makePrimary(photos[i].id)}
-                      disabled={i > photos.length}
-                    />
-                  ))}
-                </div>
+                <PhotoGrid
+                  photos={photos}
+                  max={MAX_PHOTOS}
+                  onPick={addPhoto}
+                  onRemove={removePhoto}
+                  onMakePrimary={makePrimary}
+                />
               </StepShell>
             )}
 
@@ -660,68 +544,11 @@ export default function Onboarding() {
                 title="Что вам интересно?"
                 hint={`Выбрано ${interests.length} из ${MAX_INTERESTS}`}
               >
-                <div className="flex flex-col gap-2">
-                  {legacyInterests.length > 0 && (
-                    <div className="rounded-[var(--radius-tile)] border border-hairline bg-surface p-3.5">
-                      <p className="text-caption text-text-muted mb-2.5">
-                        Уже выбрано ранее
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {legacyInterests.map((tag) => (
-                          <Chip key={tag} active onClick={() => toggleInterest(tag)}>
-                            {tag}
-                          </Chip>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {Object.entries(INTEREST_CATEGORIES).map(([cat, tags]) => {
-                    const open = openCategories.has(cat);
-                    const chosenHere = tags.filter((t) => interests.includes(t)).length;
-                    return (
-                      <div
-                        key={cat}
-                        className="rounded-[var(--radius-tile)] border border-hairline bg-surface overflow-hidden"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleCategory(cat)}
-                          aria-expanded={open}
-                          className="w-full flex items-center justify-between px-3.5 py-3
-                                     text-[14.5px] font-semibold"
-                        >
-                          <span className="flex items-center gap-2">
-                            {cat}
-                            {chosenHere > 0 && (
-                              <span className="w-5 h-5 rounded-full bg-accent/15 text-accent
-                                                text-[11px] font-bold flex items-center justify-center">
-                                {chosenHere}
-                              </span>
-                            )}
-                          </span>
-                          <ChevronDown
-                            size={17}
-                            className={`text-text-muted transition-transform ${open ? "rotate-180" : ""}`}
-                          />
-                        </button>
-                        {open && (
-                          <div className="flex flex-wrap gap-2 px-3.5 pb-3.5">
-                            {tags.map((tag) => (
-                              <Chip
-                                key={tag}
-                                active={interests.includes(tag)}
-                                onClick={() => toggleInterest(tag)}
-                              >
-                                {tag}
-                              </Chip>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <InterestsPicker
+                  value={interests}
+                  onChange={setInterests}
+                  max={MAX_INTERESTS}
+                />
               </StepShell>
             )}
 
@@ -1026,163 +853,6 @@ function OptionList({
         );
       })}
     </div>
-  );
-}
-
-function PhotoTile({
-  slot,
-  isPrimary,
-  onPick,
-  onRemove,
-  onMakePrimary,
-  disabled,
-}: {
-  slot?: PhotoSlot;
-  isPrimary: boolean;
-  onPick: (f: File) => void;
-  onRemove: () => void;
-  onMakePrimary: () => void;
-  disabled: boolean;
-}) {
-  const inputId = useId();
-
-  const fileInput = (
-    <input
-      id={inputId}
-      type="file"
-      accept="image/*"
-      className="hidden"
-      disabled={disabled}
-      onChange={(e) => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-
-        // HEIC/HEIF с iPhone: Pillow в API без libheif их не открывает,
-        // а <input accept="image/*"> их отдаёт как есть. Конвертируем в JPEG
-        // прямо в браузере через canvas — иначе загрузка обязательно упадёт
-        // с "Файл не является изображением".
-        const isHeic =
-          /image\/(heic|heif)/i.test(f.type) ||
-          /\.(heic|heif)$/i.test(f.name);
-
-        if (isHeic) {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            canvas.getContext("2d")?.drawImage(img, 0, 0);
-            canvas.toBlob(
-              (blob) => {
-                URL.revokeObjectURL(img.src);
-                if (!blob) {
-                  console.error("HEIC→JPEG: toBlob вернул null");
-                  return;
-                }
-                onPick(new File([blob], f.name.replace(/\.(heic|heif)$/i, ".jpg"), {
-                  type: "image/jpeg",
-                }));
-              },
-              "image/jpeg",
-              0.92,
-            );
-          };
-          img.onerror = () => {
-            URL.revokeObjectURL(img.src);
-            console.error("HEIC не удалось прочитать в браузере");
-          };
-          img.src = URL.createObjectURL(f);
-          // Сбрасываем значение, иначе повторный выбор того же файла не сработает
-          e.target.value = "";
-          return;
-        }
-
-        onPick(f);
-        // Сбрасываем значение, иначе повторный выбор того же файла не сработает
-        e.target.value = "";
-      }}
-    />
-  );
-
-  if (slot?.url) {
-    return (
-      <div className="relative aspect-[3/4] rounded-[var(--radius-tile)] overflow-hidden bg-surface-2">
-        <img src={slot.url} alt="" className="w-full h-full object-cover" />
-        {isPrimary ? (
-          <span
-            className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full
-                       bg-accent text-[10px] font-bold text-white
-                       flex items-center gap-1"
-          >
-            <Star size={9} fill="currentColor" />
-            Главное
-          </span>
-        ) : (
-          /* Тап по самой плитке, а не по маленькой звёздочке: цель во весь
-             снимок промахнуться невозможно, а всё, что можно сделать с не
-             главным фото, кроме удаления, — как раз повысить его */
-          <button
-            onClick={onMakePrimary}
-            aria-label="Сделать главным фото"
-            className="absolute inset-0 flex items-end justify-start p-1.5
-                       active:bg-black/25 transition-colors"
-          >
-            <span
-              className="px-2 py-0.5 rounded-full bg-black/55 backdrop-blur-sm
-                         text-[10px] font-semibold text-white
-                         flex items-center gap-1"
-            >
-              <Star size={9} />
-              Главным
-            </span>
-          </button>
-        )}
-        <button
-          aria-label="Удалить фото"
-          onClick={onRemove}
-          className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full
-                     bg-black/60 backdrop-blur-sm flex items-center justify-center"
-        >
-          <X size={15} />
-        </button>
-      </div>
-    );
-  }
-
-  if (slot?.uploading) {
-    return (
-      <div className="aspect-[3/4] rounded-[var(--radius-tile)] skeleton flex items-center justify-center">
-        <Spinner size={20} />
-      </div>
-    );
-  }
-
-  if (slot?.error) {
-    return (
-      <label
-        htmlFor={inputId}
-        className="aspect-[3/4] rounded-[var(--radius-tile)] cursor-pointer
-                   border border-danger/40 bg-danger/10 p-2
-                   flex flex-col items-center justify-center text-center gap-1"
-      >
-        <X size={18} className="text-danger" />
-        <span className="text-[10.5px] leading-tight text-danger">{slot.error}</span>
-        {fileInput}
-      </label>
-    );
-  }
-
-  return (
-    <label
-      htmlFor={inputId}
-      aria-disabled={disabled}
-      className={`aspect-[3/4] rounded-[var(--radius-tile)] border border-dashed
-                  border-hairline bg-surface flex items-center justify-center
-                  ${disabled ? "opacity-35 pointer-events-none" : "cursor-pointer"}`}
-    >
-      <Camera size={22} className="text-text-faint" />
-      {fileInput}
-    </label>
   );
 }
 

@@ -26,8 +26,9 @@
 копия тихо расходится с другой, и человек читает не то, что суд.
 
 Помимо прозы есть литералы: бот (`bot/config.py`) и мини-апп
-(`web/src/pages/Onboarding.tsx`) не импортируют `api/config.py` и держат
-осознанные копии границ. Их сверяет test_литералы_клиентов_совпадают_с_конфигом.
+(`web/src/lib/profileOptions.ts` — оттуда границы читают онбординг и экран
+редактирования) не импортируют `api/config.py` и держат осознанные копии
+границ. Их сверяет test_литералы_клиентов_совпадают_с_конфигом.
 """
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ import pytest
     "web/public/manifest.json",
     "web/src/pages/Login.tsx",
     "web/src/pages/Onboarding.tsx",
+    "web/src/pages/EditProfile.tsx",
     "bot/texts.py",
     "README.md",
     "APPSTORE.md",
@@ -163,8 +165,8 @@ def test_appstore_не_путает_рейтинг_с_порогом():
 ЛИТЕРАЛЫ_КЛИЕНТОВ = (
     ("bot/config.py", re.compile(r"^MIN_AGE:\s*int\s*=\s*(\d+)", re.M), "MIN_AGE"),
     ("bot/config.py", re.compile(r"^MAX_AGE:\s*int\s*=\s*(\d+)", re.M), "MAX_AGE"),
-    ("web/src/pages/Onboarding.tsx", re.compile(r"const\s+MIN_AGE\s*=\s*(\d+)"), "MIN_AGE"),
-    ("web/src/pages/Onboarding.tsx", re.compile(r"const\s+MAX_AGE\s*=\s*(\d+)"), "MAX_AGE"),
+    ("web/src/lib/profileOptions.ts", re.compile(r"const\s+MIN_AGE\s*=\s*(\d+)"), "MIN_AGE"),
+    ("web/src/lib/profileOptions.ts", re.compile(r"const\s+MAX_AGE\s*=\s*(\d+)"), "MAX_AGE"),
 )
 
 
