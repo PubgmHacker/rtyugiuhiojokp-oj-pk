@@ -202,7 +202,10 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Проверка docker-compose
-        run: docker compose config -q
+        # Сервисы api и bot объявляют env_file: .env, которого в чекауте нет
+        # (он в .gitignore) — без него config падает на первом же шаге. Кладём
+        # пример, как велит шапка самого docker-compose.yml перед запуском.
+        run: cp .env.example .env && docker compose config -q
 
       - name: Сборка образа API
         uses: docker/build-push-action@v6
