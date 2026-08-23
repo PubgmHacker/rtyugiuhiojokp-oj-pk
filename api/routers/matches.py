@@ -19,7 +19,7 @@ from services.chat_delivery import (
     ДоставкаОтклонена, fan_out, reel_preview, save_message,
 )
 from services.streaks import (
-    can_revive as стрик_оживим, revive_streak, streak_emoji, get_streak,
+    can_revive as стрик_оживим, revive_streak, streak_emoji, get_streaks_bulk,
 )
 from services.direct_messages import direct_quota_left, start_direct_message
 from services.matching import ОНЛАЙН_МИНУТ
@@ -112,6 +112,10 @@ async def get_matches(
             Match.is_active == True,
         ))
         .order_by(desc(Match.created_at))
+        # Потолок, а не пагинация: экран чатов листает первые десятки, а
+        # без LIMIT один аккаунт с тысячей мэтчей собирал бы ответ на
+        # мегабайты и держал соединение пула на всё это время.
+        .limit(200)
     )
     matches = result.scalars().all()
     if not matches:
@@ -194,6 +198,10 @@ async def get_matches(
     opened = await opened_match_ids(session, user.id)
     лимит_исчерпан = (await match_views_state(session, user.id, tier)).exhausted
 
+    # Серии — одним запросом на весь список (внутри то же сгорание и
+    # квота, что у get_streak; см. get_streaks_bulk)
+    серии = await get_streaks_bulk(session, match_ids)
+
     responses = []
     for m in matches:
         partner_id = m.user2_id if m.user1_id == user.id else m.user1_id
@@ -227,10 +235,9 @@ async def get_matches(
         if last and not locked:
             preview = last.text or ("Фотография" if last.image_url else None)
 
-        # Стрик: сознательно делается одну копию на пару, а не по каждому
-        # чату — иначе список на 100 чатов потребует 100 запросов.
-        # Стрик сгорает при полном дне тишины и из окна revive тоже виден.
-        streak = await get_streak(session, m.id)
+        # Стрик из пакетного словаря — сгорание и окно revive применены
+        # при чтении, как и раньше, но без запроса на каждый чат
+        streak = серии.get(m.id)
         days = streak.streak_days if streak else 0
         emoji = streak_emoji(days) if days else ""
         # Кнопку показываем ровно по тому правилу, по которому её примет

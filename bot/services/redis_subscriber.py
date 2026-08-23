@@ -27,7 +27,20 @@ _redis: redis.Redis | None = None
 async def _get_redis() -> redis.Redis:
     global _redis
     if _redis is None:
-        _redis = redis.from_url(REDIS_URL, decode_responses=True)
+        # Командный клиент (publish, отзыв токенов): с таймаутами, иначе
+        # blackhole до Redis вешает публикацию — а с ней и хендлер сообщения —
+        # навсегда. Подписка живёт на СВОЁМ клиенте без socket_timeout (см.
+        # start_redis_subscriber): для listen() тихий канал неотличим от
+        # мёртвого сокета, и здесь таймаут рвал бы подписку каждые 5 секунд.
+        _redis = redis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            socket_timeout=5.0,
+            socket_connect_timeout=2.0,
+            retry_on_timeout=True,
+            health_check_interval=30,
+            max_connections=50,
+        )
     return _redis
 
 
@@ -103,7 +116,11 @@ async def revoke_user_tokens(user_id: str) -> None:
 
 async def start_redis_subscriber(bot):
     """Subscribe to Redis channels and forward events to Telegram users."""
-    r = await _get_redis()
+    # Отдельный клиент, а не общий _get_redis: у общего стоит socket_timeout,
+    # который для вечно ждущего listen() означал бы обрыв на каждой паузе в
+    # событиях. Подписке таймаут на чтение не нужен — обрыв TCP и рестарт
+    # Redis ловит supervise_redis_subscriber переподключением.
+    r = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2.0)
     pubsub = r.pubsub()
 
     await pubsub.subscribe("dating:bot:matches", "dating:bot:events")
@@ -162,11 +179,15 @@ async def start_redis_subscriber(bot):
     except asyncio.CancelledError:
         logger.info("Redis subscriber cancelled")
     finally:
-        await pubsub.unsubscribe()
-        await pubsub.aclose()
-        # Сам клиент здесь не закрываем: он общий на процесс (_get_redis),
-        # и его закрытие из finally остановило бы все публикации и сделало бы
-        # невозможным рестарт подписки.
+        # Закрываем и pubsub, и клиент: клиент здесь свой (не _get_redis),
+        # и без aclose каждое переподключение супервизора теряло бы пул
+        # соединений. Ошибки глушим — сокет к этому моменту может быть
+        # уже мёртв, а падение в finally скрыло бы настоящую причину выхода.
+        for закрыть in (pubsub.unsubscribe, pubsub.aclose, r.aclose):
+            try:
+                await закрыть()
+            except Exception:
+                pass
 
 
 #: Подписка, прожившая столько секунд, считается состоявшейся: паузу и признак

@@ -166,6 +166,10 @@ class Like(Base):
         UniqueConstraint("liker_id", "liked_id", name="uq_like_pair"),
         Index("ix_like_liker", "liker_id"),
         Index("ix_like_liked", "liked_id"),
+        # Квоты API считают лайки за скользящее окно на каждом свайпе —
+        # индекс зеркалит api/models/models.py на случай, если create_all
+        # бота отработает на чистой базе первым
+        Index("ix_like_liker_created", "liker_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -236,6 +240,11 @@ class MatchView(Base):
 
 class Referral(Base):
     __tablename__ = "dating_referrals"
+    __table_args__ = (
+        # Зеркало api/models/models.py: COUNT приглашённых на каждом
+        # GET /profiles/me
+        Index("ix_referral_referrer", "referrer_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     referrer_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -260,6 +269,12 @@ class Message(Base):
     __table_args__ = (
         Index("ix_message_match_created", "match_id", "created_at"),
         Index("ix_dating_messages_reel", "reel_id"),
+        # Частичный индекс непрочитанных — зеркало api/models/models.py
+        Index(
+            "ix_message_unread", "match_id", "sender_id",
+            postgresql_where=text("read_at IS NULL"),
+            sqlite_where=text("read_at IS NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -626,6 +641,12 @@ class DeviceToken(Base):
 
 class AiModerationLog(Base):
     __tablename__ = "dating_ai_moderation_logs"
+    __table_args__ = (
+        # Зеркало api/models/models.py: журнал пишется на каждое сообщение,
+        # страйки ищут MAX(created_at) по человеку, админка листает по времени
+        Index("ix_ai_moderation_user_created", "user_id", "created_at"),
+        Index("ix_ai_moderation_created", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -920,6 +941,12 @@ class Notification(Base):
     __tablename__ = "dating_notifications"
     __table_args__ = (
         Index("ix_notification_user", "user_id", "created_at"),
+        # Частичный индекс красной точки — зеркало api/models/models.py
+        Index(
+            "ix_notification_unread", "user_id",
+            postgresql_where=text("read_at IS NULL"),
+            sqlite_where=text("read_at IS NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))

@@ -38,6 +38,10 @@ class Settings(BaseSettings):
 
     # ── Database ────────────────────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://simp:simp_dating_dev@localhost:5433/simp_dating"
+    # Дефолты пула согласованы с числом воркеров и max_connections
+    # Postgres — расчёт в database/connection.py. Менять парой с ним.
+    DB_POOL_SIZE: int = 12
+    DB_MAX_OVERFLOW: int = 18
 
     # ── Redis ────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6380/0"

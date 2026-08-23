@@ -224,7 +224,18 @@ async def get_fsm_storage():
     бесконечной «что-то пошло не так». Проверяем доступность явным ping.
     """
     try:
-        storage = RedisStorage.from_url(REDIS_URL)
+        # Таймауты на FSM-операции: каждый шаг анкеты читает и пишет состояние,
+        # и без socket_timeout зависший Redis вешал бы хендлеры (а с ними и
+        # очередь апдейтов) навсегда — вместо чётной ошибки через 3 секунды.
+        storage = RedisStorage.from_url(
+            REDIS_URL,
+            connection_kwargs={
+                "socket_timeout": 3.0,
+                "socket_connect_timeout": 2.0,
+                "retry_on_timeout": True,
+                "health_check_interval": 30,
+            },
+        )
         await asyncio.wait_for(storage.redis.ping(), timeout=5)
         logger.info("Using Redis FSM storage")
         return storage

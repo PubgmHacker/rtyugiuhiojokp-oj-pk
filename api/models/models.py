@@ -267,6 +267,10 @@ class Like(Base):
         # Дека собирает exclude_ids по liker_id, «кто меня лайкнул» — по liked_id
         Index("ix_like_liker", "liker_id"),
         Index("ix_like_liked", "liked_id"),
+        # Квоты считают лайки за скользящее окно (quotas.likes_state,
+        # _superlikes_left) — на КАЖДОМ свайпе. Без created_at в индексе
+        # подсчёт «за последние 12 часов» читает всю историю лайков человека.
+        Index("ix_like_liker_created", "liker_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -380,6 +384,16 @@ class Message(Base):
     __table_args__ = (
         Index("ix_message_match_created", "match_id", "created_at"),
         Index("ix_dating_messages_reel", "reel_id"),
+        # Непрочитанное — самый частый COUNT продукта: бейдж таббара, счётчики
+        # в списке чатов, отметка прочтения. Полный индекс дублировал бы всю
+        # таблицу; частичный держит только непрочитанные строки (их на порядки
+        # меньше) и превращает COUNT в index-only scan. Для SQLite условие
+        # задаётся отдельным ключом — тестовые базы получают тот же индекс.
+        Index(
+            "ix_message_unread", "match_id", "sender_id",
+            postgresql_where=text("read_at IS NULL"),
+            sqlite_where=text("read_at IS NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -470,6 +484,11 @@ class GiftSubscription(Base):
 class Referral(Base):
     """Приглашение по реферальной ссылке t.me/bot?start=ref_<user_id>."""
     __tablename__ = "dating_referrals"
+    __table_args__ = (
+        # COUNT приглашённых идёт на каждом GET /profiles/me и в ранжировании
+        # деки — без индекса это Seq Scan по всем рефералам сервиса.
+        Index("ix_referral_referrer", "referrer_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     referrer_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -1018,6 +1037,15 @@ class ChatStreak(Base):
 
 class AiModerationLog(Base):
     __tablename__ = "dating_ai_moderation_logs"
+    __table_args__ = (
+        # Пишется на каждое сообщение чата — растёт быстрее всех таблиц.
+        # (user_id, created_at): страйки и амнистия (services/enforcement.py)
+        # ищут MAX(created_at) по человеку на каждом заблокированном тексте,
+        # карточка юзера в админке листает его журнал. (created_at) — глобальный
+        # листинг модерации в админке и будущая чистка старых записей.
+        Index("ix_ai_moderation_user_created", "user_id", "created_at"),
+        Index("ix_ai_moderation_created", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
@@ -1311,6 +1339,15 @@ class Notification(Base):
     __tablename__ = "dating_notifications"
     __table_args__ = (
         Index("ix_notification_user", "user_id", "created_at"),
+        # Красная точка колокольчика — COUNT непрочитанных на каждом входе.
+        # Лента растёт монотонно и не чистится, а непрочитанных единицы:
+        # частичный индекс остаётся крошечным и закрывает заодно UPDATE
+        # в mark_all_read.
+        Index(
+            "ix_notification_unread", "user_id",
+            postgresql_where=text("read_at IS NULL"),
+            sqlite_where=text("read_at IS NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))

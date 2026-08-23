@@ -172,11 +172,28 @@ async def open_match(
     if is_unlimited(match_views_per_day(уровень)):
         return MatchOpen(True, QuotaState(match_views_per_day(уровень), 0, -1, True, None))
 
+    # Быстрый путь БЕЗ лока: мэтч уже открыт в текущем окне. Это самый частый
+    # случай — каждое чтение переписки и каждая отправка проходят через
+    # open_match, — а xact-лок держится до конца транзакции, то есть до конца
+    # обработчика: с локом два параллельных запроса одного человека в один чат
+    # выполнялись бы строго по очереди. Гонки здесь нет: повторное открытие
+    # ничего не тратит, а запись в окне может только продлиться.
+    result = await session.execute(
+        select(MatchView).where(
+            and_(MatchView.user_id == user_id, MatchView.match_id == match_id)
+        )
+    )
+    просмотр = result.scalar_one_or_none()
+    if просмотр is not None and _в_окне(просмотр.viewed_at):
+        return MatchOpen(True, await match_views_state(session, user_id, уровень))
+
     await session.execute(
         sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
         {"k": f"dating:likes:{user_id}"},
     )
 
+    # Перечитываем под локом: пока мы его брали, параллельный запрос мог
+    # открыть этот же мэтч — тогда слот уже потрачен и тратить второй нельзя
     result = await session.execute(
         select(MatchView).where(
             and_(MatchView.user_id == user_id, MatchView.match_id == match_id)

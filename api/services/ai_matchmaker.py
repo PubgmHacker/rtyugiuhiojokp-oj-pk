@@ -28,7 +28,10 @@ def _get_zhipu_client():
     if _zhipu_client is None and settings.ZHIPU_API_KEY:
         try:
             from zhipuai import ZhipuAI
-            _zhipu_client = ZhipuAI(api_key=settings.ZHIPU_API_KEY)
+            # 15с в SDK — добить поток, который _AI_TIMEOUT уже перестал
+            # ждать: wait_for снимает ожидание, но не сетевой вызов, и без
+            # таймаута httpx зависшие скоринги копились бы в executor
+            _zhipu_client = ZhipuAI(api_key=settings.ZHIPU_API_KEY, timeout=15.0)
         except ImportError:
             logger.warning("zhipuai package not installed")
     return _zhipu_client

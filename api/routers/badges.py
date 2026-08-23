@@ -14,7 +14,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
@@ -47,8 +48,11 @@ async def get_badges(
     )
 
     # Кого я уже оценил (лайк или пасс) — их лайки не считаются: на экране
-    # «кто меня лайкнул» этих карточек тоже нет
-    мои_оценки = select(Like.liked_id).where(Like.liker_id == user.id)
+    # «кто меня лайкнул» этих карточек тоже нет. Анти-джойн через NOT EXISTS,
+    # а не NOT IN: NOT IN заставляет планировщик материализовать всю историю
+    # оценок (и спотыкается о NULL-семантику), NOT EXISTS остаётся индексным
+    # пробником по uq_like_pair — дека фильтрует себя так же.
+    МояОценка = aliased(Like)
     likes = await session.scalar(
         select(func.count(Like.id))
         .join(User, Like.liker_id == User.id)
@@ -56,7 +60,10 @@ async def get_badges(
             Like.liked_id == user.id,
             Like.type != "pass",
             User.is_banned == False,  # noqa: E712 — сравнение строит SQL
-            Like.liker_id.not_in(мои_оценки),
+            ~exists().where(and_(
+                МояОценка.liker_id == user.id,
+                МояОценка.liked_id == Like.liker_id,
+            )),
         ))
     )
 

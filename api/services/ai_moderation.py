@@ -40,7 +40,11 @@ def _get_zhipu_client():
     if _zhipu_client is None and settings.ZHIPU_API_KEY:
         try:
             from zhipuai import ZhipuAI
-            _zhipu_client = ZhipuAI(api_key=settings.ZHIPU_API_KEY)
+            # Таймаут в самом SDK, а не только в asyncio.wait_for снаружи:
+            # wait_for отпускает ожидающего, но синхронный вызов продолжает
+            # ВИСЕТЬ в потоке executor до сетевого таймаута httpx — без этой
+            # цифры зависший Zhipu постепенно съедал бы весь пул потоков.
+            _zhipu_client = ZhipuAI(api_key=settings.ZHIPU_API_KEY, timeout=15.0)
         except ImportError:
             logger.warning("zhipuai package not installed")
     return _zhipu_client

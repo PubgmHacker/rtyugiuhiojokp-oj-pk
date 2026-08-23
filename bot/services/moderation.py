@@ -115,7 +115,9 @@ def _get_client():
     try:
         from zhipuai import ZhipuAI
 
-        _client = ZhipuAI(api_key=ZHIPU_API_KEY)
+        # Конечный таймаут обязателен: вызов синхронный, и зависший Zhipu
+        # держал бы поток executor бесконечно (см. api/services/ai_moderation)
+        _client = ZhipuAI(api_key=ZHIPU_API_KEY, timeout=15.0)
     except ImportError:
         logger.warning("Пакет zhipuai не установлен — модерация по словарю")
     except Exception as e:

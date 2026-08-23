@@ -21,7 +21,14 @@ CODE_TTL = 600  # 10 минут, как в API
 async def issue_link_code(user_id: str) -> str | None:
     """Выдать код привязки. None — Redis недоступен, привязка невозможна."""
     try:
-        r = redis.from_url(REDIS_URL, decode_responses=True)
+        # Таймауты: код выдаётся прямо в хендлере кнопки, вечное ожидание
+        # Redis здесь выглядело бы как «бот завис» для человека
+        r = redis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            socket_timeout=3.0,
+            socket_connect_timeout=2.0,
+        )
         try:
             for _ in range(5):
                 code = str(secrets.randbelow(900_000) + 100_000)

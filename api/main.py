@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from config import get_settings
@@ -199,35 +200,61 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import inspect as sa_inspect
         from models.models import Base
 
-        async with engine.begin() as conn:
-            под_alembic = await conn.run_sync(
-                lambda c: sa_inspect(c).has_table("alembic_version")
+        # Схему меняет ровно один процесс за раз: с несколькими воркерами
+        # (или репликами Railway) каждый прогоняет lifespan, и без лока два
+        # alembic upgrade стартуют параллельно — гонка на alembic_version и
+        # DDL. Advisory-лок Postgres сериализует их: опоздавший ждёт, а
+        # затем видит уже применённую схему (upgrade до head — no-op,
+        # create_all идемпотентен). Лок живёт на своём соединении вне пула
+        # сессий и существует только в Postgres — на других диалектах
+        # (SQLite в локальных экспериментах) секции не из чего гонять,
+        # процесс там один.
+        _лок = engine.dialect.name == "postgresql"
+        _соединение_лока = await engine.connect() if _лок else None
+        if _соединение_лока is not None:
+            await _соединение_лока.execute(
+                sa_text("SELECT pg_advisory_lock(721996)")
             )
 
-        if под_alembic:
-            # База уже версионирована: СНАЧАЛА миграции, потом create_all как
-            # страховка для таблиц, которым миграции не завели. Обратный
-            # порядок ломал деплой: create_all поднимал новую таблицу по
-            # модели, следующая же миграция падала на ней DuplicateTableError,
-            # и транзакционный DDL откатывал ВСЮ пачку — включая ревизии,
-            # которые добавляли колонки. Схема оставалась старой, а запрос к
-            # новой колонке падал у пользователей.
-            await asyncio.to_thread(_применить_миграции)
+        try:
             async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-        else:
-            # Чистая база: схему ставит create_all по моделям и сразу
-            # штампуем последнюю ревизию — цепочку догонять нечего.
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            await asyncio.to_thread(_отметить_схему_свежей)
+                под_alembic = await conn.run_sync(
+                    lambda c: sa_inspect(c).has_table("alembic_version")
+                )
 
-        for stmt in _MIGRATIONS:
-            try:
+            if под_alembic:
+                # База уже версионирована: СНАЧАЛА миграции, потом create_all
+                # как страховка для таблиц, которым миграции не завели.
+                # Обратный порядок ломал деплой: create_all поднимал новую
+                # таблицу по модели, следующая же миграция падала на ней
+                # DuplicateTableError, и транзакционный DDL откатывал ВСЮ
+                # пачку — включая ревизии, которые добавляли колонки. Схема
+                # оставалась старой, а запрос к новой колонке падал у
+                # пользователей.
+                await asyncio.to_thread(_применить_миграции)
                 async with engine.begin() as conn:
-                    await conn.execute(sa_text(stmt))
-            except Exception as e:
-                logger.debug(f"Migration skipped ({stmt[:40]}…): {e}")
+                    await conn.run_sync(Base.metadata.create_all)
+            else:
+                # Чистая база: схему ставит create_all по моделям и сразу
+                # штампуем последнюю ревизию — цепочку догонять нечего.
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                await asyncio.to_thread(_отметить_схему_свежей)
+
+            for stmt in _MIGRATIONS:
+                try:
+                    async with engine.begin() as conn:
+                        await conn.execute(sa_text(stmt))
+                except Exception as e:
+                    logger.debug(f"Migration skipped ({stmt[:40]}…): {e}")
+        finally:
+            if _соединение_лока is not None:
+                try:
+                    await _соединение_лока.execute(
+                        sa_text("SELECT pg_advisory_unlock(721996)")
+                    )
+                finally:
+                    await _соединение_лока.close()
         logger.info("PostgreSQL connected, migrations applied, tables ensured")
 
     # Test Redis connection
@@ -286,6 +313,12 @@ app = FastAPI(
 # Лимит частоты запросов на чувствительных путях (жалобы, вход, загрузка).
 # Ставится до CORS, чтобы отброшенный запрос не тратил работу приложения.
 app.add_middleware(RateLimitMiddleware)
+
+# Сжатие ответов: ленты (discover, лайки, чаты) — это килобайты JSON на
+# каждый свайп, и на мобильном радио это заметнее, чем на сервере. Порог
+# 1 КиБ: мелкие ответы (badges, health) сжимать дороже, чем отдать как есть.
+# WebSocket и SSE middleware не трогает — сжимаются только обычные ответы.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # CORS: авторизация через Bearer-заголовок, куки не используем —
 # credentials выключены. Список origin'ов приходит из CORS_ORIGINS,

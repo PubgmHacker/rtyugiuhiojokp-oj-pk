@@ -85,6 +85,30 @@ async def get_streak(session: AsyncSession, match_id: str) -> ChatStreak | None:
     return streak
 
 
+async def get_streaks_bulk(
+    session: AsyncSession, match_ids: list[str],
+) -> dict[str, ChatStreak]:
+    """Серии сразу для пачки пар — для списка чатов.
+
+    Семантика в точности как у `get_streak` (сгорание и месячная квота
+    применяются при чтении), но одним SELECT вместо запроса на каждый
+    чат: список на сто пар делал сто круговых до базы, и под нагрузкой
+    именно этот экран занимал соединения пула дольше всех.
+    """
+    if not match_ids:
+        return {}
+
+    result = await session.execute(
+        select(ChatStreak).where(ChatStreak.match_id.in_(match_ids))
+    )
+    streaks: dict[str, ChatStreak] = {}
+    for streak in result.scalars().all():
+        _maybe_reset_streak(streak)
+        refresh_revives_for_month(streak)
+        streaks[streak.match_id] = streak
+    return streaks
+
+
 async def ensure_streak_row(session: AsyncSession, match_id: str) -> ChatStreak:
     """Взять строку серии или создать её. На новой строке квота
     восстановлений нулевая — серии ещё нет, оживлять нечего."""
