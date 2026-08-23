@@ -32,7 +32,10 @@ async def _get_redis() -> redis.Redis:
         # навсегда. Подписка живёт на СВОЁМ клиенте без socket_timeout (см.
         # start_redis_subscriber): для listen() тихий канал неотличим от
         # мёртвого сокета, и здесь таймаут рвал бы подписку каждые 5 секунд.
-        _redis = redis.from_url(
+        # Пул Blocking, как в api/services/realtime.py: обычный пул при
+        # исчерпании max_connections не ждёт, а кидает «Too many connections» —
+        # шторм событий терял бы публикации вместо очереди в миллисекунды.
+        pool = redis.BlockingConnectionPool.from_url(
             REDIS_URL,
             decode_responses=True,
             socket_timeout=5.0,
@@ -40,7 +43,9 @@ async def _get_redis() -> redis.Redis:
             retry_on_timeout=True,
             health_check_interval=30,
             max_connections=50,
+            timeout=5.0,
         )
+        _redis = redis.Redis(connection_pool=pool)
     return _redis
 
 

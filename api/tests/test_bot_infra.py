@@ -46,7 +46,11 @@ import sys, types, asyncio, json
 закрыто = []
 
 class ФейковыйКлиент:
-    def __init__(self, номер): self.номер = номер
+    # Конструктор повторяет оба пути создания клиента в боте: подписной
+    # redis.from_url(...) и командный redis.Redis(connection_pool=пул)
+    def __init__(self, *a, **kw):
+        self.номер = len(создано)
+        создано.append(self)
     async def publish(self, канал, данные): return 1
     async def aclose(self): закрыто.append(self.номер)
     def pubsub(self): return ФейковыйPubSub()
@@ -62,13 +66,17 @@ class ФейковыйPubSub:
         return пусто()
 
 def from_url(url, **kw):
-    клиент = ФейковыйКлиент(len(создано))
-    создано.append(клиент)
-    return клиент
+    return ФейковыйКлиент()
+
+class ФейковыйБлокирующийПул:
+    @classmethod
+    def from_url(cls, url, **kw):
+        return cls()
 
 модуль = types.ModuleType("redis.asyncio")
 модуль.from_url = from_url
 модуль.Redis = ФейковыйКлиент
+модуль.BlockingConnectionPool = ФейковыйБлокирующийПул
 корень = types.ModuleType("redis")
 корень.asyncio = модуль
 sys.modules["redis"] = корень

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -12,11 +13,19 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 _redis: Optional[redis.Redis] = None
+#: Цикл, на котором создан клиент. BlockingConnectionPool держит
+#: asyncio.Condition, привязанный к первому циклу, — клиент с прошлого
+#: цикла на новом падает «Event loop is closed». В проде цикл один на
+#: процесс и клиент создаётся ровно один раз; циклы сменяются только
+#: в тестах (у каждого теста свой), там прежний клиент просто бросаем —
+#: закрыть его нельзя, его соединения живут на уже мёртвом цикле.
+_redis_цикл: Optional[object] = None
 
 
 async def get_redis() -> redis.Redis:
-    global _redis
-    if _redis is None:
+    global _redis, _redis_цикл
+    цикл = asyncio.get_running_loop()
+    if _redis is None or _redis_цикл is not цикл:
         # Таймауты обязательны: без socket_timeout зависший Redis (blackhole
         # при сетевом сбое) вешает publish навсегда — вместе с обработчиком
         # запроса и его соединением к Postgres. Pubsub этого клиента не
@@ -24,9 +33,13 @@ async def get_redis() -> redis.Redis:
         # есть каждый read ограничен секундой и до socket_timeout не доходит.
         # health_check пингует простоявшее соединение перед использованием —
         # иначе первый publish после тихого часа улетал бы в мёртвый сокет.
-        # max_connections — потолок пула на процесс: защита Redis от лавины
-        # соединений в шторм, публикации короткие и 50 параллельных хватает.
-        _redis = redis.from_url(
+        # Пул именно Blocking: у обычного ConnectionPool max_connections —
+        # это ОШИБКА «Too many connections» при исчерпании, и залп первой
+        # волны (лимитер дёргает Redis на каждом запросе) отвечал бы 503
+        # легитимным людям. BlockingConnectionPool ставит лишние запросы в
+        # очередь за соединением (операции — миллисекунды), timeout=5 — предел
+        # этого ожидания, после него честная ошибка вместо вечной очереди.
+        pool = redis.BlockingConnectionPool.from_url(
             settings.REDIS_URL,
             decode_responses=True,
             socket_timeout=5.0,
@@ -34,7 +47,10 @@ async def get_redis() -> redis.Redis:
             retry_on_timeout=True,
             health_check_interval=30,
             max_connections=50,
+            timeout=5.0,
         )
+        _redis = redis.Redis(connection_pool=pool)
+        _redis_цикл = цикл
     return _redis
 
 

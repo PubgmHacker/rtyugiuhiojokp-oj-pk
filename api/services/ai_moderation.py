@@ -776,13 +776,18 @@ async def log_moderation(
     HTTPException, зависимость делает rollback — и запись о самом интересном
     случае исчезла бы вместе с ним. Сбой записи журнала не должен ломать
     сценарий: пользователь не виноват, что журнал недоступен.
+
+    Сессия — из журнального пула (log_session_factory), не из общего:
+    вторая сессия из общего пула при удерживаемой первой самоблокирует
+    пул под залпом — все соединения розданы, и каждый обработчик ждёт
+    второе соединение, которое никто не отдаст.
     """
-    from database.connection import async_session_factory
+    from database.connection import log_session_factory
     from models.models import AiModerationLog
 
     result = "blocked" if verdict.get("blocked") else ("safe" if verdict.get("safe", True) else "warning")
     try:
-        async with async_session_factory() as session:
+        async with log_session_factory()() as session:
             session.add(
                 AiModerationLog(
                     user_id=user_id,
