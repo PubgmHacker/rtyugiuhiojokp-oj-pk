@@ -117,17 +117,21 @@ async def identity_strikes(user_id: str) -> int:
     Считаем по журналу модерации: он пишется в собственной сессии и переживает
     откат запроса (отказ фото — это как раз HTTPException с откатом), поэтому
     счёт честный. Читаем тоже своей сессией — сразу после записи страйка,
-    из ещё не закоммиченного запроса.
+    из ещё не закоммиченного запроса. Сессия — из журнального пула, той же
+    дорогой, что и запись: чтение идёт при ещё удерживаемой сессии запроса,
+    и вторая сессия из ОБЩЕГО пула под залпом — самоблокировка (все
+    соединения розданы обработчикам, каждый ждёт второе; см.
+    log_session_factory).
 
     Окно обрезается последним разбаном (AMNESTY_TYPES): после разблокировки
     счёт начинается заново, в бан ведут только новые нарушения.
     """
-    from database.connection import async_session_factory
+    from database.connection import log_session_factory
     from models.models import AiModerationLog
 
     граница = datetime.now(timezone.utc) - IDENTITY_STRIKE_WINDOW
     try:
-        async with async_session_factory() as session:
+        async with log_session_factory()() as session:
             result = await session.execute(
                 select(func.max(AiModerationLog.created_at)).where(
                     AiModerationLog.user_id == user_id,
@@ -160,14 +164,16 @@ async def prior_ban_count(user_id: str) -> int:
     Окно обрезается последним разбаном админа (LADDER_AMNESTY_TYPES — платный
     разбан лестницу НЕ сбрасывает, см. комментарий у константы). Сбой журнала
     считается нулём: нарушитель получит первую ступень вместо эскалации —
-    ошибка в мягкую сторону, как у identity_strikes.
+    ошибка в мягкую сторону, как у identity_strikes. Сессия — из журнального
+    пула, по той же причине, что там: вызов идёт при удерживаемой сессии
+    запроса, второй из общего пула здесь быть не должно.
     """
-    from database.connection import async_session_factory
+    from database.connection import log_session_factory
     from models.models import AiModerationLog
 
     граница = datetime.now(timezone.utc) - BAN_HISTORY_WINDOW
     try:
-        async with async_session_factory() as session:
+        async with log_session_factory()() as session:
             result = await session.execute(
                 select(func.max(AiModerationLog.created_at)).where(
                     AiModerationLog.user_id == user_id,
@@ -280,13 +286,16 @@ async def text_strike_count(user_id: str, category: str, window: timedelta) -> i
     подсчёта. Окно обрезается последним разбаном (AMNESTY_TYPES): платный или
     админский разбан обнуляет счёт, в новый бан ведут только новые нарушения.
     Сбой журнала — 0: лучше пропустить эскалацию, чем банить по фантому.
+    Сессия — из журнального пула, как у identity_strikes: вызов идёт при
+    удерживаемой сессии запроса (или ban_session WS-чата — тоже общий пул),
+    и вторая сессия из общего пула под залпом — самоблокировка.
     """
-    from database.connection import async_session_factory
+    from database.connection import log_session_factory
     from models.models import AiModerationLog
 
     граница = datetime.now(timezone.utc) - window
     try:
-        async with async_session_factory() as session:
+        async with log_session_factory()() as session:
             result = await session.execute(
                 select(func.max(AiModerationLog.created_at)).where(
                     AiModerationLog.user_id == user_id,

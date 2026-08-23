@@ -72,6 +72,12 @@ def log_session_factory() -> async_sessionmaker[AsyncSession]:
     не дольше 5 секунд и роняем только журнал (log_moderation глотает сбой),
     не сценарий пользователя.
 
+    Этим же пулом журнал ЧИТАЮТ счётчики страйков и лестницы банов
+    (services/enforcement.py: text_strike_count, identity_strikes,
+    prior_ban_count) — они вызываются при всё ещё удерживаемой сессии
+    запроса, то есть с тем же риском самоблокировки, что и запись. Чтения
+    там — пара COUNT/MAX по индексу, миллисекунды, как и INSERT.
+
     Возвращает фабрику, а не сессию: вызывающий делает
     `async with log_session_factory()() as session`.
     """
