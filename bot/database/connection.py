@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -9,7 +10,7 @@ from sqlalchemy import select, text, func, and_, not_, or_, case, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL
-from services.plans import tier_rank
+from services.plans import tier_from_plan, tier_rank
 
 # Список языков берём из texts: там его единственная копия на стороне бота —
 # по ней же рисуется сетка кнопок онбординга, и собственная копия здесь
@@ -28,6 +29,7 @@ from database.models import (
     BannedIdentity,
     Base,
     Block,
+    GiftSubscription,
     User,
     Profile,
     Like,
@@ -258,7 +260,12 @@ async def unban_after_payment(
 
     Возвращает {"unbanned": bool, "reason": str}. "not_banned" — деньги
     пришли, а снимать нечего (двойная оплата, разбан админом): вызывающий
-    обязан вернуть Stars.
+    обязан вернуть Stars. "already_processed" — Telegram повторил доставку
+    УЖЕ зачтённого апдейта: вызывающий НЕ возвращает Stars — услуга по этому
+    charge_id оказана, возврат делал бы разбан бесплатным через ретрай.
+
+    Проверка журнала — ДО проверки бана: повтор старого апдейта после
+    повторного бана иначе снимал бы новый бан старыми деньгами.
 
     Одной транзакцией:
     * флаг is_banned;
@@ -275,6 +282,15 @@ async def unban_after_payment(
     cls = _session_cls()
     async with cls() as session:
         async with session.begin():
+            уже = await session.scalar(
+                select(ProcessedPayment).where(
+                    ProcessedPayment.provider == "stars",
+                    ProcessedPayment.external_id == charge_id,
+                )
+            )
+            if уже is not None:
+                return {"unbanned": False, "reason": "already_processed"}
+
             result = await session.execute(select(User).where(User.id == user_id))
             user = result.scalar_one_or_none()
             if user is None:
@@ -1037,6 +1053,123 @@ async def activate_promo_code(user_id: str, raw_code: str) -> dict:
         # INSERT активации упал на uq_promo_activation при коммите, вся его
         # транзакция откатилась — слот и подписка целы
         return {"activated": False, "reason": "already_used"}
+
+
+async def redeem_gift_code(user_id: str, raw_code: str) -> dict:
+    """Активировать подарочный код — зеркало api/services/gifting.py::redeem_gift.
+
+    Вызывается из FSM промокода: человек прислал код, activate_promo_code
+    ответил not_found — пробуем прочитать ввод как подарочный код. Отказы
+    возвращаются словарём {"redeemed": False, "reason": ...}, как у промо:
+    у бота нет get_session, который превратил бы исключение в ответ. Отказ
+    код НЕ сжигает — все отказные ветки возвращаются до UPDATE.
+
+    Сжигание — одним UPDATE с `redeemed_at IS NULL` в WHERE: из двух
+    одновременных активаций выигрывает ровно одна. Маркер журнала — тот же
+    ключ ("gift", f"gift_{id}"), что пишет API: гонка «бот и мини-апп
+    одним кодом» упирается в уникальную пару и тоже даёт одно начисление.
+    Маркер и подписка — в одной транзакции (доктрина activate_premium).
+    """
+    from datetime import timedelta
+
+    from sqlalchemy.exc import IntegrityError
+
+    код = raw_code.strip().upper().replace(" ", "").replace("-", "")
+    if not код:
+        return {"redeemed": False, "reason": "not_found"}
+    хеш = hashlib.sha256(код.encode()).hexdigest()
+
+    cls = _session_cls()
+    try:
+        async with cls() as session:
+            async with session.begin():
+                gift = await session.scalar(
+                    select(GiftSubscription).where(GiftSubscription.code_hash == хеш)
+                )
+                if not gift:
+                    return {"redeemed": False, "reason": "not_found"}
+                if not gift.paid:
+                    return {"redeemed": False, "reason": "not_paid"}
+                if gift.redeemed_at:
+                    return {"redeemed": False, "reason": "already_used"}
+
+                now = datetime.utcnow()
+                if gift.expires_at and gift.expires_at.replace(tzinfo=None) < now:
+                    return {"redeemed": False, "reason": "expired"}
+
+                # Подарок ниже действующего уровня не активируем и не сжигаем:
+                # иначе Plus-код молча сгорал бы у владельца Aurora. Равный
+                # уровень — продление поверх остатка. Истёкшая подписка
+                # уровнем не считается.
+                result = await session.execute(
+                    select(Subscription).where(Subscription.user_id == user_id)
+                )
+                sub = result.scalar_one_or_none()
+                действующий = "free"
+                if sub and (
+                    sub.expires_at is None
+                    or sub.expires_at.replace(tzinfo=None) > now
+                ):
+                    действующий = tier_from_plan(sub.plan)
+                if tier_rank(действующий) > tier_rank(gift.plan):
+                    return {"redeemed": False, "reason": "tier_lower"}
+
+                сожжён = await session.execute(
+                    update(GiftSubscription)
+                    .where(and_(
+                        GiftSubscription.id == gift.id,
+                        GiftSubscription.redeemed_at.is_(None),
+                    ))
+                    .values(redeemed_at=now, recipient_user_id=user_id)
+                )
+                if сожжён.rowcount == 0:
+                    return {"redeemed": False, "reason": "already_used"}
+
+                # Журнальный маркер — как у платежей, но amount=None: деньги
+                # за подарок уже учтены покупкой, активация не выручка
+                session.add(
+                    ProcessedPayment(
+                        provider="gift",
+                        external_id=f"gift_{gift.id}",
+                        user_id=user_id,
+                        days=gift.months * 30,
+                        amount=None,
+                        currency=None,
+                    )
+                )
+
+                if not sub:
+                    sub = Subscription(user_id=user_id)
+                    session.add(sub)
+
+                # Продление поверх остатка, уровень не понижаем — как в
+                # activate_premium выше
+                base = now
+                if sub.expires_at:
+                    current = sub.expires_at.replace(tzinfo=None)
+                    if current > now:
+                        base = current
+                if tier_rank(gift.plan) >= tier_rank(sub.plan or "free"):
+                    sub.plan = gift.plan
+                sub.expires_at = base + timedelta(days=gift.months * 30)
+                await session.flush()
+
+                logger.info(
+                    f"gift redeemed via bot: plan={gift.plan} "
+                    f"months={gift.months} user={user_id}"
+                )
+                return {
+                    "redeemed": True,
+                    "tier": gift.plan,
+                    "months": gift.months,
+                    "plan": sub.plan,
+                    "expires_at": sub.expires_at.isoformat(),
+                }
+    except IntegrityError:
+        # Гонка «бот и мини-апп одним кодом»: маркер упал на уникальной паре
+        # (provider, external_id) при коммите, транзакция откатилась целиком —
+        # начисление уже сделала другая сторона, код цел у неё
+        return {"redeemed": False, "reason": "already_used"}
 
 
 async def revoke_premium_payment(payment_id: str, provider: str = "stars") -> dict:

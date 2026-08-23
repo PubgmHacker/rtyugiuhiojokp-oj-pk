@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -1080,6 +1080,88 @@ async def test_обычное_имя_принимается(app, monkeypatch):
 
     assert r.status_code == 200, r.text
     assert анкета.display_name == "Анна"
+
+
+# ── 18+ на явной дате рождения ──────────────────────────────────
+#
+# Поле age держат pydantic-границы (18..99), но PATCH принимает и явный
+# birth_date строкой — его сервер проверял только на формат. Прямым запросом
+# к API можно было записать несовершеннолетнего или дату из будущего.
+
+
+def _дата_рождения(полных_лет: int, сдвиг_дней: int = 0) -> str:
+    """ISO-дата, дающая ровно `полных_лет` лет; +1 день — день рождения ещё
+    не наступил, лет на один меньше. Безопасно к 29 февраля."""
+    now = datetime.now(timezone.utc)
+    try:
+        д = now.replace(year=now.year - полных_лет)
+    except ValueError:  # сегодня 29 февраля, а тот год не високосный
+        д = now.replace(year=now.year - полных_лет, day=28)
+    return (д + timedelta(days=сдвиг_дней)).strftime("%Y-%m-%d")
+
+
+async def test_несовершеннолетняя_дата_рождения_отклоняется(app):
+    """17 полных лет (18 исполнится завтра) — отказ, анкета не тронута."""
+    анкета = _profile("u-me")
+    было = анкета.birth_date
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me",
+            json={"birth_date": _дата_рождения(18, сдвиг_дней=1)},
+        )
+
+    assert r.status_code == 400, r.text
+    assert "18" in r.json()["detail"], "в отказе не назван возрастной порог"
+    assert анкета.birth_date == было, "несовершеннолетняя дата легла в анкету"
+
+
+async def test_дата_рождения_ровно_18_принимается(app):
+    """Граница входит: в самый день 18-летия анкета обязана сохраниться —
+    иначе «починка» отодвинула бы порог на день."""
+    анкета = _profile("u-me")
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me", json={"birth_date": _дата_рождения(18)}
+        )
+
+    assert r.status_code == 200, r.text
+    assert анкета.birth_date.year == datetime.now(timezone.utc).year - 18
+
+
+async def test_дата_рождения_из_будущего_отклоняется(app):
+    """Ещё не родившийся человек — это отрицательный возраст, а не «моложе
+    порога на пару лет»: проверка обязана резать и такое."""
+    анкета = _profile("u-me")
+    было = анкета.birth_date
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me", json={"birth_date": _дата_рождения(-1)}
+        )
+
+    assert r.status_code == 400, r.text
+    assert анкета.birth_date == было
+
+
+async def test_доисторическая_дата_рождения_отклоняется(app):
+    """Верхняя граница тоже серверная: 1850 год — мусор ввода, а не анкета.
+    Возраст в выдаче считается из этой даты, кривое значение видели бы все."""
+    анкета = _profile("u-me")
+    было = анкета.birth_date
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me", json={"birth_date": "1850-01-01"}
+        )
+
+    assert r.status_code == 400, r.text
+    assert анкета.birth_date == было
 
 
 async def test_подделанный_токен_apple_не_пускает(app, monkeypatch):

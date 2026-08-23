@@ -592,6 +592,14 @@ async def _промо(user_id, raw_code):
     return dict(ОТВЕТ_ПРОМО)
 db.activate_promo_code = _промо
 
+# Каскад: на not_found от промо хендлер пробует ввод как подарочный код
+ОТВЕТ_ПОДАРКА = {"redeemed": False, "reason": "not_found"}
+
+async def _подарок(user_id, raw_code):
+    вызовы.append(("redeem_gift_code", user_id, raw_code))
+    return dict(ОТВЕТ_ПОДАРКА)
+db.redeem_gift_code = _подарок
+
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -618,7 +626,8 @@ async def main():
     await premium.promo_code_received(сообщение(text=" live-2026 "), state)
     после_успеха = await state.get_state()
 
-    # 3. Опечатка (кода нет) оставляет ожидание — человек поправит и пришлёт
+    # 3. Опечатка (кода нет ни среди промо, ни среди подарков) оставляет
+    # ожидание — человек поправит и пришлёт снова
     ОТВЕТ_ПРОМО.clear()
     ОТВЕТ_ПРОМО.update({"activated": False, "reason": "not_found"})
     await state.set_state(PromoStates.waiting_code)
@@ -632,9 +641,28 @@ async def main():
     await premium.promo_code_received(сообщение(text="LIVE2026"), state)
     после_отказа = await state.get_state()
 
+    # 5. Подарочный код: промо его не знает, каскад активирует подарок
+    ОТВЕТ_ПРОМО.clear()
+    ОТВЕТ_ПРОМО.update({"activated": False, "reason": "not_found"})
+    ОТВЕТ_ПОДАРКА.clear()
+    ОТВЕТ_ПОДАРКА.update({"redeemed": True, "tier": "ultra", "months": 3,
+                          "plan": "ultra", "expires_at": "2026-11-22T00:00:00"})
+    await state.set_state(PromoStates.waiting_code)
+    await premium.promo_code_received(сообщение(text=" gift-код "), state)
+    после_подарка = await state.get_state()
+
+    # 6. Подарок ниже действующего уровня: отказ окончательный (код цел,
+    # но повтор сейчас даст то же), ожидание снято
+    ОТВЕТ_ПОДАРКА.clear()
+    ОТВЕТ_ПОДАРКА.update({"redeemed": False, "reason": "tier_lower"})
+    await state.set_state(PromoStates.waiting_code)
+    await premium.promo_code_received(сообщение(text="GIFT2"), state)
+    после_ниже = await state.get_state()
+
     print(json.dumps({
         "после_кнопки": после_кнопки, "после_успеха": после_успеха,
         "после_опечатки": после_опечатки, "после_отказа": после_отказа,
+        "после_подарка": после_подарка, "после_ниже": после_ниже,
         "вызовы": вызовы,
     }, ensure_ascii=False))
 
@@ -647,7 +675,11 @@ def test_бот_кнопка_и_состояния_промокода():
     """FSM вокруг активации: кнопка включает ожидание кода; успех и
     окончательные отказы снимают его; опечатка оставляет — человек
     поправит код, не нажимая кнопку заново. Сырой ввод уходит в активацию
-    как есть: нормализация — забота одного места, механики."""
+    как есть: нормализация — забота одного места, механики.
+
+    Поле одно на оба вида кодов: на not_found от промо хендлер пробует
+    ввод как подарочный код — человеку всё равно, из поста его код или
+    от друга. «Нет такого» показывается только после двойного промаха."""
     итог = _в_боте(_ПРОМО_FSM.replace("ЗАБАНЕН", "False").replace(
         "ОТВЕТ_РАЗБАНА", '{"unbanned": True, "reason": ""}'
     ))
@@ -659,17 +691,33 @@ def test_бот_кнопка_и_состояния_промокода():
         "опечатка выбросила бы человека из ввода кода"
     )
     assert итог["после_отказа"] is None
+    assert итог["после_подарка"] is None, "ожидание пережило бы активацию подарка"
+    assert итог["после_ниже"] is None
 
     активации = [в for в in вызовы if в[0] == "activate_promo_code"]
     assert активации[0] == ("activate_promo_code", "u1", " live-2026 "), (
         "хендлер порезал бы ввод до механики"
     )
 
+    подарки = [в for в in вызовы if в[0] == "redeem_gift_code"]
+    assert ("redeem_gift_code", "u1", " gift-код ") in подарки, (
+        "хендлер порезал бы ввод до механики подарка"
+    )
+    # Успешный промокод до каскада не дошёл: подарок дёргается только на
+    # not_found, а не на каждый ввод
+    assert ("redeem_gift_code", "u1", " live-2026 ") not in подарки
+
     отправки = [в[1] for в in вызовы if в[0] == "send"]
     assert any("Пришлите промокод" in т for т in отправки)
     assert any("Промокод принят" in т for т in отправки)
-    assert any("Такого промокода нет" in т for т in отправки)
+    assert any("Такого кода нет" in т for т in отправки), (
+        "после двойного промаха человек должен увидеть, что не подошло ничто"
+    )
     assert any("закончился" in т for т in отправки)
+    assert any("Подарок принят" in т for т in отправки)
+    assert any("уровень выше" in т for т in отправки), (
+        "tier_lower без объяснения выглядел бы как сгоревший код"
+    )
 
 
 def test_кнопка_промокода_в_витрине_тарифов():

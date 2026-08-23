@@ -953,3 +953,23 @@ class PromoActivateOut(BaseModel):
     days: int
     plan: str
     expires_at: str
+
+
+# ════════════════════════════════════════════════════════════════
+#  ПОДАРОЧНЫЕ КОДЫ
+# ════════════════════════════════════════════════════════════════
+
+class GiftRedeemIn(BaseModel):
+    """Подарочный код как его ввёл человек: регистр, пробелы и дефисы
+    нормализует сервер, здесь только границы длины от мусора."""
+    code: str = Field(min_length=1, max_length=64)
+
+
+class GiftRedeemOut(BaseModel):
+    """Что дала активация подарка. tier/months — что лежало в коробке,
+    plan/expires_at — итоговая подписка после начисления (при равном
+    уровне срок продлевается поверх остатка)."""
+    tier: str
+    months: int
+    plan: str
+    expires_at: str

@@ -65,8 +65,13 @@ async def pay_unban(callback: CallbackQuery):
 async def process_unban_payment(message: Message, user_id: str) -> None:
     """Зачесть оплаченную разблокировку (вызывается из premium.py).
 
-    Если снимать нечего (двойная оплата, разбан админом между счётом и
-    оплатой) — возвращаем Stars: деньги за отсутствующую услугу не берём.
+    Если снимать нечего (двойная оплата ДРУГИМ charge_id, разбан админом
+    между счётом и оплатой) — возвращаем Stars: деньги за отсутствующую
+    услугу не берём. Повтор доставки ТОГО ЖЕ апдейта — не возврат: услуга
+    по этому charge_id оказана, возврат делал бы разбан бесплатным
+    (оплатил → разбанен → Telegram повторил апдейт → Stars вернулись).
+    Повтор от двойной оплаты отличает журнал платежей по charge_id —
+    внутри unban_after_payment.
     """
     charge_id = message.successful_payment.telegram_payment_charge_id
     итог = await unban_after_payment(
@@ -79,6 +84,14 @@ async def process_unban_payment(message: Message, user_id: str) -> None:
     if итог.get("unbanned"):
         logger.warning(f"Разблокировка куплена: user={user_id} charge={charge_id}")
         await message.answer(T.UNBAN_DONE, reply_markup=main_kb())
+        return
+
+    if итог.get("reason") == "already_processed":
+        # Дубль апдейта Telegram — разбан по этому платежу уже состоялся
+        logger.info(
+            f"Разбан: повторный зачёт отклонён user={user_id} charge={charge_id}"
+        )
+        await message.answer("⚡ Этот платёж уже зачтён.", reply_markup=main_kb())
         return
 
     logger.warning(

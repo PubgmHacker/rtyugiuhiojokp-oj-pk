@@ -650,6 +650,18 @@ async def update_my_profile(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid birth_date format. Use YYYY-MM-DD")
 
+        # Возрастные границы поля age (pydantic, 18..99) явная дата обходила:
+        # прямой PATCH с birth_date мог записать несовершеннолетнего или дату
+        # из будущего. Полные годы считаем тем же хелпером, что и витрина.
+        полных_лет = возраст_из_даты(update_fields["birth_date"])
+        if полных_лет < settings.MIN_AGE or полных_лет > settings.MAX_AGE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Age must be between {settings.MIN_AGE} and {settings.MAX_AGE}"
+                ),
+            )
+
     # Возраст переводим в дату рождения: точный день не спрашиваем,
     # для подбора по возрасту достаточно года. Явный birth_date главнее.
     age_value = update_fields.pop("age", None)

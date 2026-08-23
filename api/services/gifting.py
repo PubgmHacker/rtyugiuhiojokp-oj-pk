@@ -23,14 +23,27 @@ import logging
 import secrets
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.models import GiftSubscription, Match, Subscription, User
-from services.premium import activate_premium
+from models.models import GiftSubscription, Match, User
+from services.premium import activate_premium, current_tier
 from services.plans import PLANS_BY_CODE, tier_rank
+from services.promo import normalize_code
 
 logger = logging.getLogger(__name__)
+
+
+class GiftError(ValueError):
+    """Отказ активации подарка: `reason` — машинный код для HTTP-статуса
+    (routers/gifts.py) и текстов бота, `text` — фраза человеку. Наследует
+    ValueError, чтобы ветки, ловившие отказы до появления причин,
+    продолжали их ловить."""
+
+    def __init__(self, reason: str, text: str):
+        super().__init__(text)
+        self.reason = reason
+        self.text = text
 
 # 12 знаков: короче, чем код карты, но достаточно, чтобы перебор был
 # непрактичным, и читаем голосом вслух.
@@ -114,52 +127,95 @@ async def redeem_gift(
     session: AsyncSession,
     code: str,
     redeemer: User,
-) -> GiftSubscription:
+) -> dict:
     """Активировать подарочный код у получателя.
 
     Проверки не кучкой в if-ах, а в той последовательности, в которой их
     увидит человек: код есть → код оплачен → код ещё не использован → код
-    не просрочен. Сначала самое понятное, последнее — самое тонкое."""
+    не просрочен → уровень не ниже действующего. Отказ — GiftError, и
+    транзакцию запроса откатит get_session, поэтому при отказе код НЕ
+    сгорает: владелец Aurora может отдать Plus-код другу, а не потерять его.
+
+    Ищем по хешу: в базе plaintext не живёт (см. _hash_code), а человеку
+    прощаем регистр, пробелы и дефисы — той же нормализацией, что у
+    промокодов: код диктуют голосом и перепечатывают с картинок.
+
+    Сжигание — одним UPDATE с `redeemed_at IS NULL` в WHERE: две
+    одновременные активации обе видят свободный код при чтении, но UPDATE
+    выигрывает ровно одна. Второй пояс — уникальный ключ (provider,
+    external_id) журнала платежей внутри activate_premium: тот же ключ
+    `gift_{id}` пишет и бот (bot/database/connection.py::redeem_gift_code),
+    поэтому гонка «бот и мини-апп одновременно» тоже даёт одно начисление.
+    """
+    нормализованный = normalize_code(code)
+    if not нормализованный:
+        raise GiftError("not_found", "Код недействителен")
 
     result = await session.execute(
-        select(GiftSubscription).where(GiftSubscription.code_hash == code)
+        select(GiftSubscription).where(
+            GiftSubscription.code_hash == _hash_code(нормализованный)
+        )
     )
     gift = result.scalar_one_or_none()
     if not gift:
-        raise ValueError("Код недействителен")
+        raise GiftError("not_found", "Код недействителен")
 
     if not gift.paid:
-        raise ValueError("Подарок ещё не оплачен")
+        raise GiftError("not_paid", "Подарок ещё не оплачен")
 
     if gift.redeemed_at:
-        raise ValueError("Этот код уже активирован")
+        raise GiftError("already_used", "Этот код уже активирован")
 
-    if gift.expires_at and gift.expires_at < datetime.now(timezone.utc):
-        raise ValueError("Срок действия кода истёк")
+    now = datetime.now(timezone.utc)
+    if gift.expires_at:
+        истекает = gift.expires_at
+        if истекает.tzinfo is None:
+            истекает = истекает.replace(tzinfo=timezone.utc)
+        if истекает < now:
+            raise GiftError("expired", "Срок действия кода истёк")
 
-    # Код сгорает при самом чтении: найти значит зажечь. Если начали с
-    # записи redeemed_at — то же DDL что и по времени, иначе транзакция
-    # пропустит вторую активацию тем же кодом на следующий день.
-    gift.redeemed_at = datetime.now(timezone.utc)
+    # Подарок ниже действующего уровня не активируем и не сжигаем: иначе
+    # Plus-код молча сгорал бы у владельца Aurora — ни подписки, ни кода.
+    # Равный уровень активируем: это продление, купленное время не сгорает.
+    # Истёкшая подписка уровнем не считается — current_tier вернёт free.
+    действующий = await current_tier(session, redeemer.id)
+    if tier_rank(действующий) > tier_rank(gift.plan):
+        raise GiftError(
+            "tier_lower",
+            "У вас уже действует уровень выше — активируйте код после "
+            "окончания подписки или подарите его другому",
+        )
+
+    сожжён = await session.execute(
+        update(GiftSubscription)
+        .where(and_(
+            GiftSubscription.id == gift.id,
+            GiftSubscription.redeemed_at.is_(None),
+        ))
+        .values(redeemed_at=now, recipient_user_id=redeemer.id)
+    )
+    if сожжён.rowcount == 0:
+        raise GiftError("already_used", "Этот код уже активирован")
+    # ORM-объект остался со старыми значениями — выравниваем с базой
+    gift.redeemed_at = now
     gift.recipient_user_id = redeemer.id
 
-    # Перезаписываем подписку только если у получателя нет того же уровня или
-    # выше: иначе подарок понизит Aurora до Plus, а это не то, за что заплатили.
-    existing = await session.execute(select(Subscription).where(Subscription.user_id == redeemer.id))
-    sub = existing.scalar_one_or_none()
-    if not sub or tier_rank(gift.plan) > tier_rank(sub.plan):
-        # Заменяем код подарка на подписку: plan из GiftSubscription — это тариф
-        await activate_premium(
-            session,
-            user_id=redeemer.id,
-            days=gift.months * 30,
-            payment_id=f"gift_{gift.id}",
-            provider="gift",
-            tier=gift.plan,
-            expires_at=None,
-        )
+    итог = await activate_premium(
+        session,
+        user_id=redeemer.id,
+        days=gift.months * 30,
+        payment_id=f"gift_{gift.id}",
+        provider="gift",
+        tier=gift.plan,
+        expires_at=None,
+    )
     logger.info("gift redeemed: buyer=%s plan=%s redeemer=%s", gift.buyer_user_id, gift.plan, redeemer.id)
-    return gift
+    return {
+        "tier": gift.plan,
+        "months": gift.months,
+        "plan": итог["plan"],
+        "expires_at": итог["expires_at"] or "",
+    }
 
 
 async def gift_from_match(

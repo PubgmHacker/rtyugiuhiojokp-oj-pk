@@ -24,8 +24,8 @@ from config import (
 )
 from database import (
     get_or_create_user, get_active_subscription, activate_premium,
-    activate_promo_code, revoke_premium_payment, credit_pack, revoke_pack,
-    get_profile,
+    activate_promo_code, redeem_gift_code, revoke_premium_payment,
+    credit_pack, revoke_pack, get_profile,
 )
 from keyboards import main_kb
 from states import PromoStates
@@ -93,7 +93,7 @@ def tiers_kb() -> InlineKeyboardMarkup:
         text="⚡ Паки: суперлайки и бусты", callback_data="packs",
     )])
     кнопки.append([InlineKeyboardButton(
-        text="🎁 У меня есть промокод", callback_data="promo",
+        text="🎁 У меня есть код", callback_data="promo",
     )])
     кнопки.append([InlineKeyboardButton(text="🏠 В меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=кнопки)
@@ -288,13 +288,24 @@ def _дней(n: int) -> str:
     return f"{n} {слово}"
 
 
+def _месяцев(n: int) -> str:
+    """«1 месяц», «3 месяца», «12 месяцев» — сроки подарков в месяцах."""
+    if n % 10 == 1 and n % 100 != 11:
+        слово = "месяц"
+    elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        слово = "месяца"
+    else:
+        слово = "месяцев"
+    return f"{n} {слово}"
+
+
 @router.callback_query(F.data == "promo")
 async def promo_start(callback: CallbackQuery, state: FSMContext):
     """Кнопка «У меня есть промокод» — ждём код сообщением."""
     await callback.answer()
     await state.set_state(PromoStates.waiting_code)
     await callback.message.answer(
-        "🎁 Пришлите промокод сообщением.\n\n"
+        "🎁 Пришлите промокод или подарочный код сообщением.\n\n"
         "Передумали — /cancel."
     )
 
@@ -303,9 +314,15 @@ async def promo_start(callback: CallbackQuery, state: FSMContext):
 async def promo_code_received(message: Message, state: FSMContext):
     """Код прислан — активируем.
 
-    Опечатка (кода нет) оставляет состояние: человек поправит и пришлёт
-    снова. Остальные отказы окончательные — состояние снимаем, повторный
-    ввод того же кода ничего не изменит.
+    Одно поле на оба вида кодов: человеку всё равно, промокод у него из
+    поста или подарочный код от друга. Сначала пробуем как промокод, на
+    not_found — как подарок; только двойное «нет такого» показывает отказ.
+
+    Опечатка (кода нет нигде) оставляет состояние: человек поправит и
+    пришлёт снова. Остальные отказы окончательные — состояние снимаем,
+    повторный ввод того же кода ничего не изменит. Исключение — tier_lower:
+    код цел, но и повтор сейчас даст тот же отказ, поэтому состояние тоже
+    снимаем, а текст объясняет, что код можно активировать позже.
     """
     db_user = await get_or_create_user(
         message.from_user.id,
@@ -331,9 +348,45 @@ async def promo_code_received(message: Message, state: FSMContext):
 
     reason = итог.get("reason", "")
     if reason == "not_found":
+        подарок = await redeem_gift_code(db_user["id"], message.text or "")
+
+        if подарок.get("redeemed"):
+            await state.clear()
+            name = TIER_NAMES.get(подарок["tier"], "Premium")
+            logger.info(
+                f"Gift redeemed: user={db_user['id']} tier={подарок['tier']} "
+                f"until={подарок['expires_at']}"
+            )
+            await message.answer(
+                f"🎁 <b>Подарок принят!</b>\n\n"
+                f"{TIER_ICONS.get(подарок['tier'], '⭐')} {name} на "
+                f"{_месяцев(подарок['months'])} — подписка активна до "
+                f"{подарок['expires_at'][:10]}.",
+                reply_markup=main_kb(),
+            )
+            return
+
+        причина_подарка = подарок.get("reason", "")
+        if причина_подарка == "not_found":
+            await message.answer(
+                "Такого кода нет — ни промокода, ни подарочного. "
+                "Проверьте код и пришлите ещё раз — или /cancel."
+            )
+            return
+
+        await state.clear()
+        тексты_подарка = {
+            "not_paid": "Этот подарок ещё не оплачен — покупка не завершена.",
+            "already_used": "Этот код уже активирован.",
+            "expired": "Срок действия этого кода истёк.",
+            "tier_lower": (
+                "У вас уже действует уровень выше — код цел, активируйте "
+                "его после окончания подписки или подарите другому."
+            ),
+        }
         await message.answer(
-            "Такого промокода нет. Проверьте код и пришлите ещё раз — "
-            "или /cancel."
+            тексты_подарка.get(причина_подарка, "Не получилось активировать код."),
+            reply_markup=main_kb(),
         )
         return
 

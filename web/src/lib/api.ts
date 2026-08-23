@@ -1093,6 +1093,25 @@ export async function activatePromo(code: string): Promise<PromoActivateOut> {
   return data;
 }
 
+/** Что дала активация подарочного кода: tier/months — что лежало в коробке,
+ *  plan/expires_at — итоговая подписка (равный уровень продлевается поверх
+ *  остатка). */
+export interface GiftRedeemOut {
+  tier: string;
+  months: number;
+  plan: string;
+  expires_at: string;
+}
+
+/** Активировать подарочный код. Нормализация ввода — на сервере, как у
+ *  промокодов. Отказы статусами: 404 нет такого, 402 не оплачен, 409 уже
+ *  активирован ИЛИ уровень уже выше (код при этом цел), 410 истёк —
+ *  текст для человека лежит в detail. */
+export async function redeemGift(code: string): Promise<GiftRedeemOut> {
+  const { data } = await api.post("/gifts/redeem", { code });
+  return data;
+}
+
 /** Регистрация устройства для пуш-уведомлений в нативной обёртке. */
 export async function registerDevice(token: string, platform: string): Promise<void> {
   await api.post("/profiles/me/devices", { token, platform });

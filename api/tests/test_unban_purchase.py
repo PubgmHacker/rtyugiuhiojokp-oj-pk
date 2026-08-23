@@ -204,8 +204,10 @@ def _в_боте(скрипт: str) -> dict:
 
 def test_бот_покупка_и_возврат_разбана_на_настоящей_базе():
     """Полный круг на настоящей схеме (SQLite): бан → оплата → разбан с
-    чисткой памяти банов и амнистией → повторная оплата без бана → отказ →
-    возврат Stars → бан на месте, след в журнале."""
+    чисткой памяти банов и амнистией → повтор ТОГО ЖЕ апдейта → зачёт один
+    и без возврата → новый бан + повтор старого апдейта → старые деньги
+    не снимают новый бан → повторная оплата НОВЫМ charge_id без бана →
+    отказ → возврат Stars → бан на месте, след в журнале."""
     итог = _в_боте(
         """
 import asyncio, json
@@ -259,6 +261,27 @@ async def main():
             платёж.amount, платёж.currency,
         ]
 
+    # Telegram повторил доставку ТОГО ЖЕ апдейта (тот же charge_id)
+    ретрай = await conn.unban_after_payment("u1", "ch_1", 349, stars=184)
+
+    async with conn.async_session_factory() as s:
+        платежей_после_ретрая = (
+            await s.execute(select(func.count(ProcessedPayment.id)))
+        ).scalar()
+
+    # Новый бан за новые грехи, и следом — повтор СТАРОГО оплаченного апдейта
+    async with conn.async_session_factory() as s:
+        async with s.begin():
+            u = (await s.execute(select(User).where(User.id == "u1"))).scalar_one()
+            u.is_banned = True
+    ретрай_после_ребана = await conn.unban_after_payment("u1", "ch_1", 349)
+    async with conn.async_session_factory() as s:
+        async with s.begin():
+            u = (await s.execute(select(User).where(User.id == "u1"))).scalar_one()
+            флаг_после_ретрая_ребана = u.is_banned
+            # Возвращаем состояние «разбанен» — дальше круг идёт по старому пути
+            u.is_banned = False
+
     повторно = await conn.unban_after_payment("u1", "ch_2", 349)
 
     возврат = await conn.reban_after_refund("ch_1")
@@ -295,6 +318,10 @@ async def main():
         "память_после_покупки": память_после_покупки,
         "амнистия": амнистия,
         "платёж_после_покупки": платёж_после_покупки,
+        "ретрай": ретрай,
+        "платежей_после_ретрая": платежей_после_ретрая,
+        "ретрай_после_ребана": ретрай_после_ребана,
+        "флаг_после_ретрая_ребана": bool(флаг_после_ретрая_ребана),
         "повторно": повторно,
         "возврат": возврат,
         "флаг_после_возврата": bool(флаг_после_возврата),
@@ -316,6 +343,17 @@ asyncio.run(main())
     assert итог["амнистия"] == 1
     # Выручка: разбан записан платежом (days=0 — подписку не двигает)…
     assert итог["платёж_после_покупки"] == ["stars", "ch_1", 0, 184, "XTR"]
+    # Повтор того же апдейта: не «not_banned» с возвратом Stars, а зачёт
+    # ровно один — иначе разбан бесплатный (оплатил → повтор → рефанд)
+    assert итог["ретрай"] == {"unbanned": False, "reason": "already_processed"}
+    assert итог["платежей_после_ретрая"] == 1, "повтор задвоил бы выручку"
+    # Повтор старого апдейта после НОВОГО бана: старые деньги его не снимают
+    assert итог["ретрай_после_ребана"] == {
+        "unbanned": False, "reason": "already_processed",
+    }
+    assert итог["флаг_после_ретрая_ребана"] is True, (
+        "повтор старого платежа снял бы новый бан"
+    )
     assert итог["повторно"] == {"unbanned": False, "reason": "not_banned"}
     assert итог["возврат"]["rebanned"] is True
     assert итог["возврат"]["telegram_id"] == 111
@@ -386,9 +424,19 @@ async def activate_promo_code(user_id, raw_code):
     return {"activated": True, "tier": "plus", "days": 7,
             "plan": "plus", "expires_at": "2026-09-17T00:00:00"}
 
+# Подарочные коды: каскад «промо not_found → подарок» живёт в том же
+# хендлере промокода. Дефолт «нет такого» — чтобы сценарии, не думающие о
+# подарках, проходили каскад насквозь; свои ответы промо-FSM ставит через
+# db.redeem_gift_code после шапки (test_promo_codes).
+
+async def redeem_gift_code(user_id, raw_code):
+    вызовы.append(("redeem_gift_code", user_id, raw_code))
+    return {"redeemed": False, "reason": "not_found"}
+
 for имя in ("get_or_create_user", "get_active_subscription", "activate_premium",
             "revoke_premium_payment", "unban_after_payment", "reban_after_refund",
-            "get_profile", "credit_pack", "revoke_pack", "activate_promo_code"):
+            "get_profile", "credit_pack", "revoke_pack", "activate_promo_code",
+            "redeem_gift_code"):
     setattr(db, имя, locals()[имя])
 sys.modules["database"] = db
 
@@ -626,6 +674,40 @@ asyncio.run(main())
         "деньги за отсутствующую услугу остались бы у нас"
     )
     assert "уже разблокирован" in [в for в in вызовы if в[0] == "send"][-1][1]
+
+
+def test_бот_повтор_апдейта_разбана_не_возвращает_stars():
+    """Telegram повторил доставку зачтённого апдейта: услуга по этому
+    charge_id оказана, и возврат сделал бы разбан бесплатным — оплатил,
+    разбанился, дождался ретрая, получил Stars назад. Повтор от честной
+    двойной оплаты отличает журнал платежей (проверено на настоящей базе
+    в test_бот_покупка_и_возврат_разбана); здесь фиксируем реакцию
+    хендлера: «уже зачтён» и НИ ОДНОГО RefundStarPayment."""
+    сценарий = _ШАПКА + """
+from handlers import premium
+
+
+async def main():
+    оплата = сообщение(successful_payment=SuccessfulPayment.model_construct(
+        currency="XTR", total_amount=184, invoice_payload="unban:v1",
+        telegram_payment_charge_id="ch_x",
+    ))
+    await premium.on_successful_payment(оплата)
+    print(json.dumps({"вызовы": вызовы}, ensure_ascii=False))
+
+
+asyncio.run(main())
+"""
+    итог = _в_боте(сценарий.replace("ЗАБАНЕН", "False").replace(
+        "ОТВЕТ_РАЗБАНА", '{"unbanned": False, "reason": "already_processed"}'
+    ))
+    вызовы = [tuple(в) for в in итог["вызовы"]]
+
+    assert ("unban", "u1", "ch_x", 349, 184) in вызовы
+    assert not any(в[0] == "RefundStarPayment" for в in вызовы), (
+        "возврат на ретрае делал бы разбан бесплатным"
+    )
+    assert "уже зачтён" in [в for в in вызовы if в[0] == "send"][-1][1]
 
 
 def test_бот_автобан_по_жалобам_пишет_память_банов():

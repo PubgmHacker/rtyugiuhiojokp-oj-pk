@@ -15,6 +15,7 @@ import {
   activatePromo,
   getMyProfile,
   getPlans,
+  redeemGift,
   type PlanOut,
   type PlansOut,
 } from "../lib/api";
@@ -343,7 +344,7 @@ export default function Plans() {
   );
 }
 
-/* ── Промокод ───────────────────────────────────────────────── */
+/* ── Промокод и подарочный код ──────────────────────────────── */
 
 function PromoField({ onActivated }: { onActivated: () => Promise<void> }) {
   const [code, setCode] = useState("");
@@ -365,8 +366,34 @@ function PromoField({ onActivated }: { onActivated: () => Promise<void> }) {
       });
       await onActivated();
     } catch (e: any) {
+      // Поле одно на оба вида кодов: человеку всё равно, из поста его код
+      // или от друга. 404 от промо — пробуем ввод как подарочный код, и
+      // только двойной промах показывает «нет такого». Каскад тот же, что
+      // в боте (bot/handlers/premium.py::promo_code_received).
+      if (e?.response?.status === 404) {
+        try {
+          const gift = await redeemGift(trimmed);
+          setCode("");
+          setNote({
+            ok: true,
+            text: `Подарок принят — подписка активна до ${gift.expires_at.slice(0, 10)}`,
+          });
+          await onActivated();
+          return;
+        } catch (g: any) {
+          haptic("warning");
+          setNote({
+            ok: false,
+            text:
+              g?.response?.status === 404
+                ? "Такого кода нет — ни промокода, ни подарочного"
+                : g?.response?.data?.detail ?? "Не получилось активировать код",
+          });
+          return;
+        }
+      }
       haptic("warning");
-      // Текст отказа пишет сервер: «нет такого», «уже активировали», «истёк»
+      // Текст отказа пишет сервер: «уже активировали», «истёк»
       setNote({
         ok: false,
         text: e?.response?.data?.detail ?? "Не получилось активировать промокод",
@@ -380,7 +407,7 @@ function PromoField({ onActivated }: { onActivated: () => Promise<void> }) {
     <div className="mt-5">
       <p className="text-[13px] text-text-muted mb-2 flex items-center gap-1.5">
         <Gift size={14} className="shrink-0" />
-        Есть промокод?
+        Есть промокод или подарочный код?
       </p>
       <div className="flex gap-2">
         <input
