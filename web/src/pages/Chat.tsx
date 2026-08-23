@@ -38,6 +38,7 @@ import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
 import { ChatThemeSheet } from "../components/ChatThemeSheet";
 import { HabitsSheet } from "../components/HabitsSheet";
+import ProfileSheet from "../components/ProfileSheet";
 import { когдаСлот } from "../components/LimitSheet";
 import {
   useЯзык,
@@ -72,6 +73,9 @@ export default function Chat() {
   const [theme, setTheme] = useState<ChatTheme | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [habitsOpen, setHabitsOpen] = useState(false);
+  // Профиль собеседника по тапу на шапку: из чата анкету было не открыть
+  // вообще (аудит, блок «Продукт»)
+  const [profileOpen, setProfileOpen] = useState(false);
   // Мэтч за суточным лимитом бесплатного уровня. Сервер закрывает и историю
   // (429), и сокет (код 4029) — тогда открывать переписку нечем, и вместо
   // пустой ленты с «нет связи» показываем причину
@@ -446,24 +450,42 @@ export default function Chat() {
             <ArrowLeft size={22} />
           </button>
 
-          <div className="w-9 h-9 rounded-full overflow-hidden bg-surface-2 shrink-0">
+          {/* Аватар и имя открывают полный профиль собеседника. Две соседние
+              кнопки, а не одна обёртка: внутри блока живёт ссылка канала,
+              и интерактив внутри интерактива — ломаный HTML */}
+          <button
+            aria-label={`Профиль ${partnerName}`}
+            disabled={!match}
+            onClick={() => {
+              haptic("light");
+              setProfileOpen(true);
+            }}
+            className="w-9 h-9 rounded-full overflow-hidden bg-surface-2 shrink-0"
+          >
             {partnerPhoto ? (
               <img src={partnerPhoto} alt="" className="w-full h-full object-cover" />
             ) : (
-              <div
+              <span
                 className="w-full h-full flex items-center justify-center text-[14px] font-bold text-white/70"
                 style={{ background: "var(--gradient-placeholder)" }}
               >
                 {partnerName[0]?.toUpperCase()}
-              </div>
+              </span>
             )}
-          </div>
+          </button>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
+            <button
+              disabled={!match}
+              onClick={() => {
+                haptic("light");
+                setProfileOpen(true);
+              }}
+              className="flex items-center gap-1.5 min-w-0 max-w-full text-left"
+            >
               <span className="font-semibold text-[15px] truncate">{partnerName}</span>
               {match?.partner.is_verified && <VerifiedBadge size={14} />}
-            </div>
+            </button>
             {/* Канал показывает сервер только если у собеседника открыта эта
                 фича по тарифу — здесь просто собираем ссылку из username */}
             {match?.partner.tg_channel ? (
@@ -849,6 +871,10 @@ export default function Chat() {
       />
 
       <HabitsSheet open={habitsOpen} onClose={() => setHabitsOpen(false)} />
+      <ProfileSheet
+        profile={profileOpen ? match?.partner ?? null : null}
+        onClose={() => setProfileOpen(false)}
+      />
     </div>
   );
 }

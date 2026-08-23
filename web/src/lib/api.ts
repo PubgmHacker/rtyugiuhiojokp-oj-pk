@@ -131,6 +131,9 @@ export interface UserProfile {
   referral_boost_percent?: number;
   /** Голый username Telegram-канала (без @ и без ссылки) — ссылку собирает клиент. */
   tg_channel?: string | null;
+  /** Был в сети недавно — тот же флаг, что в деке. Точного времени сервер
+   *  не отдаёт: это была бы слежка. Приходит в «кто лайкнул». */
+  is_online?: boolean;
 }
 
 export interface DeckProfile {

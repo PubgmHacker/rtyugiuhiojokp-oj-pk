@@ -12,13 +12,14 @@ import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import MatchModal from "../components/MatchModal";
 import DirectMessageSheet from "../components/DirectMessageSheet";
+import PersonCard from "../components/PersonCard";
+import ProfileSheet from "../components/ProfileSheet";
 import Leaderboard from "../components/Leaderboard";
 import {
   ScreenHeader,
   EmptyState,
   Skeleton,
   Button,
-  VerifiedBadge,
 } from "../components/ui";
 
 interface MatchData {
@@ -87,6 +88,9 @@ function IncomingLikes() {
   // Написать без взаимности тому, кто вас лайкнул, но кого вы ещё не оценили:
   // тоже платный крючок, отдельно от ответной симпатии
   const [directFor, setDirectFor] = useState<UserProfile | null>(null);
+  // Полный профиль по тапу на карточку: решение «нравится / нет» не должно
+  // приниматься по одному кадру (аудит, блок «Продукт»)
+  const [viewed, setViewed] = useState<UserProfile | null>(null);
 
   const load = useCallback(async () => {
     setError(false);
@@ -244,94 +248,75 @@ function IncomingLikes() {
                 </Link>
               </motion.article>
             ) : (
-              <motion.article
+              // Раскрытый лайк — та же стеклянная карточка человека, что и
+              // всюду (PersonCard); тап по фото открывает полный профиль
+              <motion.div
                 key={p.id}
                 layout
                 initial={{ opacity: 0, scale: 0.94 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ type: "spring", stiffness: 380, damping: 34 }}
-                className="relative aspect-[3/4] rounded-[var(--radius-tile)]
-                           overflow-hidden bg-surface-2"
+                className="relative"
               >
-              {p.photos?.[0] ? (
-                <img
-                  src={p.photos[0]}
-                  alt={p.display_name}
-                  loading="lazy"
-                  decoding="async"
-                  className="w-full h-full object-cover"
+                <button
+                  aria-label={`Профиль ${p.display_name}`}
+                  onClick={() => {
+                    haptic("light");
+                    setViewed(p);
+                  }}
+                  className="absolute inset-0 z-10 rounded-[var(--radius-tile)]"
                 />
-              ) : (
-                <div
-                  className="w-full h-full flex items-center justify-center
-                             text-4xl font-bold text-white/25"
-                  style={{ background: "var(--gradient-placeholder)" }}
-                >
-                  {p.display_name?.[0]?.toUpperCase() ?? "?"}
-                </div>
-              )}
+                <PersonCard profile={p} online={p.is_online}>
+                  {/* Сообщение, приложенное к лайку: ради него и стоит открыть
+                      этот экран — оно объясняет, почему вас лайкнули */}
+                  {p.like_message && (
+                    <p
+                      className="mt-2.5 px-2.5 py-1.5 rounded-[var(--radius-tile)]
+                                 glass-strong text-[12px] leading-snug text-white/90
+                                 line-clamp-3"
+                    >
+                      «{p.like_message}»
+                    </p>
+                  )}
 
-              <div className="absolute inset-0 bg-scrim pointer-events-none" />
-
-              <div className="absolute inset-x-0 bottom-0 p-3">
-                <div className="flex items-center gap-1 mb-2.5">
-                  <span className="font-bold text-[15px] text-white truncate">
-                    {p.display_name}
-                    {p.age ? `, ${p.age}` : ""}
-                  </span>
-                  {p.is_verified && <VerifiedBadge size={13} />}
-                </div>
-
-                {/* Сообщение, приложенное к лайку: ради него и стоит открыть
-                    этот экран — оно объясняет, почему вас лайкнули */}
-                {p.like_message && (
-                  <p
-                    className="mb-2.5 px-2.5 py-1.5 rounded-[var(--radius-tile)]
-                               glass-strong text-[12px] leading-snug text-white/90
-                               line-clamp-3"
-                  >
-                    «{p.like_message}»
-                  </p>
-                )}
-
-                <div className="flex gap-2">
-                  <button
-                    aria-label={`Пропустить ${p.display_name}`}
-                    disabled={busyId === p.id}
-                    onClick={() => respond(p, "pass")}
-                    className="flex-1 h-10 rounded-full glass-strong text-danger
-                               flex items-center justify-center
-                               disabled:opacity-40 active:scale-95 transition-transform"
-                  >
-                    <X size={19} strokeWidth={2.6} />
-                  </button>
-                  <button
-                    aria-label={`Лайк ${p.display_name}`}
-                    disabled={busyId === p.id}
-                    onClick={() => respond(p, "like")}
-                    className="flex-1 h-10 rounded-full bg-accent text-white
-                               flex items-center justify-center
-                               disabled:opacity-40 active:scale-95 transition-transform"
-                  >
-                    <Heart size={18} fill="currentColor" />
-                  </button>
-                  <button
-                    aria-label={`Написать ${p.display_name} без лайка`}
-                    disabled={busyId === p.id}
-                    onClick={() => {
-                      haptic("light");
-                      setDirectFor(p);
-                    }}
-                    className="w-10 h-10 rounded-full glass-strong text-accent
-                               flex items-center justify-center shrink-0
-                               disabled:opacity-40 active:scale-95 transition-transform"
-                  >
-                    <MessageCircleHeart size={17} />
-                  </button>
-                </div>
-              </div>
-            </motion.article>
+                  <div className="flex gap-2 mt-2.5">
+                    <button
+                      aria-label={`Пропустить ${p.display_name}`}
+                      disabled={busyId === p.id}
+                      onClick={() => respond(p, "pass")}
+                      className="flex-1 h-10 rounded-full glass-strong text-danger
+                                 flex items-center justify-center
+                                 disabled:opacity-40 active:scale-95 transition-transform"
+                    >
+                      <X size={19} strokeWidth={2.6} />
+                    </button>
+                    <button
+                      aria-label={`Лайк ${p.display_name}`}
+                      disabled={busyId === p.id}
+                      onClick={() => respond(p, "like")}
+                      className="flex-1 h-10 rounded-full bg-accent text-white
+                                 flex items-center justify-center
+                                 disabled:opacity-40 active:scale-95 transition-transform"
+                    >
+                      <Heart size={18} fill="currentColor" />
+                    </button>
+                    <button
+                      aria-label={`Написать ${p.display_name} без лайка`}
+                      disabled={busyId === p.id}
+                      onClick={() => {
+                        haptic("light");
+                        setDirectFor(p);
+                      }}
+                      className="w-10 h-10 rounded-full glass-strong text-accent
+                                 flex items-center justify-center shrink-0
+                                 disabled:opacity-40 active:scale-95 transition-transform"
+                    >
+                      <MessageCircleHeart size={17} />
+                    </button>
+                  </div>
+                </PersonCard>
+              </motion.div>
             )
           )}
         </AnimatePresence>
@@ -339,6 +324,66 @@ function IncomingLikes() {
 
       <MatchModal data={matchData} onClose={() => setMatchData(null)} />
       <DirectMessageSheet profile={directFor} onClose={() => setDirectFor(null)} />
+
+      {/* Полный профиль: решения те же, что на тайле, — человек не обязан
+          возвращаться к сетке, чтобы ответить */}
+      <ProfileSheet
+        profile={viewed}
+        onClose={() => setViewed(null)}
+        actions={
+          viewed && (
+            <div className="flex gap-2.5">
+              {/* Без aria-label: подпись и есть имя кнопки, а дубль тайловых
+                  меток дал бы два одинаковых элемента для читалки */}
+              <button
+                disabled={busyId === viewed.id}
+                onClick={() => {
+                  const p = viewed;
+                  setViewed(null);
+                  respond(p, "pass");
+                }}
+                className="flex-1 h-12 rounded-full bg-surface-2 border border-hairline
+                           text-danger flex items-center justify-center gap-2
+                           text-[15px] font-semibold
+                           disabled:opacity-40 active:scale-95 transition-transform"
+              >
+                <X size={19} strokeWidth={2.6} />
+                Пропустить
+              </button>
+              <button
+                disabled={busyId === viewed.id}
+                onClick={() => {
+                  const p = viewed;
+                  setViewed(null);
+                  respond(p, "like");
+                }}
+                className="flex-1 h-12 rounded-full bg-accent text-white
+                           flex items-center justify-center gap-2
+                           text-[15px] font-semibold
+                           disabled:opacity-40 active:scale-95 transition-transform"
+              >
+                <Heart size={18} fill="currentColor" />
+                Лайк
+              </button>
+              <button
+                aria-label="Написать письмо без лайка"
+                disabled={busyId === viewed.id}
+                onClick={() => {
+                  const p = viewed;
+                  haptic("light");
+                  setViewed(null);
+                  setDirectFor(p);
+                }}
+                className="w-12 h-12 rounded-full bg-surface-2 border border-hairline
+                           text-accent flex items-center justify-center shrink-0
+                           disabled:opacity-40 active:scale-95 transition-transform"
+              >
+                <MessageCircleHeart size={18} />
+              </button>
+            </div>
+          )
+        }
+      />
     </div>
   );
 }
