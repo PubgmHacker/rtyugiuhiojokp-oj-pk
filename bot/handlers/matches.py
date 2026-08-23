@@ -28,7 +28,7 @@ from services.enforcement import (
 )
 from services.moderation import moderate_text, humanize
 from states import ChatStates
-from texts import MATCH_LOCKED_SHORT, chat_header, match_limit_reached
+from texts import MATCH_LOCKED_SHORT, chat_header, escape, match_limit_reached
 from utils import safe_edit_text
 
 logger = logging.getLogger(__name__)
@@ -247,16 +247,20 @@ async def chat_hint(callback: CallbackQuery):
     if partner and me:
         common = list(set(partner.get("interests") or []) & set(me.get("interests") or []))
 
+    # Интересы, имя и био — пользовательский ввод, а сообщение уходит с
+    # parse_mode=HTML: без экранирования собеседник протаскивал в «официальную»
+    # подсказку бота свою разметку (жирный, ссылку), а кривой тег ронял
+    # отправку целиком.
     if common:
         hint = (
-            f"⚡ У вас общие интересы: <b>{', '.join(common[:3])}</b>.\n\n"
-            f"Попробуйте начать с вопроса про «{common[0]}» — например, "
-            f"как {partner.get('display_name', 'собеседник')} к этому пришёл(ла)."
+            f"⚡ У вас общие интересы: <b>{escape(', '.join(common[:3]))}</b>.\n\n"
+            f"Попробуйте начать с вопроса про «{escape(common[0])}» — например, "
+            f"как {escape(partner.get('display_name', 'собеседник'))} к этому пришёл(ла)."
         )
     elif partner and partner.get("bio"):
         hint = (
             "⚡ Зацепитесь за био собеседника:\n\n"
-            f"«{partner['bio'][:150]}»\n\n"
+            f"«{escape(partner['bio'][:150])}»\n\n"
             "Задайте открытый вопрос по нему — это работает лучше «привет»."
         )
     else:

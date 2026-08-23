@@ -66,6 +66,9 @@ export default function Chat() {
   const [loadingIce, setLoadingIce] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [sendError, setSendError] = useState(false);
+  // Сбои жалобы/блокировки/размэтча: раньше catch глотал их молча (одна
+  // вибрация), и человек был уверен, что жалоба ушла
+  const [actionError, setActionError] = useState("");
   const [theme, setTheme] = useState<ChatTheme | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [habitsOpen, setHabitsOpen] = useState(false);
@@ -301,12 +304,23 @@ export default function Chat() {
       setReportOpen(false);
       try {
         await reportUser(match.partner.id, reason, "Жалоба из чата");
-        await unmatch(match.id);
-        haptic("success");
-        navigate("/matches", { replace: true });
-      } catch {
+      } catch (e: any) {
         haptic("error");
+        setActionError(
+          e?.response?.data?.detail ??
+            "Жалоба не отправлена — проверьте связь и попробуйте ещё раз"
+        );
+        return;
       }
+      // Жалоба уже у модератора. Размэтч — вспомогательный шаг: его сбой
+      // не должен читаться как «жалоба не ушла», мэтч можно разорвать руками.
+      try {
+        await unmatch(match.id);
+      } catch {
+        /* не маскируем принятую жалобу под ошибку */
+      }
+      haptic("success");
+      navigate("/matches", { replace: true });
     },
     [match, navigate]
   );
@@ -322,8 +336,12 @@ export default function Chat() {
       await blockUser(match.partner.id);
       haptic("success");
       navigate("/matches", { replace: true });
-    } catch {
+    } catch (e: any) {
       haptic("error");
+      setActionError(
+        e?.response?.data?.detail ??
+          "Не удалось заблокировать — попробуйте ещё раз"
+      );
     }
   }, [match, navigate]);
 
@@ -334,8 +352,12 @@ export default function Chat() {
       await unmatch(match.id);
       haptic("medium");
       navigate("/matches", { replace: true });
-    } catch {
+    } catch (e: any) {
       haptic("error");
+      setActionError(
+        e?.response?.data?.detail ??
+          "Не удалось разорвать мэтч — попробуйте ещё раз"
+      );
     }
   }, [match, navigate]);
 
@@ -761,6 +783,16 @@ export default function Chat() {
           <p className="text-[12px] text-danger text-center mb-2">
             Сообщение не ушло — нет связи. Попробуйте ещё раз.
           </p>
+        )}
+
+        {actionError && (
+          <button
+            onClick={() => setActionError("")}
+            className="block mx-auto mb-2 px-4 py-2 rounded-full bg-danger/15
+                       border border-danger/30 text-danger text-[13px] font-medium"
+          >
+            {actionError} · закрыть
+          </button>
         )}
 
         <div className="flex items-end gap-2">

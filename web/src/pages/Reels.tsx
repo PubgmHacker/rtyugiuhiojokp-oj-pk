@@ -132,7 +132,8 @@ export default function Reels() {
     try {
       await reportReel(reel.id, reason);
       haptic("success");
-      setError("Жалоба отправлена — модератор разберётся");
+      // Зелёная плашка, не красная: успех в error-канале читался как сбой
+      setNotice("Жалоба отправлена — модератор разберётся");
     } catch (e: any) {
       haptic("error");
       setError(e?.response?.data?.detail ?? "Не удалось отправить жалобу");
