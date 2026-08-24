@@ -167,6 +167,23 @@ async def start_redis_subscriber(bot):
                         bot, data["user_id"], data.get("outcome", "")
                     )
 
+                elif event_type == "streak_expiring":
+                    await _notify_streak_expiring(
+                        bot,
+                        data["user_id"],
+                        data.get("partner_name") or "Ваш мэтч",
+                        int(data.get("days") or 0),
+                    )
+
+                elif event_type == "day2_digest":
+                    await _notify_day2_digest(
+                        bot,
+                        data["user_id"],
+                        data.get("card_name", ""),
+                        data.get("card_meaning", ""),
+                        data.get("card_advice", ""),
+                    )
+
                 elif event_type == "broadcast":
                     # Отдельной задачей, не в этом цикле: рассылка на тысячи
                     # получателей идёт минуты, а мэтчи и баны ждать не должны
@@ -362,6 +379,58 @@ async def _notify_reporter_about_outcome(bot, user_id: str, outcome: str):
     except Exception as e:
         # Итог жалобы не доставлен — модерация уже применена, ретраить нечего
         logger.error(f"Report outcome notification error: {e}")
+
+
+async def _notify_streak_expiring(bot, user_id: str, partner_name: str, days: int):
+    """Предупредить, что серия переписки сгорит в полночь.
+
+    Публикует api/services/engagement.py (фоновый цикл вовлечения) в канал
+    dating:bot:events, вечером и один раз на пару за день — дедуп на стороне
+    API. До этого серия сгорала молча, и человек узнавал о потере сорока
+    дней огонька постфактум, когда спасать было уже нечего.
+    """
+    try:
+        from database import get_user_by_id
+        import texts as T
+
+        user = await get_user_by_id(user_id)
+        if not user or not user.get("telegram_id"):
+            return
+
+        await bot.send_message(
+            chat_id=user["telegram_id"],
+            text=T.streak_expiring(partner_name, days),
+        )
+    except Exception as e:
+        # Не доставлено — не ретраим: следующий проход цикла в это окно уже
+        # отсечёт дедуп, а серию человеку спасёт любое сообщение и без нас
+        logger.error(f"Streak expiring notification error: {e}")
+
+
+async def _notify_day2_digest(
+    bot, user_id: str, card_name: str, card_meaning: str, card_advice: str
+):
+    """Дайджест второго дня: карта дня и приглашение вернуться в ленту.
+
+    Тот же издатель, что у стриков (api/services/engagement.py), один раз за
+    жизнь аккаунта. Поля карты приходят в событии целиком: справочник карт
+    живёт в API (services/daily_card.py), и дублировать его у бота ради
+    одного сообщения — заводить второй источник правды.
+    """
+    try:
+        from database import get_user_by_id
+        import texts as T
+
+        user = await get_user_by_id(user_id)
+        if not user or not user.get("telegram_id"):
+            return
+
+        await bot.send_message(
+            chat_id=user["telegram_id"],
+            text=T.day2_digest(card_name, card_meaning, card_advice),
+        )
+    except Exception as e:
+        logger.error(f"Day-2 digest notification error: {e}")
 
 
 async def _notify_user_about_message(bot, receiver_id: str, sender_id: str, text: str):

@@ -270,18 +270,25 @@ async def lifespan(app: FastAPI):
     # сборщиком мусора на середине паузы, и уборка тихо перестанет идти.
     janitor = asyncio.create_task(_уборка_историй(), name="stories-janitor")
 
+    # Уведомления вовлечения: «серия догорает» и дайджест дня-2. Устроен
+    # как уборщик — вечный цикл с паузой до первого прохода, дедуп в Redis.
+    from services.engagement import цикл_вовлечения
+
+    вовлечение = asyncio.create_task(цикл_вовлечения(), name="engagement-loop")
+
     yield
 
     logger.info("SIMP DATING API shutting down...")
 
-    # Гасим уборщика первым: он берёт сессию из того же пула и лезет в R2,
-    # а закрывать пул под работающим запросом — способ получить ошибку
-    # в логе на каждой остановке.
-    janitor.cancel()
-    try:
-        await janitor
-    except asyncio.CancelledError:
-        pass
+    # Гасим фоновые циклы первыми: они берут сессии из того же пула (а
+    # уборщик ещё и лезет в R2), и закрывать пул под работающим запросом —
+    # способ получить ошибку в логе на каждой остановке.
+    for задача in (janitor, вовлечение):
+        задача.cancel()
+        try:
+            await задача
+        except asyncio.CancelledError:
+            pass
 
     from services.push import close as close_push
     from services.realtime import _redis
