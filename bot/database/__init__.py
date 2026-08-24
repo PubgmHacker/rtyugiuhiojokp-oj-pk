@@ -1,6 +1,7 @@
 from database.connection import (
     engine,
     init_db,
+    track_event,
     get_or_create_user,
     get_user_by_id,
     set_user_locale,
@@ -47,6 +48,7 @@ from database.models import (
 __all__ = [
     "engine",
     "init_db",
+    "track_event",
     "get_or_create_user",
     "get_user_by_id",
     "set_user_locale",

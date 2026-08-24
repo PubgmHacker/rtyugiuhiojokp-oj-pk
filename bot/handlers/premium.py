@@ -25,7 +25,7 @@ from config import (
 from database import (
     get_or_create_user, get_active_subscription, activate_premium,
     activate_promo_code, redeem_gift_code, revoke_premium_payment,
-    credit_pack, revoke_pack, get_profile,
+    credit_pack, revoke_pack, get_profile, track_event,
 )
 from keyboards import main_kb
 from states import PromoStates
@@ -165,6 +165,9 @@ def usdt_for(plan: Plan) -> str:
 
 async def send_premium_offer(message: Message, user_id: str):
     """Показать статус подписки и витрину уровней."""
+    # Воронка оплаты: витрина показана. daily — один визит в день, а не
+    # каждое нажатие «Premium»; тот же dedup-ключ, что у пейволла мини-аппа
+    await track_event(user_id, "paywall_view", daily=True)
     sub = await get_active_subscription(user_id)
     if sub and tier_rank(sub.get("plan") or "") > 0:
         expires = (sub.get("expires_at") or "")[:10]
@@ -559,6 +562,17 @@ async def pay_stars(callback: CallbackQuery):
         currency="XTR",  # Telegram Stars
         prices=[LabeledPrice(label=plan.title, amount=stars_for(plan))],
     )
+    # Воронка: счёт выставлен. Каждая попытка, без дедупа — разрыв
+    # purchase_started/purchase_completed и есть брошенные счета. После
+    # answer_invoice: упавший счёт — не попытка оплаты
+    db_user = await get_or_create_user(
+        callback.from_user.id,
+        callback.from_user.username or "",
+        callback.from_user.first_name or "",
+    )
+    await track_event(
+        db_user["id"], "purchase_started", {"provider": "stars", "plan": code}
+    )
 
 
 @router.pre_checkout_query()
@@ -695,6 +709,12 @@ async def pay_crypto(callback: CallbackQuery):
             reply_markup=payment_methods_kb(code),
         )
         return
+
+    # Воронка: счёт выставлен (см. pay_stars). Только после успешного
+    # создания инвойса — отказ CryptoBot попыткой оплаты не считается
+    await track_event(
+        db_user["id"], "purchase_started", {"provider": "cryptobot", "plan": code}
+    )
 
     await callback.message.answer(
         f"💎 Счёт на <b>{amount} USDT</b> за {plan.title} создан.\n\n"

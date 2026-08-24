@@ -19,7 +19,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from config import BANNERS, MAX_AGE, MIN_AGE
-from database import clear_verification, get_or_create_user, update_profile, get_profile
+from database import clear_verification, get_or_create_user, update_profile, get_profile, track_event
 from keyboards import (
     main_kb,
     reg_gender_kb,
@@ -602,6 +602,11 @@ async def _finish_registration(message: Message, state: FSMContext):
         logger.exception(f"Не удалось сохранить анкету: {e}")
         await message.answer(T.ERROR_GENERIC)
         return
+
+    # Веха воронки: анкета в боте дошла до конца. После сохранения — сорванная
+    # запись анкеты не считается. Повторное прохождение гасит dedup_key;
+    # та же веха из мини-аппа (profiles.py) пишется тем же ключом
+    await track_event(db_user["id"], "profile_created", once=True)
 
     await state.clear()
     итог = T.REG_DONE

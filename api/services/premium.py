@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.models import ProcessedPayment, Subscription
+from services.analytics import EVENT_PURCHASE_COMPLETED, track
 from services.plans import TIER_FREE, TIER_PLUS, tier_from_plan, tier_rank
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,13 @@ async def activate_premium(
     sub.stripe_id = payment_id or sub.stripe_id
     sub.expires_at = new_expires
     await session.flush()
+
+    # Одна точка на все провайдеры: сюда сходятся App Store (покупка и
+    # server notification), промокоды и подарочные коды — props.provider
+    # отличает деньги от promo/gift в воронке
+    await track(session, user_id, EVENT_PURCHASE_COMPLETED, {
+        "provider": provider, "tier": sub.plan, "days": days,
+    })
 
     logger.info(f"Premium activated: user={user_id} provider={provider} until={new_expires}")
     return {

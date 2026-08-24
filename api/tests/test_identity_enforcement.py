@@ -410,10 +410,17 @@ async def update_profile(uid, **fields):
 async def clear_verification(uid):
     вызовы.append(("clear", uid))
 
+async def track_event(uid, event, props=None, once=False, daily=False):
+    # Аналитика (_finish_registration пишет profile_created) — не
+    # бизнес-действие: порядок clear/update сверяется точным списком,
+    # поэтому фейк молчит и в «вызовы» не пишет.
+    pass
+
 db.get_or_create_user = get_or_create_user
 db.get_profile = get_profile
 db.update_profile = update_profile
 db.clear_verification = clear_verification
+db.track_event = track_event
 sys.modules["database"] = db
 
 from handlers.registration import _finish_registration

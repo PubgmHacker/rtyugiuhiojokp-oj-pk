@@ -38,6 +38,7 @@ from models.schemas import (
 )
 from services.matching import get_deck_profiles
 from services.ai_moderation import log_moderation, moderate_text, verify_person_in_photo
+from services.analytics import EVENT_APP_OPEN, EVENT_PROFILE_CREATED, track
 from services.enforcement import (
     TEXT_BAN_REASONS,
     banned_response,
@@ -354,6 +355,11 @@ async def get_my_profile(
     """Получить свою анкету."""
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))
     profile = result.scalar_one_or_none()
+
+    # Дневная сетка D1/D7: клиент грузит свою анкету при каждом старте —
+    # это и есть «открыл приложение» для iOS с сохранённым токеном, который
+    # идёт мимо /auth/telegram. Повторы дня гасит dedup_key
+    await track(session, user.id, EVENT_APP_OPEN, daily=True)
 
     # Своя анкета: hide_age прячет возраст от других, а не от владельца
     age = возраст_из_даты(profile.birth_date) if profile else None
@@ -771,6 +777,13 @@ async def update_my_profile(
         raise HTTPException(status_code=422, detail=f"{отказ}.{счёт}")
 
     await session.flush()
+
+    # Анкета впервые стала полной (имя и фото — минимум, с которым её видно
+    # в деке) — веха воронки. Порог, а не факт INSERT: анкету заполняют за
+    # несколько PATCH, и строка Profile появляется раньше готовности.
+    # Повторные сохранения гасит dedup_key
+    if profile.display_name and as_list(profile.photos):
+        await track(session, user.id, EVENT_PROFILE_CREATED, once=True)
 
     # Своя анкета — возраст показываем владельцу всегда
     age = возраст_из_даты(profile.birth_date)

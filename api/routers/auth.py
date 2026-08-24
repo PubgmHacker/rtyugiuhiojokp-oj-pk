@@ -18,6 +18,7 @@ from middleware.auth import (
 )
 from models.models import User, Profile
 from models.schemas import AuthResponse, UserProfile
+from services.analytics import EVENT_APP_OPEN, track
 from services.ban_memory import banned_identity_record
 from services.apple_auth import AppleAuthError, verify_identity_token
 from services.email_recovery import (
@@ -140,6 +141,11 @@ async def auth_telegram(
         user.role = "owner"
 
     await session.flush()
+
+    # Дневная сетка D1/D7: вход через Telegram — это открытие мини-аппа.
+    # Вторая точка того же события — GET /profiles/me (бутстрап iOS с
+    # сохранённым токеном идёт мимо auth), повторы дня гасит dedup_key
+    await track(session, user.id, EVENT_APP_OPEN, daily=True)
 
     # Get profile
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))

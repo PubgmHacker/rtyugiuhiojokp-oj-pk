@@ -26,6 +26,7 @@ import services.quotas as quotas
 
 from database.models import (
     AiModerationLog,
+    AnalyticsEvent,
     BannedIdentity,
     Base,
     Block,
@@ -847,6 +848,85 @@ async def get_active_subscription(user_id: str) -> dict | None:
         }
 
 
+# ── Событийная аналитика ─────────────────────────────────────────
+# Зеркало api/services/analytics.py::track: имена событий, формат dedup_key
+# и таблица общие — отчёты читают воронку из обеих половин (бот и API).
+# Полный словарь событий и SQL отчётов — в docstring того модуля.
+
+
+async def _track_event_in(
+    session: AsyncSession,
+    user_id: str,
+    event: str,
+    props: dict | None = None,
+    *,
+    once: bool = False,
+    daily: bool = False,
+) -> None:
+    """Записать событие в уже открытую транзакцию — коммитится с делом.
+
+    `once` — веха: одна строка на человека за всю жизнь (первый /start).
+    `daily` — одна строка на календарный день UTC. Повторы гасит dedup_key:
+    предпроверка SELECT'ом (иначе каждый повторный /start шёл бы через
+    duplicate key — Postgres пишет такой конфликт ошибкой в свой лог),
+    гонку двух первых вызовов ловит уникальный ключ внутри savepoint.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    dedup: str | None = None
+    if once:
+        dedup = f"{user_id}:{event}"
+    elif daily:
+        день = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        dedup = f"{user_id}:{event}:{день}"
+
+    try:
+        if dedup is not None:
+            существует = await session.execute(
+                select(AnalyticsEvent.id).where(AnalyticsEvent.dedup_key == dedup)
+            )
+            if существует.scalar_one_or_none() is not None:
+                return
+        # Savepoint, не транзакция: при повторе вехи откатывается только
+        # INSERT события, бизнес-изменения вызывающего остаются целы
+        async with session.begin_nested():
+            session.add(AnalyticsEvent(
+                user_id=user_id,
+                event=event,
+                props=props or {},
+                dedup_key=dedup,
+            ))
+    except IntegrityError:
+        pass  # веха уже записана — повтор не событие
+    except Exception as e:
+        # Аналитика не смеет ломать продукт: начисление важнее строки в отчёте
+        logger.warning(f"Событие {event} не записано (user={user_id}): {e}")
+
+
+async def track_event(
+    user_id: str,
+    event: str,
+    props: dict | None = None,
+    *,
+    once: bool = False,
+    daily: bool = False,
+) -> None:
+    """Записать событие собственной сессией — для хендлеров вне транзакций.
+
+    Никогда не поднимает исключений: /start обязан ответить человеку и при
+    лежащей аналитике.
+    """
+    try:
+        cls = _session_cls()
+        async with cls() as session:
+            async with session.begin():
+                await _track_event_in(
+                    session, user_id, event, props, once=once, daily=daily
+                )
+    except Exception as e:
+        logger.warning(f"Событие {event} не записано (user={user_id}): {e}")
+
+
 async def activate_premium(
     user_id: str,
     days: int = 30,
@@ -932,6 +1012,13 @@ async def activate_premium(
             sub.stripe_id = payment_id or sub.stripe_id
             sub.expires_at = base + timedelta(days=days)
             await session.flush()
+
+            # Воронка: props.provider отличает деньги (stars/cryptobot)
+            # от бесплатных начислений — в той же транзакции, что подписка
+            await _track_event_in(session, user_id, "purchase_completed", {
+                "provider": provider, "tier": sub.plan, "days": days,
+            })
+
             return {"plan": sub.plan, "expires_at": sub.expires_at.isoformat()}
 
 
@@ -1036,6 +1123,11 @@ async def activate_promo_code(user_id: str, raw_code: str) -> dict:
                     sub.plan = промо.tier
                 sub.expires_at = base + timedelta(days=промо.days)
                 await session.flush()
+
+                # Воронка: promo — не выручка, отчёты отсекают по provider
+                await _track_event_in(session, user_id, "purchase_completed", {
+                    "provider": "promo", "tier": sub.plan, "days": промо.days,
+                })
 
                 logger.info(
                     f"promo activated: code={промо.code} tier={промо.tier} "
@@ -1153,6 +1245,11 @@ async def redeem_gift_code(user_id: str, raw_code: str) -> dict:
                     sub.plan = gift.plan
                 sub.expires_at = base + timedelta(days=gift.months * 30)
                 await session.flush()
+
+                # Воронка: gift — не выручка, отчёты отсекают по provider
+                await _track_event_in(session, user_id, "purchase_completed", {
+                    "provider": "gift", "tier": sub.plan, "days": gift.months * 30,
+                })
 
                 logger.info(
                     f"gift redeemed via bot: plan={gift.plan} "

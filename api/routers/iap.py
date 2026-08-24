@@ -28,6 +28,7 @@ from models.schemas import (
 from services.appstore import (
     ReceiptInvalid, is_configured, verify_transaction, разобрать_уведомление,
 )
+from services.analytics import EVENT_PAYWALL_VIEW, track
 from services.gifting import activate_gift, new_gift_code, purchase_gift
 from services.premium import activate_premium, current_tier, отозвать_покупку
 from services.plans import PLANS, TIER_ORDER, TIERS, plan_for_appstore_id
@@ -48,6 +49,10 @@ async def list_plans(
     Цены отдаёт сервер, а не клиент: иначе бот, мини-апп и лендинг разошлись
     бы в ценнике, и человек увидел бы одну цену, а заплатил другую.
     """
+    # Воронка «пейволл → покупка»: экран тарифов рисуется из этого ответа,
+    # других путей к нему у мини-аппа нет. Повторы дня гасит dedup_key
+    await track(session, user.id, EVENT_PAYWALL_VIEW, daily=True)
+
     return PlansOut(
         current_tier=await current_tier(session, user.id),
         tiers=[

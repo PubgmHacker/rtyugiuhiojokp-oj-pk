@@ -12,7 +12,7 @@ from aiogram.types import BotCommand, ErrorEvent, MenuButtonWebApp, WebAppInfo
 from aiohttp import web
 
 from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, REDIS_URL, SENTRY_DSN, SITE_URL, webapp_https, mini_app_url
-from database import init_db, get_or_create_user, get_profile, record_referral, get_user_by_id
+from database import init_db, get_or_create_user, get_profile, record_referral, get_user_by_id, track_event
 from handlers import registration, dating, matches, premium, referral, account, onboarding, unban
 from handlers.onboarding import send_language_picker
 from keyboards import main_kb
@@ -68,6 +68,19 @@ async def cmd_start(message, state):
     # Deep-links: t.me/<bot>?start=premium | ?start=ref_<user_id>
     parts = (message.text or "").split(maxsplit=1)
     arg = parts[1].strip() if len(parts) > 1 else ""
+
+    # Верх воронки: props.source — метка канала из deep-link
+    # (t.me/<bot>?start=<метка>), по ней считается окупаемость закупки.
+    # once = first-touch: повторный /start с другой меткой источник не
+    # крадёт — канал засчитан тому, кто привёл человека первым. До ранних
+    # веток deep-link'ов, иначе пришедший по ?start=premium исчезал из воронки
+    if arg == "premium":
+        источник = "premium"
+    elif arg.startswith("ref_"):
+        источник = "referral"
+    else:
+        источник = arg[:64] if arg else "organic"
+    await track_event(db_user["id"], "bot_start", {"source": источник}, once=True)
 
     if arg == "premium":
         from handlers.premium import PREMIUM_PITCH, send_premium_offer

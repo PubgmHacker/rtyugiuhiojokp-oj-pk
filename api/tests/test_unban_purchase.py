@@ -433,10 +433,17 @@ async def redeem_gift_code(user_id, raw_code):
     вызовы.append(("redeem_gift_code", user_id, raw_code))
     return {"redeemed": False, "reason": "not_found"}
 
+# Аналитика воронки: хендлеры пишут события (paywall_view, purchase_started)
+# по пути к платежу — в сценариях этих тестов она лишь не должна мешать.
+# Настоящую запись проверяет test_analytics.py на живой базе.
+
+async def track_event(user_id, event, props=None, once=False, daily=False):
+    вызовы.append(("track_event", user_id, event))
+
 for имя in ("get_or_create_user", "get_active_subscription", "activate_premium",
             "revoke_premium_payment", "unban_after_payment", "reban_after_refund",
             "get_profile", "credit_pack", "revoke_pack", "activate_promo_code",
-            "redeem_gift_code"):
+            "redeem_gift_code", "track_event"):
     setattr(db, имя, locals()[имя])
 sys.modules["database"] = db
 

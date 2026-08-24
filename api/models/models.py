@@ -1359,3 +1359,41 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     #: Пусто — непрочитанное. Заполняется скопом при открытии центра
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AnalyticsEvent(Base):
+    """Событие продуктовой воронки — от /start в боте до покупки.
+
+    Аналитики не было вообще: ни воронку CPI → анкета → первый свайп → D1 →
+    покупка, ни окупаемость канала посмотреть было нечем — платный трафик
+    лился бы вслепую. Внешние трекеры дейтингу противопоказаны (передача
+    данных третьим лицам — отдельный пункт согласия), поэтому события лежат
+    в своём Postgres, а воронка считается обычным SQL
+    (см. services/analytics.py).
+
+    `dedup_key` делает событие вехой: у «первого свайпа» он `user:event`
+    (одна строка на всю жизнь), у ежедневных `user:event:день` (одна строка
+    в день — D1/D7 считаются по календарной сетке, а таблица не растёт от
+    каждого пинга). UNIQUE игнорирует NULL и в Postgres, и в SQLite, поэтому
+    события без дедупликации пишутся без ограничений.
+    """
+
+    __tablename__ = "dating_analytics_events"
+    __table_args__ = (
+        # Воронка режется по событию и окну дат
+        Index("ix_analytics_event_created", "event", "created_at"),
+        # Траектория человека: какие вехи прошёл и когда
+        Index("ix_analytics_user_event", "user_id", "event"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("dating_users.id", ondelete="CASCADE"))
+    #: bot_start | profile_created | app_open | first_swipe | first_match |
+    #: first_message | paywall_view | purchase_started | purchase_completed
+    #: (services/analytics.py — единственный список)
+    event: Mapped[str] = mapped_column(String(64))
+    #: Контекст события: у bot_start — {"source": метка канала},
+    #: у purchase_completed — {"provider", "tier", "days", "amount", "currency"}
+    props: Mapped[dict] = mapped_column(JSON, default=dict)
+    dedup_key: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

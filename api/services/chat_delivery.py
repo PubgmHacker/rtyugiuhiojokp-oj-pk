@@ -31,6 +31,7 @@ from sqlalchemy import text as sa_text
 
 from database.connection import async_session_factory
 from models.models import Match, Message, Profile, Reel
+from services.analytics import EVENT_FIRST_MESSAGE, track
 from services.direct_messages import (
     DirectDenied,
     can_send_message,
@@ -200,6 +201,11 @@ async def save_message(
             )
             session.add(message)
             await session.flush()
+
+            # Веха воронки: первое отправленное сообщение — общий путь
+            # доставки, сюда сходятся и чат, и direct-письма. В транзакции
+            # вставки: откат не оставит события. Повторы гасит dedup_key
+            await track(session, sender_id, EVENT_FIRST_MESSAGE, once=True)
 
             preview = None
             if reel_id:

@@ -22,6 +22,7 @@ from models.schemas import (
 )
 from services.realtime import publish_match, publish_new_like, publish_new_match_for_bot
 from services.ai_matchmaker import score_match
+from services.analytics import EVENT_FIRST_MATCH, EVENT_FIRST_SWIPE, track
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import enforce_text_verdict
 from services.matching import ОНЛАЙН_МИНУТ
@@ -321,6 +322,10 @@ async def create_like(
         ))
     await session.flush()
 
+    # Веха воронки: человек начал пользоваться декой. pass — тоже решение
+    # по анкете, поэтому точка стоит до ранних веток. Повторы гасит dedup_key
+    await track(session, user.id, EVENT_FIRST_SWIPE, once=True)
+
     # Бонусный суперлайк списываем после записи лайка: до неё непонятно,
     # укладывается ли он в суточную квоту
     if data.type == "superlike":
@@ -375,6 +380,13 @@ async def create_like(
         session.add(match)
         await session.flush()
         is_new_match = True
+
+    # Веха обоим: «первый мэтч» случился у каждого из пары, а не только у
+    # того, чей свайп его замкнул. Повторы (и реактивацию после unmatch у
+    # ветеранов) гасит dedup_key. До commit ниже — в транзакции мэтча
+    if is_new_match:
+        await track(session, user.id, EVENT_FIRST_MATCH, once=True)
+        await track(session, data.target_id, EVENT_FIRST_MATCH, once=True)
 
     response = LikeResponse(liked=True, matched=True,
                             match=await _to_resp(session, match, data.target_id))
