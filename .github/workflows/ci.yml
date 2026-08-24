@@ -47,7 +47,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             api/requirements.txt
-            bot/requirements.txt
+            bot/requirements-dev.txt
 
       - name: Установка зависимостей
         run: |
@@ -58,12 +58,15 @@ jobs:
       # выполняя её интерпретатором из bot/.venv. Без venv они молча
       # скипаются — и первый прогон показал цену: ~сотня тестов, среди них
       # приёмка правок аудита, в CI не выполнялась вовсе.
+      # Ставится dev-набор: он тянет requirements.txt И aiosqlite, без
+      # которого скрипты на настоящей БД скипаются (18 шт.), а два теста,
+      # не отличающие «нет модуля» от «логика сломана», падают.
       - name: Окружение бота — для тестов его логики
         working-directory: bot
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r requirements.txt
+          .venv/bin/pip install -r requirements-dev.txt
 
       - name: Проверка синтаксиса
         run: python -m compileall -q .
