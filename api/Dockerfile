@@ -24,4 +24,7 @@ EXPOSE 8000
 # маршрутизирует — контейнер, прибитый к 8000, оказался бы недостижим, и
 # /health не поднялся бы. Локально в docker compose $PORT не задан, падаем на
 # 8000 (совпадает с проброшенным портом). Так же устроен web/Dockerfile.
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2}"]
+# Хост :: (dual-stack), не 0.0.0.0: healthcheck и приватная сеть Railway ходят
+# по IPv6 — IPv4-only сокет для них не существует, и живой процесс выглядел бы
+# как «replicas never became healthy».
+CMD ["sh", "-c", "uvicorn main:app --host :: --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2}"]
