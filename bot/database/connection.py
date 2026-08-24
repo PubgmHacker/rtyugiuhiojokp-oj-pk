@@ -1632,27 +1632,39 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
         # ORDER BY RANDOM(): тому нужна сортировка всей таблицы на каждый
         # показ анкеты. У конца диапазона строк не хватит — добираем
         # с начала, иначе анкеты с большим ключом видели бы полупустую деку.
-        async def _scan(*extra) -> list[tuple[Profile, bool]]:
-            # User и так в джойне — галочка едет тем же запросом, без N+1
+        async def _scan(*extra) -> list[tuple[Profile, bool, datetime | None]]:
+            # User и так в джойне — галочка и возраст аккаунта едут тем же
+            # запросом, без N+1
             result = await session.execute(
-                select(Profile, User.is_verified)
+                select(Profile, User.is_verified, User.created_at)
                 .join(User, Profile.user_id == User.id)
                 .where(*filters, *extra)
                 .order_by(Profile.sample_key)
                 .limit(limit * 3)
             )
-            return [(p, bool(v)) for p, v in result.all()]
+            return [(p, bool(v), c) for p, v, c in result.all()]
 
         cut = random.random()
         rows = await _scan(Profile.sample_key >= cut)
         if len(rows) < limit * 3:
             rows += await _scan(Profile.sample_key < cut)
 
+        # Буст новичка (PRD §2.4.5): доля свежести 0..1 у кандидатов моложе
+        # суток. Та же механика, что в api/services/matching.py, — считается
+        # на лету от User.created_at, в базу ничего не пишется
+        свежесть_по_id: dict[str, float] = {}
         profiles = []
-        for p, verified in rows[: limit * 3]:
+        for p, verified, created_at in rows[: limit * 3]:
             анкета = _profile_to_dict(p)
             анкета["is_verified"] = verified
             profiles.append(анкета)
+            if created_at is not None:
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                часы = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
+                доля = max(0.0, 1.0 - часы / 24.0)
+                if доля > 0:
+                    свежесть_по_id[p.user_id] = доля
 
         # Встречный фильтр + сортировка по общим интересам
         my_gender = my.gender if my else "other"
@@ -1665,10 +1677,19 @@ async def get_deck_profiles(user_id: str, limit: int = 5) -> list[dict]:
             return lf == "any" or lf == my_gender or my_gender == "other"
 
         profiles = [p for p in profiles if _visible(p)]
-        profiles.sort(
-            key=lambda p: len(my_interests & set(p.get("interests") or [])),
-            reverse=True,
-        )
+
+        def _ключ(p: dict) -> float:
+            балл = float(len(my_interests & set(p.get("interests") or [])))
+            доля = свежесть_по_id.get(p["user_id"], 0.0)
+            if доля and p.get("photos"):
+                # Буст новичка на шкале бота: дека здесь ранжируется штуками
+                # общих интересов, полная свежесть весит как два совпадения —
+                # новичок виден раньше, но три общих интереса его обгоняют.
+                # Без фото буст не даётся: механика не разгоняет пустышки
+                балл += 2.0 * доля
+            return балл
+
+        profiles.sort(key=_ключ, reverse=True)
         return profiles[:limit]
 
 

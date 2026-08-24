@@ -29,6 +29,38 @@ settings = get_settings()
 BOOST_MULTIPLIER = 3.0
 BOOST_BONUS = 40.0
 
+#: Буст новичка (PRD §2.4.5): первые 24 часа анкета выше в выдаче — цель
+#: довести нового человека до первого мэтча в первую же сессию, это
+#: сильнейший предиктор возврата на день 2. Множитель угасает линейно от
+#: ×1.8 до ×1.0 и считается от User.created_at на лету: в базу ничего не
+#: пишется, поэтому нечему рассинхронизироваться и нечего чистить по
+#: истечении. Бонус нужен из-за нулевой базы нашего скоринга: у новичка без
+#: общих интересов и координат множитель умножал бы ноль. 15 — сила сигнала
+#: «один город»: свежесть весит как землячество, но платный буст (×3 + 40)
+#: остаётся заметно сильнее.
+СВЕЖЕСТЬ_ЧАСОВ = 24.0
+СВЕЖЕСТЬ_МНОЖИТЕЛЬ = 0.8
+СВЕЖЕСТЬ_БОНУС = 15.0
+
+#: Авторасширение тонкой деки: жёсткий обрыв на радиусе `distance_max`
+#: оставлял человека в малом городе с пустой декой — самая дорогая утечка
+#: первого дня, бьёт и по удержанию, и по монетизации. Кандидата дальше
+#: своего радиуса, но ближе ×3 от него («соседний город») не выбрасываем,
+#: а откладываем: он попадёт в выдачу, только если своих не хватило на
+#: страницу. Свои всегда выше — соседи идут хвостом, дистанция на карточке
+#: честная. Дальше ×3 — уже не сосед, отсекается как раньше.
+РАДИУС_СОСЕДЕЙ = 3.0
+
+
+def _свежесть(created_at: Optional[datetime]) -> float:
+    """Доля новичкового буста 0..1: единица в момент регистрации, ноль через сутки."""
+    if created_at is None:
+        return 0.0
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    часы = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
+    return max(0.0, 1.0 - часы / СВЕЖЕСТЬ_ЧАСОВ)
+
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
     """Расстояние между двумя точками в км."""
@@ -332,13 +364,16 @@ async def get_deck_profiles(
     недавно = datetime.now(timezone.utc) - timedelta(minutes=ОНЛАЙН_МИНУТ)
     онлайн: set[str] = set()
     верифицированные: set[str] = set()
+    # Буст новичка: доля свежести 0..1 по каждому кандидату моложе суток.
+    # Едет тем же запросом, что онлайн и галочка, — не N+1
+    свежесть_по_id: dict[str, float] = {}
     if candidate_ids:
         result = await session.execute(
-            select(User.id, User.last_seen_at, User.is_verified).where(
-                User.id.in_(candidate_ids)
-            )
+            select(
+                User.id, User.last_seen_at, User.is_verified, User.created_at
+            ).where(User.id.in_(candidate_ids))
         )
-        for uid, last_seen, is_verified in result.all():
+        for uid, last_seen, is_verified, created_at in result.all():
             # Колонка без таймзоны отдаёт naive-время — приводим к UTC,
             # иначе сравнение с aware-границей падает TypeError'ом
             if last_seen is not None and last_seen.tzinfo is None:
@@ -347,9 +382,15 @@ async def get_deck_profiles(
                 онлайн.add(uid)
             if is_verified:
                 верифицированные.add(uid)
+            доля = _свежесть(created_at)
+            if доля > 0:
+                свежесть_по_id[uid] = доля
 
     # Filter by preferences and build deck
     deck: list[DeckProfile] = []
+    # Соседние города: кандидаты за радиусом distance_max, но не дальше ×3.
+    # В деку не входят, пока своих хватает, — только добирают тонкую
+    соседи: list[DeckProfile] = []
     my_age = возраст_из_даты(my_profile.birth_date) if my_profile else None
     my_interests_pre = set(as_list(my_profile.interests)) if my_profile else set()
 
@@ -390,6 +431,7 @@ async def get_deck_profiles(
         # предупреждает об этом в фильтрах (Discover.tsx), чтобы ползунок не
         # выглядел рабочим, когда он не работает.
         distance = None
+        за_радиусом = False
         if (my_profile and my_profile.latitude and my_profile.longitude
                 and profile.latitude and profile.longitude):
             distance = _haversine(
@@ -397,7 +439,15 @@ async def get_deck_profiles(
                 profile.latitude, profile.longitude,
             )
             if my_profile.distance_max and distance > my_profile.distance_max:
-                continue
+                # Авторасширение тонкой деки: сосед не выбрасывается, а
+                # откладывается — попадёт в выдачу, только если своих
+                # меньше страницы. Дистанция на карточке остаётся честной:
+                # человек видит «120 км» и сам решает. Ослабляется ТОЛЬКО
+                # радиус — пол, возраст, ниши и блокировки уже отсеяли
+                # кандидата выше, соседство их не обходит (гейт PRD §2.6).
+                if distance > my_profile.distance_max * РАДИУС_СОСЕДЕЙ:
+                    continue
+                за_радиусом = True
 
         # Совместимость считаем на месте, без обращения к модели: дека — это
         # десятки анкет на каждый запрос, и LLM-скоринг каждой из них стоил бы
@@ -409,7 +459,7 @@ async def get_deck_profiles(
 
         # Возраст и расстояние прячем в карточке, но подбор по ним оставляем:
         # выпади анкета из фильтров, человек просто перестал бы её видеть
-        deck.append(DeckProfile(
+        (соседи if за_радиусом else deck).append(DeckProfile(
             id=profile.user_id,
             display_name=profile.display_name or "",
             age=публичный_возраст(profile),
@@ -459,6 +509,13 @@ async def get_deck_profiles(
         score += приоритет_по_id.get(p.id, 0)
         if p.id in referral_boost_ids:
             score *= referral_mult  # пригласил друзей — анкета выше
+        доля = свежесть_по_id.get(p.id, 0.0)
+        if доля and p.photos:
+            # Буст новичка: свежая анкета выше — но только с фото, механика
+            # не имеет права разгонять пустышки (PRD §2.4.5). Стоит ДО
+            # платного буста, чтобы купленный буст оставался сильнее любого
+            # бесплатного сигнала
+            score = score * (1 + СВЕЖЕСТЬ_МНОЖИТЕЛЬ * доля) + СВЕЖЕСТЬ_БОНУС * доля
         if p.id in boosted_ids:
             # Платный буст сильнее прочих слагаемых, иначе покупка не заметна.
             # Множитель, а не константа: иначе он терялся бы у анкет, которые
@@ -467,4 +524,9 @@ async def get_deck_profiles(
         return score + random.uniform(0, 8)
 
     deck.sort(key=_rank, reverse=True)
+    if len(deck) < limit and соседи:
+        # Тонкая дека: своих меньше страницы — добираем соседними городами,
+        # тоже по рангу. Хвостом, а не вперемешку: свой радиус всегда выше
+        соседи.sort(key=_rank, reverse=True)
+        deck += соседи[: limit - len(deck)]
     return deck[:limit]
