@@ -47,6 +47,9 @@ class UserProfile(BaseModel):
     age: Optional[int] = None
     city: str = ""
     photos: list[str] = Field(default_factory=list)
+    #: Видеоролики анкеты — дополнение к фото, не замена: гейт «живой
+    #: человек» и полнота анкеты считаются по photos.
+    videos: list[str] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)
     ai_bio: Optional[str] = None
     looking_for: str = "any"
@@ -132,6 +135,10 @@ class ProfileUpdate(BaseModel):
     longitude: Optional[float] = None
     interests: Optional[list[str]] = None
     photos: Optional[list[str]] = None
+    #: Список видео анкеты — переставить местами или убрать. Новые URL сюда
+    #: не просунуть: роутер принимает только ссылки из своей папки R2
+    #: (profile-videos/{user_id}/) или значения из прежнего списка.
+    videos: Optional[list[str]] = None
     is_incognito: Optional[bool] = None
     #: Пауза. Уровнем подписки не ограничена намеренно: возможность убрать
     #: себя с витрины — не товар. Пока её не было в этой схеме, поставить
@@ -296,6 +303,8 @@ class DeckProfile(BaseModel):
     city: str = ""
     bio: str = ""
     photos: list[str] = Field(default_factory=list)
+    #: Видеоролики анкеты — карточка в деке показывает их после фото.
+    videos: list[str] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)
     ai_bio: Optional[str] = None
     distance: Optional[int] = None  # км от текущего пользователя

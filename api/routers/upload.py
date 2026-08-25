@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import Profile, User
@@ -12,8 +13,12 @@ from services.r2_storage import upload_photo_to_r2, delete_photo_from_r2
 from services.ai_moderation import log_moderation, moderate_image, verify_profile_photo
 from services.enforcement import enforce_text_verdict
 from services.image_sanitizer import ImageRejected, sanitize_image
+from services.video_validation import модерировать_кадры, прочитать_видео
+from utils import as_list
 
 router = APIRouter(prefix="/upload", tags=["upload"])
+
+settings = get_settings()
 
 
 @router.post("/photo")
@@ -100,13 +105,70 @@ async def upload_photo(
     return {"url": url, "key": object_key}
 
 
+@router.post("/video")
+async def upload_profile_video(
+    file: UploadFile = File(...),
+    covers: list[UploadFile] = File(
+        ..., description="Кадры с разных таймкодов видео — их и модерируем"
+    ),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Загрузить видеоролик анкеты в R2 с AI-модерацией по кадрам.
+
+    Контракт тот же, что у публикации ролика в ленте (routers/reels.py):
+    сервер видео не декодирует (ffmpeg в контейнере нет), поэтому клиент
+    присылает вместе с файлом кадры с разных таймкодов — их санитайзит и
+    смотрит модерация. Гейт «живой человек» (лицо на снимке) к видео не
+    применяется: он остаётся на фото, видео — дополнение к анкете, а не
+    замена фото.
+
+    Возвращает `{"url", "key"}` — как /upload/photo; в анкету URL кладёт
+    клиент через `PATCH /profiles/me` (поле videos), где проверяется
+    происхождение ссылки и лимит.
+    """
+    # Лимит проверяем до тяжёлой работы: модерация кадров и заливка в R2
+    # стоят денег, а видео сверх лимита в анкету всё равно не встанет.
+    result = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+    if profile and len(as_list(profile.videos)) >= settings.MAX_PROFILE_VIDEOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Максимум {settings.MAX_PROFILE_VIDEOS} видео в анкете",
+        )
+
+    data, ext = await прочитать_видео(file)
+
+    # Кадры нужны только модерации — обложек у видео анкеты нет
+    _кадры, ответ_бана = await модерировать_кадры(
+        session, user, covers, "profile_video", f"profile video by {user.id}"
+    )
+    if ответ_бана is not None:
+        return ответ_бана
+
+    # Префикс нарочно не photos/: PATCH принимает в поле videos только
+    # ссылки из profile-videos/{user_id}/ — фото и видео не перепутать
+    object_key = f"profile-videos/{user.id}/{uuid.uuid4()}.{ext}"
+
+    url = await upload_photo_to_r2(object_key, data, file.content_type or "video/mp4")
+    if not url:
+        raise HTTPException(status_code=500, detail="Upload failed")
+
+    return {"url": url, "key": object_key}
+
+
 @router.delete("/photo")
 async def delete_photo(
     data: dict,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Удалить фото из R2."""
+    """Удалить фото из R2.
+
+    Тот же эндпоинт удаляет и видео анкеты: ключ `profile-videos/{user_id}/…`
+    проходит проверку владения ниже, а опорного снимка верификации среди
+    видео не бывает.
+    """
     key = data.get("key", "")
     if not key:
         raise HTTPException(status_code=400, detail="No key provided")

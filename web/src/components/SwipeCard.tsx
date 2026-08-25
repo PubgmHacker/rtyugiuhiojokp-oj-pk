@@ -55,6 +55,13 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
   const glowShadow = useMotionTemplate`inset 0 0 0 3px ${glowColor}, inset 0 0 34px -22px ${glowColor}`;
 
   const photos = profile.photos?.length ? profile.photos : [];
+  // Видео анкеты листаются после фото тем же жестом. API наружу отдаёт
+  // только публичные URL, но file_id бота на всякий случай не играем
+  const videos = (profile.videos ?? []).filter((v) => /^https?:\/\//.test(v));
+  const media = [
+    ...photos.map((src) => ({ src, video: false })),
+    ...videos.map((src) => ({ src, video: true })),
+  ];
   const hasPhotos = photos.length > 0;
   const decor = decorStyle(profile.decor);
 
@@ -88,11 +95,11 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
 
   const showPhoto = useCallback(
     (next: number) => {
-      if (next < 0 || next >= photos.length || next === photoIndex) return;
+      if (next < 0 || next >= media.length || next === photoIndex) return;
       haptic("select");
       setPhotoIndex(next);
     },
-    [photoIndex, photos.length]
+    [photoIndex, media.length]
   );
 
   // Прогреваем остальные фото, как только карточка стала верхней: иначе
@@ -132,7 +139,7 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
     );
   }
 
-  const currentPhoto = photos[photoIndex];
+  const current = media[photoIndex];
 
   return (
     <motion.div
@@ -156,19 +163,36 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
         style={{ opacity: glowOpacity, boxShadow: glowShadow }}
       />
 
-      {/* Фото */}
-      {currentPhoto ? (
+      {/* Фото или видео */}
+      {current ? (
         <>
           {!loadedPhotos[photoIndex] && <div className="absolute inset-0 skeleton" />}
-          <img
-            key={currentPhoto}
-            src={currentPhoto}
-            alt={profile.display_name}
-            onLoad={() => setLoadedPhotos((m) => ({ ...m, [photoIndex]: true }))}
-            className="w-full h-full object-cover pointer-events-none select-none"
-            draggable={false}
-            decoding="async"
-          />
+          {current.video ? (
+            // Без звука и с автоплеем: карточка — витрина, не плеер.
+            // playsInline обязателен, иначе iOS разворачивает на весь экран
+            <video
+              key={current.src}
+              src={current.src}
+              autoPlay
+              muted
+              loop
+              playsInline
+              onLoadedData={() =>
+                setLoadedPhotos((m) => ({ ...m, [photoIndex]: true }))
+              }
+              className="w-full h-full object-cover pointer-events-none select-none"
+            />
+          ) : (
+            <img
+              key={current.src}
+              src={current.src}
+              alt={profile.display_name}
+              onLoad={() => setLoadedPhotos((m) => ({ ...m, [photoIndex]: true }))}
+              className="w-full h-full object-cover pointer-events-none select-none"
+              draggable={false}
+              decoding="async"
+            />
+          )}
         </>
       ) : (
         <div
@@ -195,11 +219,11 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
         />
       )}
 
-      {/* Индикатор фото + зоны перелистывания */}
-      {photos.length > 1 && (
+      {/* Индикатор фото и видео + зоны перелистывания */}
+      {media.length > 1 && (
         <>
           <div className="absolute top-3 left-0 right-0 flex gap-1.5 px-4 z-20 pointer-events-none">
-            {photos.map((_, i) => (
+            {media.map((_, i) => (
               <div
                 key={i}
                 className={`h-[3px] flex-1 rounded-full transition-all duration-300 ${

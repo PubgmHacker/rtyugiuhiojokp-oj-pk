@@ -1749,16 +1749,22 @@ def test_сигнатура_видео_проверяется():
 
 def test_видео_модерируется_по_обложке():
     """Сервер не разбирает видео на кадры — ffmpeg в образе ради этого дорог.
-    Значит обложка обязательна, и проверяется именно она."""
+    Значит кадры обязательны, и проверяются именно они. Сама проверка живёт
+    в services/video_validation (общая с видео анкеты) — роутер обязан её
+    звать, а сервис — санитайзить и модерировать каждый кадр."""
     import inspect
 
     from routers import reels
+    from services import video_validation
 
     исходник = inspect.getsource(reels.create_reel)
-    assert "moderate_image(cover_bytes)" in исходник
-    assert "sanitize_image" in исходник, "обложка должна чиститься от EXIF"
+    assert "модерировать_кадры(" in исходник
     # Подпись — публичный текст, её тоже проверяем
     assert "moderate_text" in исходник
+
+    сервис = inspect.getsource(video_validation.модерировать_кадры)
+    assert "moderate_image(" in сервис
+    assert "sanitize_image" in сервис, "кадры должны чиститься от EXIF"
 
 
 def test_лимит_публикаций_считается_по_времени():
@@ -4238,7 +4244,7 @@ from database.connection import get_deck_profiles, _profile_to_dict, _дата_�
 
 class Анкета:
     user_id = "u"; display_name = "А"; bio = ""; gender = "female"
-    birth_date = datetime(1995, 5, 5); city = ""; photos = []; interests = []
+    birth_date = datetime(1995, 5, 5); city = ""; photos = []; videos = []; interests = []
     ai_bio = None; looking_for = "any"; goal = ""; relation_type = ""; subculture = ""; mbti = ""
     height_cm = None; sticker = ""; hide_age = True; verified_photo = ""
 

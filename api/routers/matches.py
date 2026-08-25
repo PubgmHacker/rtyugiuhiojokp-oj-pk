@@ -34,7 +34,7 @@ from services.quotas import match_views_state, open_match, opened_match_ids
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
-from utils import as_list
+from utils import as_list, public_videos
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -90,6 +90,7 @@ async def _to_resp(session: AsyncSession, match: Match, partner_id: str) -> Matc
             age=публичный_возраст(profile),
             city=profile.city if profile else "",
             photos=as_list(profile.photos) if profile else [],
+            videos=public_videos(profile.videos) if profile else [],
             interests=as_list(profile.interests) if profile else [],
             sticker=картинка_наклейки(profile.sticker if profile else None),
             decor=безопасный_код(profile.decor if profile else None),
@@ -223,6 +224,7 @@ async def get_matches(
                 age=публичный_возраст(profile),
                 city=profile.city if profile else "",
                 photos=as_list(profile.photos) if profile else [],
+                videos=public_videos(profile.videos) if profile else [],
                 interests=as_list(profile.interests) if profile else [],
                 sticker=картинка_наклейки(profile.sticker if profile else None),
                 decor=безопасный_код(profile.decor if profile else None),

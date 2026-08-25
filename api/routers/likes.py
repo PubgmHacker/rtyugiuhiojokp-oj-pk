@@ -33,7 +33,7 @@ from services.premium import current_tier
 from services.plans import superlikes_for, tier_allows
 from services.quotas import likes_state, match_views_state
 from services.push import is_configured, notify_new_match
-from utils import as_list
+from utils import as_list, public_videos
 
 router = APIRouter(prefix="/likes", tags=["likes"])
 settings = get_settings()
@@ -81,6 +81,7 @@ async def _profile_to_user(
         age=публичный_возраст(profile),
         city=profile.city or "",
         photos=as_list(profile.photos),
+        videos=public_videos(profile.videos),
         interests=as_list(profile.interests),
         goal=profile.goal or "",
         subculture=profile.subculture or "",

@@ -150,6 +150,11 @@ class Profile(Base):
     latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     photos: Mapped[str] = mapped_column(JSON, default=list)
+    #: Видеоролики анкеты — публичные URL из R2 (profile-videos/{user_id}/…).
+    #: Дополнение к фото, не замена: обязательное фото с лицом остаётся
+    #: единственным медиа, которое проходит гейт «живой человек», поэтому
+    #: полнота анкеты и превью в деке считаются по photos.
+    videos: Mapped[str] = mapped_column(JSON, default=list)
     #: Опорное фото проверки: та фотография анкеты, с которой совпало лицо на
     #: живой съёмке (routers/verification.py). Пока она стоит в анкете, каждое
     #: новое фото сверяется с ней — заменить подтверждённый профиль на чужие

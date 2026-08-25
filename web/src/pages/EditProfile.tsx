@@ -8,6 +8,7 @@ import { getCurrentPosition } from "../lib/native";
 import { setClosingConfirmation } from "../lib/telegram";
 import { Button, Chip, ScreenHeader, Spinner } from "../components/ui";
 import PhotoGrid, { usePhotoSlots } from "../components/PhotoGrid";
+import VideoGrid, { useVideoSlots } from "../components/VideoGrid";
 import InterestsPicker from "../components/InterestsPicker";
 import {
   GOALS,
@@ -18,6 +19,7 @@ import {
   HEIGHT_MAX,
   MAX_INTERESTS,
   MAX_PHOTOS,
+  MAX_VIDEOS,
   MAX_BIO,
   MIN_AGE,
   MAX_AGE,
@@ -89,6 +91,7 @@ function EditForm({ base }: { base: UserProfile }) {
   const { photos, addPhoto, removePhoto, makePrimary } = usePhotoSlots(
     base.photos ?? []
   );
+  const { videos, addVideo, removeVideo } = useVideoSlots(base.videos ?? []);
   const [interests, setInterests] = useState<string[]>(base.interests ?? []);
   const [goal, setGoal] = useState(base.goal ?? "");
   const [relationType, setRelationType] = useState(base.relation_type ?? "");
@@ -114,6 +117,15 @@ function EditForm({ base }: { base: UserProfile }) {
     const urls = photos.filter((s) => s.url).map((s) => s.url as string);
     if (JSON.stringify(urls) !== JSON.stringify(base.photos ?? []))
       p.photos = urls;
+    // Слоты держат только проигрываемые URL; file_id из бота (не-URL) в
+    // сетке не видны — сохраняем их как есть, чтобы PATCH их не стёр молча
+    const keptRaw = (base.videos ?? []).filter((v) => !/^https?:\/\//.test(v));
+    const videoUrls = [
+      ...keptRaw,
+      ...videos.filter((s) => s.url).map((s) => s.url as string),
+    ];
+    if (JSON.stringify(videoUrls) !== JSON.stringify(base.videos ?? []))
+      p.videos = videoUrls;
     if (JSON.stringify(interests) !== JSON.stringify(base.interests ?? []))
       p.interests = interests;
     if (goal !== (base.goal ?? "")) p.goal = goal;
@@ -139,6 +151,7 @@ function EditForm({ base }: { base: UserProfile }) {
     lookingFor,
     city,
     photos,
+    videos,
     interests,
     goal,
     relationType,
@@ -150,7 +163,8 @@ function EditForm({ base }: { base: UserProfile }) {
   ]);
 
   const dirty = Object.keys(patch).length > 0;
-  const uploading = photos.some((s) => s.uploading);
+  const uploading =
+    photos.some((s) => s.uploading) || videos.some((s) => s.uploading);
 
   // Те же границы, что в онбординге: сервер отклонит и без нас, но человек
   // должен услышать это до отправки, а не разбирать 422
@@ -260,6 +274,20 @@ function EditForm({ base }: { base: UserProfile }) {
             onPick={addPhoto}
             onRemove={removePhoto}
             onMakePrimary={makePrimary}
+          />
+        </Section>
+
+        <Section
+          id="videos"
+          title="Видео"
+          hint="Необязательно. Ролики показываются в анкете после фото"
+          highlight={highlight === "videos"}
+        >
+          <VideoGrid
+            videos={videos}
+            max={MAX_VIDEOS}
+            onPick={addVideo}
+            onRemove={removeVideo}
           />
         </Section>
 

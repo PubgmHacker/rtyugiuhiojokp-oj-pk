@@ -96,6 +96,9 @@ class Profile(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     photos: Mapped[dict | list] = mapped_column(JSON, default=list)
+    # Видеоролики анкеты — дополнение к фото, см. api/models/models.py.
+    # Публичные URL из R2 либо, когда R2 не настроен, Telegram file_id.
+    videos: Mapped[dict | list] = mapped_column(JSON, default=list)
     # Опорное фото проверки — см. api/models/models.py: URL фото анкеты,
     # с которым совпало лицо на живой съёмке. Бот сверяет с ним новые фото
     # подтверждённых пользователей и снимает галочку, если его убрали.

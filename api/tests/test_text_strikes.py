@@ -297,7 +297,14 @@ async def test_enforce_на_пороге_возвращает_403_баном(mon
 # ── Фото-роутеры: страйк только за "ad" ───────────────────────────
 
 @pytest.mark.parametrize(
-    "путь", ["routers/upload.py", "routers/stories.py", "routers/reels.py"]
+    "путь",
+    [
+        "routers/upload.py",
+        "routers/stories.py",
+        # Кадры роликов и видео анкеты модерируются в общем сервисе —
+        # ветка "ad" для них живёт там, а не в routers/reels.py
+        "services/video_validation.py",
+    ],
 )
 def test_фото_роутер_вешает_страйк_только_за_ad(путь):
     """Страховка от отката: ветка страйка стоит и отфильтрована по "ad".

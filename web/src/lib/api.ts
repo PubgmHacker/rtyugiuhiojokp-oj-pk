@@ -76,6 +76,8 @@ export interface UserProfile {
   age?: number | null;
   city: string;
   photos: string[];
+  /** Видеоролики анкеты — дополнение к фото, показываются после них. */
+  videos?: string[];
   interests: string[];
   ai_bio?: string | null;
   looking_for: string;
@@ -143,6 +145,8 @@ export interface DeckProfile {
   city: string;
   bio: string;
   photos: string[];
+  /** Видеоролики анкеты — карточка показывает их после фото. */
+  videos?: string[];
   interests: string[];
   ai_bio?: string | null;
   distance?: number | null;
@@ -416,6 +420,25 @@ export async function uploadPhoto(file: File): Promise<{ url: string; key: strin
   const formData = new FormData();
   formData.append("file", file);
   const { data } = await api.post("/upload/photo", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+/**
+ * Видеоролик анкеты. Контракт как у публикации ролика в ленте: сервер видео
+ * не разбирает, кадры с разных таймкодов снимает браузер (grabVideoCovers),
+ * и модерация смотрит на них — без кадров загрузки нет.
+ * URL из ответа кладётся в анкету через PATCH /profiles/me (поле videos).
+ */
+export async function uploadProfileVideo(
+  file: File,
+  covers: Blob[]
+): Promise<{ url: string; key: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  covers.forEach((cover, i) => form.append("covers", cover, `cover${i + 1}.jpg`));
+  const { data } = await api.post("/upload/video", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return data;

@@ -59,7 +59,7 @@ from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
-from utils import as_list
+from utils import as_list, public_videos
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,7 @@ async def _deck_like_profile(
         age=публичный_возраст(profile),
         city=profile.city or "",
         photos=as_list(profile.photos),
+        videos=public_videos(profile.videos),
         interests=as_list(profile.interests),
         goal=profile.goal or "",
         subculture=profile.subculture or "",
@@ -377,6 +378,7 @@ async def get_my_profile(
         age=age,
         city=profile.city if profile else "",
         photos=as_list(profile.photos) if profile else [],
+        videos=as_list(profile.videos) if profile else [],
         interests=as_list(profile.interests) if profile else [],
         ai_bio=profile.ai_bio if profile else None,
         looking_for=profile.looking_for if profile else "any",
@@ -483,6 +485,34 @@ def _проверить_фото(новые: list[str], прежние: list[str
         raise HTTPException(
             status_code=400,
             detail="Фото можно добавить только через загрузку: сторонние ссылки не принимаются",
+        )
+
+    return новые
+
+
+def _проверить_видео(новые: list[str], прежние: list[str], user_id: str) -> list[str]:
+    """Видео в анкете — те же правила происхождения, что у фото.
+
+    Принимаем только URL из своей видео-папки R2 (`profile-videos/{user_id}/…`,
+    их выдаёт единственно `POST /upload/video` после модерации кадров) и
+    значения, уже стоящие в анкете (file_id бота — только среди прежних).
+    Префикс нарочно свой, не общий с фото: иначе PATCH позволил бы поставить
+    видео-URL в `photos` и наоборот — а у фото есть гейт «живой человек» и
+    опорный снимок верификации, которые видео не проходит.
+    """
+    известные = set(прежние)
+    свой_префикс = (
+        (settings.R2_PUBLIC_URL or "").rstrip("/") + f"/profile-videos/{user_id}/"
+    )
+
+    for видео in новые:
+        if видео in известные:
+            continue
+        if settings.R2_PUBLIC_URL and видео.startswith(свой_префикс):
+            continue
+        raise HTTPException(
+            status_code=400,
+            detail="Видео можно добавить только через загрузку: сторонние ссылки не принимаются",
         )
 
     return новые
@@ -636,6 +666,13 @@ async def update_my_profile(
         if ответ_бана is not None:
             return ответ_бана
 
+    # Видео — та же проверка происхождения, что у фото; сверка с опорным
+    # снимком не нужна: галочка привязана к фото, видео её не трогает.
+    if update_fields.get("videos") is not None:
+        update_fields["videos"] = _проверить_видео(
+            update_fields["videos"], as_list(profile.videos), user.id
+        )
+
     if "tg_channel" in update_fields:
         # Фича платная (см. FEATURE_MIN_TIER["tg_channel"]) — без неё
         # молча игнорируем, а не 403: экрана с апсейлом под это поле нет,
@@ -709,6 +746,11 @@ async def update_my_profile(
 
     if len(as_list(profile.photos)) > settings.MAX_PHOTOS:
         raise HTTPException(status_code=400, detail=f"Max {settings.MAX_PHOTOS} photos allowed")
+    if len(as_list(profile.videos)) > settings.MAX_PROFILE_VIDEOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Максимум {settings.MAX_PROFILE_VIDEOS} видео в анкете",
+        )
     if len(profile.bio) > settings.MAX_BIO_LENGTH:
         raise HTTPException(status_code=400, detail=f"Bio must be under {settings.MAX_BIO_LENGTH} chars")
 
@@ -801,6 +843,7 @@ async def update_my_profile(
         age=age,
         city=profile.city,
         photos=as_list(profile.photos),
+        videos=as_list(profile.videos),
         interests=as_list(profile.interests),
         ai_bio=profile.ai_bio,
         looking_for=profile.looking_for,
@@ -886,6 +929,7 @@ async def export_my_data(
                 profile.birth_date.isoformat() if profile and profile.birth_date else None
             ),
             "photos": as_list(profile.photos) if profile else [],
+            "videos": as_list(profile.videos) if profile else [],
             "interests": as_list(profile.interests) if profile else [],
             "has_location": bool(profile and profile.latitude is not None),
         },
@@ -933,7 +977,14 @@ async def delete_my_account(
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))
     profile = result.scalar_one_or_none()
     if profile:
-        photo_urls = [p for p in as_list(profile.photos) if isinstance(p, str)]
+        # Видео анкеты чистятся тем же списком: ниже из URL вырезается ключ
+        # объекта, а каким префиксом он начинается — photos/ или
+        # profile-videos/ — удалению без разницы.
+        photo_urls = [
+            p
+            for p in as_list(profile.photos) + as_list(profile.videos)
+            if isinstance(p, str)
+        ]
 
     result = await session.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()

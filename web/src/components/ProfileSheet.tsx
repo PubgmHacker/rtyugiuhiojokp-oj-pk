@@ -46,6 +46,13 @@ function Просмотр({
 }: Props & { profile: UserProfile }) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const photos = profile.photos?.length ? profile.photos : [];
+  // Видео анкеты — после фото, тем же пейджером. Наружу API отдаёт только
+  // публичные URL, но file_id бота на всякий случай не играем
+  const videos = (profile.videos ?? []).filter((v) => /^https?:\/\//.test(v));
+  const media = [
+    ...photos.map((src) => ({ src, video: false })),
+    ...videos.map((src) => ({ src, video: true })),
+  ];
   const decor = decorStyle(profile.decor);
 
   const close = useCallback(() => {
@@ -73,11 +80,11 @@ function Просмотр({
 
   const showPhoto = useCallback(
     (next: number) => {
-      if (next < 0 || next >= photos.length || next === photoIndex) return;
+      if (next < 0 || next >= media.length || next === photoIndex) return;
       haptic("select");
       setPhotoIndex(next);
     },
-    [photoIndex, photos.length]
+    [photoIndex, media.length]
   );
 
   const чипы = [
@@ -111,17 +118,31 @@ function Просмотр({
         </button>
       </div>
 
-      {/* ── Фото во всю ширину, с пейджером как в деке ─────────── */}
+      {/* ── Фото и видео во всю ширину, с пейджером как в деке ─── */}
       <div className="relative w-full aspect-[3/4] max-h-[70vh] overflow-hidden bg-surface-2">
-        {photos[photoIndex] ? (
-          <img
-            key={photos[photoIndex]}
-            src={photos[photoIndex]}
-            alt={profile.display_name}
-            decoding="async"
-            className="w-full h-full object-cover select-none"
-            draggable={false}
-          />
+        {media[photoIndex] ? (
+          media[photoIndex].video ? (
+            // Без звука и с автоплеем, как в деке: анкета — витрина.
+            // playsInline обязателен, иначе iOS разворачивает на весь экран
+            <video
+              key={media[photoIndex].src}
+              src={media[photoIndex].src}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="w-full h-full object-cover select-none"
+            />
+          ) : (
+            <img
+              key={media[photoIndex].src}
+              src={media[photoIndex].src}
+              alt={profile.display_name}
+              decoding="async"
+              className="w-full h-full object-cover select-none"
+              draggable={false}
+            />
+          )
         ) : (
           <div
             className="w-full h-full flex items-center justify-center"
@@ -143,10 +164,10 @@ function Просмотр({
           />
         )}
 
-        {photos.length > 1 && (
+        {media.length > 1 && (
           <>
             <div className="absolute top-3 left-0 right-0 flex gap-1.5 px-4 z-20 pointer-events-none">
-              {photos.map((_, i) => (
+              {media.map((_, i) => (
                 <div
                   key={i}
                   className={`h-[3px] flex-1 rounded-full transition-all duration-300 ${

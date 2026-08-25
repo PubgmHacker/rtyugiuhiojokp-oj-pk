@@ -177,7 +177,12 @@ export const MBTI_TYPES: Option[] = [
 // (см. matching._compatibility: там считаются общие интересы, и 12 тегов
 // почти у всех пересекались бы хоть чем-то, обесценивая совпадение).
 export const MAX_INTERESTS = 5;
-export const MAX_PHOTOS = 6;
+// Синхронно с api/config.py: MAX_PHOTOS и MAX_PROFILE_VIDEOS — сервер
+// отклонит лишнее, а клиент обязан упереться в тот же потолок до отправки.
+export const MAX_PHOTOS = 5;
+export const MAX_VIDEOS = 3;
+/** Потолок файла видео — MAX_VIDEO_BYTES на сервере (50 МБ). */
+export const MAX_VIDEO_MB = 50;
 export const MAX_BIO = 500;
 // Те же числа, что MIN_AGE/MAX_AGE в api/config.py: сервер отклонит анкету
 // вне границ, а клиент обязан сказать это до отправки, теми же числами.

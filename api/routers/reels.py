@@ -43,48 +43,32 @@ from models.schemas import (
     ReelsOut,
 )
 from routers.rooms import check_flood
-from services.ai_moderation import log_moderation, moderate_image, moderate_text
+from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import enforce_text_verdict, register_content_strike
 from services.content_reports import подать_жалобу_на_контент
 from services.chat_delivery import (
     REEL_FALLBACK_TEXT, ДоставкаОтклонена, check_chat_flood, fan_out,
     save_message,
 )
-from services.image_sanitizer import ImageRejected, sanitize_image
 from services.public_profile import публичный_возраст
 from services.r2_storage import delete_photo_from_r2, upload_photo_to_r2
+from services.video_validation import (
+    MIN_COVERS,
+    looks_like_video,
+    модерировать_кадры,
+    прочитать_видео,
+)
 from utils import as_list
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reels", tags=["reels"])
 
-#: Больше — и лента превращается в файлообменник, а R2 в статью расходов.
-MAX_VIDEO_BYTES = 50 * 1024 * 1024
 #: Сколько роликов можно опубликовать за сутки.
 DAILY_LIMIT = 3
-#: Меньше — и модерация снова видит только один подобранный кадр, как обложка
-#: раньше: начало ролика может быть безобидным, а нарушение — дальше по видео.
-MIN_COVERS = 3
-#: Что принимаем. Проверяем и заголовок, и сигнатуру файла: заголовок клиент
-#: подставляет любой.
-ALLOWED_VIDEO = {
-    "video/mp4": "mp4",
-    "video/quicktime": "mov",
-    "video/webm": "webm",
-}
 
-
-def _looks_like_video(data: bytes) -> bool:
-    """Сигнатура контейнера. Переименованный архив не должен пройти как видео.
-
-    MP4 и MOV — ISO BMFF: на 4-м байте лежит 'ftyp'. WebM — Matroska с EBML.
-    """
-    if len(data) < 12:
-        return False
-    if data[4:8] == b"ftyp":
-        return True
-    return data[:4] == b"\x1a\x45\xdf\xa3"
+# Реэкспорт: правила общие с видео анкеты и живут в services/video_validation
+_looks_like_video = looks_like_video
 
 
 async def _to_out(
@@ -241,54 +225,15 @@ async def create_reel(
             detail=f"Не больше {DAILY_LIMIT} роликов в сутки",
         )
 
-    ext = ALLOWED_VIDEO.get(video.content_type or "")
-    if not ext:
-        raise HTTPException(status_code=400, detail="Поддерживаются MP4, MOV и WebM")
+    data, ext = await прочитать_видео(video)
 
-    data = await video.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Пустой файл")
-    if len(data) > MAX_VIDEO_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Видео больше {MAX_VIDEO_BYTES // (1024 * 1024)} МБ",
-        )
-    if not _looks_like_video(data):
-        raise HTTPException(status_code=400, detail="Файл не похож на видео")
-
-    # Каждый кадр перекодируем тем же санитайзером, что и фото профиля: он
-    # срезает EXIF с координатами и отсекает файлы, притворяющиеся картинкой.
-    # Один заблокированный кадр — весь ролик не публикуется, даже если
-    # остальные кадры чистые: нарушение может быть в любой части видео.
-    sanitized: list[tuple[bytes, str, str]] = []
-    for i, cover in enumerate(covers):
-        raw = await cover.read()
-        try:
-            cover_bytes, cover_type, cover_ext = sanitize_image(raw)
-        except ImageRejected as exc:
-            raise HTTPException(status_code=400, detail=f"Кадр {i + 1}: {exc}") from exc
-        sanitized.append((cover_bytes, cover_type, cover_ext))
-
-    for i, (cover_bytes, _cover_type, _cover_ext) in enumerate(sanitized):
-        verdict = await moderate_image(cover_bytes)
-        await log_moderation(user.id, "reel_cover", f"reel by {user.id} frame {i + 1}", verdict)
-        if verdict.get("unavailable"):
-            # Сервис проверки лежит — видео не виновато: 503 и «позже», не 422
-            raise HTTPException(
-                status_code=503,
-                detail="Проверка видео сейчас недоступна — попробуйте через пару минут",
-            )
-        # Реклама в кадре — тот же страйк, что за рекламный текст; первый же
-        # такой кадр завершает запрос (отказ или бан), остальные не смотрим.
-        # Только "ad": блок с пустой категорией — отказ без страйка
-        if verdict.get("category") == "ad":
-            ответ_бана = await enforce_text_verdict(
-                session, user, verdict, "Видео нарушает правила"
-            )
-            if ответ_бана is not None:
-                return ответ_бана
-        if verdict["blocked"]:
-            raise HTTPException(status_code=422, detail="Видео нарушает правила")
+    # Санитайзер и модерация кадров — общие с видео анкеты
+    # (services/video_validation): один заблокированный кадр — публикации нет.
+    sanitized, ответ_бана = await модерировать_кадры(
+        session, user, covers, "reel_cover", f"reel by {user.id}"
+    )
+    if ответ_бана is not None:
+        return ответ_бана
 
     if caption.strip():
         text_verdict = await moderate_text(caption)

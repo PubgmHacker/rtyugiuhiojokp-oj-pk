@@ -130,7 +130,10 @@ class Settings(BaseSettings):
     REFERRAL_BOOST_PERCENT: int = 12  # +% к скору анкеты в выдаче (10–15)
 
     # ── Profile limits ───────────────────────────────────────────
-    MAX_PHOTOS: int = 6
+    MAX_PHOTOS: int = 5
+    #: Видеоролики в анкете — дополнение к фото, не замена: лицо обязано
+    #: быть на фото (гейт в /upload/photo), видео гейт не проходит.
+    MAX_PROFILE_VIDEOS: int = 3
     MAX_BIO_LENGTH: int = 500
     MAX_INTERESTS: int = 10
     # Порог регистрации — 18: рейтинг App Store для знакомств 18+, и пул

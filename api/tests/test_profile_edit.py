@@ -34,6 +34,7 @@ def _profile(**over):
         latitude=None,
         longitude=None,
         photos=["https://cdn/1.jpg"],
+        videos=[],
         interests=["кино"],
         ai_bio=None,
         goal="",

@@ -52,7 +52,13 @@ import texts as T
 logger = logging.getLogger(__name__)
 router = Router()
 
-MAX_PHOTOS = 6
+MAX_PHOTOS = 5
+
+#: Видео в анкете — дополнение к фото (лимиты согласованы с api/config.py:
+#: MAX_PROFILE_VIDEOS). Потолок размера — не наша прихоть, а лимит Bot API:
+#: get_file отдаёт файлы только до 20 МБ, больше бот скачать не может.
+MAX_VIDEOS = 3
+MAX_VIDEO_MB = 20
 
 
 # ── Навигация по шагам ──────────────────────────────────────────
@@ -482,6 +488,111 @@ async def process_photo(
     )
 
 
+@router.message(RegistrationStates.waiting_photo, F.video)
+async def process_video(
+    message: Message, state: FSMContext, db_user: dict | None = None
+):
+    """Видеоролик в анкету — на том же шаге, что и фото.
+
+    Сервер видео не декодирует, поэтому модерация смотрит на превью, которое
+    Telegram строит для каждого обычного видео. Нет превью (ролик прислан
+    файлом) — отказ: непроверенное видео не публикуем (то же fail-closed
+    правило, что у фото). Гейт «живой человек» к видео не применяется:
+    он остаётся на фото, без фото анкета всё равно не сохранится.
+    """
+    data = await state.get_data()
+    videos: list[str] = list(data.get("reg_videos") or [])
+
+    if len(videos) >= MAX_VIDEOS:
+        await message.answer(T.REG_VIDEO_LIMIT.format(limit=MAX_VIDEOS))
+        return
+
+    video = message.video
+
+    # Размер проверяем ДО get_file: файлы больше 20 МБ Bot API не отдаёт,
+    # и попытка скачать упала бы с невнятной ошибкой вместо подсказки
+    if (video.file_size or 0) > MAX_VIDEO_MB * 1024 * 1024:
+        await message.answer(T.REG_VIDEO_TOO_BIG.format(limit_mb=MAX_VIDEO_MB))
+        return
+
+    if not video.thumbnail:
+        await message.answer(T.REG_VIDEO_NO_PREVIEW)
+        return
+
+    # Превью — модерации, байты видео — перезаливке в R2
+    превью: bytes = b""
+    буф: bytes = b""
+    try:
+        file = await message.bot.get_file(video.thumbnail.file_id)
+        downloaded = await message.bot.download_file(file.file_path)
+        превью = downloaded.read()
+        file = await message.bot.get_file(video.file_id)
+        downloaded = await message.bot.download_file(file.file_path)
+        буф = downloaded.read()
+    except Exception as e:
+        logger.warning(f"Не удалось скачать видео из Telegram: {e}")
+
+    if not превью or not буф:
+        await message.answer(T.REG_VIDEO_FETCH_FAILED)
+        return
+
+    verdict = await moderate_image(превью)
+    if verdict.get("unavailable"):
+        await message.answer(T.REG_VIDEO_MOD_UNAVAILABLE)
+        return
+
+    # Журнал и страйки — как у фото: реклама в кадре ("ad") идёт тем же
+    # счётом, что рекламный текст; тип записи "profile_video" — как в API
+    исход = None
+    if db_user:
+        if verdict.get("category") == "ad":
+            исход = await apply_text_strike(
+                db_user["id"], "profile_video", video.file_id, verdict
+            )
+        else:
+            await log_moderation(db_user["id"], "profile_video", video.file_id, verdict)
+    if исход is not None and исход.banned:
+        await answer_ban_screen(
+            message, TEXT_BAN_REASONS[исход.category], исход.banned_until
+        )
+        return
+    if verdict.get("blocked"):
+        await message.answer(
+            T.REG_VIDEO_REJECTED.format(reason=humanize(verdict.get("reason", "")))
+            + strike_suffix(исход)
+        )
+        return
+
+    # Перезаливаем в R2, чтобы видео было видно в вебе и iOS-приложении;
+    # если хранилище не настроено, остаётся file_id — бот его покажет,
+    # наружу веб такие значения не отдаёт
+    stored = video.file_id
+    try:
+        from services.r2_storage import upload_video as r2_upload_video
+
+        db_user = db_user or await get_or_create_user(
+            message.from_user.id,
+            message.from_user.username or "",
+            message.from_user.first_name or "",
+        )
+        расширение = "mov" if (video.mime_type or "") == "video/quicktime" else "mp4"
+        url = await r2_upload_video(
+            db_user["id"], буф, расширение, video.mime_type or "video/mp4"
+        )
+        if url:
+            stored = url
+    except Exception as e:
+        logger.warning(f"Перезаливка видео в R2 не удалась: {e}")
+
+    videos.append(stored)
+    await state.update_data(reg_videos=videos)
+
+    await message.answer(
+        T.REG_VIDEO_ADDED.format(count=len(videos), limit=MAX_VIDEOS),
+        reply_markup=reg_photo_kb(bool(data.get("reg_photos"))),
+    )
+
+
 @router.callback_query(RegistrationStates.waiting_photo, F.data == "reg:photo_done")
 async def photo_done(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -559,6 +670,12 @@ async def _finish_registration(message: Message, state: FSMContext):
             "relation_type": data.get("reg_relation_type", ""),
             "photos": data.get("reg_photos", []),
         }
+
+        # Видео пишем только когда в этой сессии что-то прислали: шаг
+        # необязательный, и пустой список при повторной регистрации молча
+        # стёр бы видео, залитые из мини-аппа. Осознанное удаление — в вебе.
+        if data.get("reg_videos"):
+            fields["videos"] = data["reg_videos"]
 
         # Галочка «проверенный» обещает: все фото анкеты принадлежат человеку,
         # прошедшему живую проверку. API при добавлении фото сверяет его с

@@ -15,7 +15,7 @@ from services.plans import deck_priority, tier_from_plan
 from services.public_profile import буст_активен, возраст_из_даты, публичный_возраст
 from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
-from utils import as_list
+from utils import as_list, public_videos
 
 settings = get_settings()
 
@@ -466,6 +466,7 @@ async def get_deck_profiles(
             city=profile.city or "",
             bio=profile.bio or "",
             photos=as_list(profile.photos),
+            videos=public_videos(profile.videos),
             interests=as_list(profile.interests),
             ai_bio=profile.ai_bio,
             distance=None if profile.hide_distance else distance,

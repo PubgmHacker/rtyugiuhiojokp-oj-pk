@@ -37,6 +37,7 @@ def _user(uid: str = "u-me", telegram_id: int = 111, banned: bool = False):
         is_verified=False,
         created_at=datetime.now(timezone.utc),
         phone=None,
+        email=None,
         last_seen_at=None,
         # Как в новой строке БД: язык интерфейса до выбора — русский
         locale="ru",
@@ -55,6 +56,7 @@ def _profile(uid: str, **over):
         latitude=None,
         longitude=None,
         photos=["https://example.test/1.jpg"],
+        videos=[],
         interests=["кино"],
         ai_bio=None,
         goal="friendship",
@@ -672,6 +674,7 @@ def кадры_ролика(monkeypatch):
     «ответ 201», а сколько именно кадров реально проверено.
     """
     from routers import reels
+    from services import video_validation
 
     проверенные: list[bytes] = []
     вердикт = {"blocked": False}
@@ -686,8 +689,11 @@ def кадры_ролика(monkeypatch):
     async def _moderate_text(_текст: str):
         return {"blocked": False}
 
-    monkeypatch.setattr(reels, "sanitize_image", _sanitize)
-    monkeypatch.setattr(reels, "moderate_image", _moderate_image)
+    # Санитайзер и модерация кадров живут в общем сервисе video_validation
+    # (он проверяет и ролики, и видео анкеты) — мокать нужно там
+    monkeypatch.setattr(video_validation, "sanitize_image", _sanitize)
+    monkeypatch.setattr(video_validation, "moderate_image", _moderate_image)
+    monkeypatch.setattr(video_validation, "log_moderation", _async_return(None))
     monkeypatch.setattr(reels, "moderate_text", _moderate_text)
     monkeypatch.setattr(reels, "log_moderation", _async_return(None))
     monkeypatch.setattr(reels, "upload_photo_to_r2", _async_return("https://example.test/x"))
@@ -753,6 +759,7 @@ async def test_одного_кадра_недостаточно_для_публ�
 async def test_нарушение_в_последнем_кадре_блокирует_ролик(app, кадры_ролика):
     """Нарушение в конце видео — ровно тот случай, который обложка не ловила."""
     from routers import reels
+    from services import video_validation
 
     вызовы = {"n": 0}
 
@@ -763,7 +770,7 @@ async def test_нарушение_в_последнем_кадре_блокир�
         return {"blocked": вызовы["n"] == reels.MIN_COVERS}
 
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(reels, "moderate_image", _moderate_image)
+    monkeypatch.setattr(video_validation, "moderate_image", _moderate_image)
     session = _Session([_Result(scalar=0)])
     try:
         async with await _client(app, session, _user()) as client:
@@ -918,6 +925,235 @@ async def test_фото_из_бота_переживают_обновление_
 
     assert r2.status_code == 400
     assert анкета2.photos == ["AgACAgIAAxkBAAI-старое"]
+
+
+# ── Видео анкеты: происхождение, лимит, приватность ─────────────
+
+
+@pytest.fixture
+def кадры_видео_анкеты(monkeypatch):
+    """Загрузка видео анкеты без R2, Zhipu и Postgres — как `кадры_ролика`,
+    только для POST /upload/video: мокается тот же общий сервис, а заливка
+    в R2 запоминает ключ, чтобы тест проверил префикс profile-videos/."""
+    from routers import upload
+    from services import video_validation
+
+    проверенные: list[bytes] = []
+    вердикт = {"blocked": False}
+    ключи: list[str] = []
+
+    def _sanitize(raw: bytes):
+        return raw, "image/jpeg", "jpg"
+
+    async def _moderate_image(данные: bytes):
+        проверенные.append(данные)
+        return dict(вердикт)
+
+    async def _upload(key: str, _data: bytes, _ct: str):
+        ключи.append(key)
+        return f"https://media.simp.test/{key}"
+
+    monkeypatch.setattr(video_validation, "sanitize_image", _sanitize)
+    monkeypatch.setattr(video_validation, "moderate_image", _moderate_image)
+    monkeypatch.setattr(video_validation, "log_moderation", _async_return(None))
+    monkeypatch.setattr(upload, "upload_photo_to_r2", _upload)
+    return SimpleNamespace(проверенные=проверенные, вердикт=вердикт, ключи=ключи)
+
+
+def _файлы_видео_анкеты(кадров: int):
+    """multipart-тело POST /upload/video с заданным числом кадров."""
+    files = [("file", ("v.mp4", _ВИДЕО, "video/mp4"))]
+    files += [
+        ("covers", (f"c{i + 1}.jpg", _КАДР, "image/jpeg")) for i in range(кадров)
+    ]
+    return files
+
+
+async def test_загрузка_видео_анкеты_модерирует_кадры(app, кадры_видео_анкеты):
+    """Сервер видео не разбирает — проверяются присланные кадры, все до
+    одного, а файл ложится в свой префикс profile-videos/: по нему PATCH
+    отличает видео от фото."""
+    session = _Session([_Result(scalar=None)])  # анкеты ещё нет — лимит не выбран
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/upload/video", files=_файлы_видео_анкеты(3))
+
+    assert r.status_code == 200, r.text
+    assert len(кадры_видео_анкеты.проверенные) == 3, (
+        "модерация увидела не все кадры"
+    )
+    (ключ,) = кадры_видео_анкеты.ключи
+    assert ключ.startswith("profile-videos/u-me/"), ключ
+    assert r.json()["url"].endswith(ключ)
+
+
+async def test_нарушение_в_кадре_видео_анкеты_блокирует_загрузку(
+    app, кадры_видео_анкеты
+):
+    """Заблокированный кадр — видео не попадает даже в R2."""
+    кадры_видео_анкеты.вердикт["blocked"] = True
+    session = _Session([_Result(scalar=None)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/upload/video", files=_файлы_видео_анкеты(3))
+
+    assert r.status_code == 422
+    assert not кадры_видео_анкеты.ключи, "заблокированное видео всё равно ушло в R2"
+
+
+async def test_лимит_видео_проверяется_до_модерации(app, кадры_видео_анкеты):
+    """Модерация кадров стоит денег — при полной анкете отказ до неё."""
+    from config import get_settings
+
+    лимит = get_settings().MAX_PROFILE_VIDEOS
+    анкета = _profile(
+        "u-me",
+        videos=[
+            f"https://media.simp.test/profile-videos/u-me/{i}.mp4"
+            for i in range(лимит)
+        ],
+    )
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post("/api/upload/video", files=_файлы_видео_анкеты(3))
+
+    assert r.status_code == 400
+    assert not кадры_видео_анкеты.проверенные, (
+        "кадры пошли в модерацию при полной анкете"
+    )
+
+
+async def test_чужую_ссылку_нельзя_подставить_в_видео_анкеты(app, monkeypatch):
+    """PATCH принимает в videos только выдачу /upload/video. Отдельно важно:
+    фото-URL из своей же папки photos/ в видео не годится — у полей разные
+    проверки (у фото гейт «живой человек» и опорный снимок верификации),
+    перекладывать значения между ними нельзя."""
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
+
+    for чужое in [
+        "https://evil.test/видео.mp4",
+        "https://media.simp.test/profile-videos/u-другой/1.mp4",
+        "https://media.simp.test/photos/u-me/1.jpg",
+    ]:
+        анкета = _profile("u-me", videos=[])
+        session = _Session([_Result(scalar=анкета)])
+        async with await _client(app, session, _user()) as client:
+            r = await client.patch("/api/profiles/me", json={"videos": [чужое]})
+        assert r.status_code == 400, f"принято: {чужое}"
+        assert анкета.videos == [], "анкета изменена, несмотря на отказ"
+
+
+async def test_своё_загруженное_видео_в_анкету_принимается(app, monkeypatch):
+    """Обратная сторона: проверка не должна ломать нормальную загрузку."""
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
+
+    анкета = _profile("u-me", videos=[])
+    session = _Session([_Result(scalar=анкета)])
+
+    новое = "https://media.simp.test/profile-videos/u-me/a.mp4"
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch("/api/profiles/me", json={"videos": [новое]})
+
+    assert r.status_code == 200, r.text
+    assert анкета.videos == [новое]
+
+
+async def test_видео_из_бота_переживают_обновление_анкеты(app, monkeypatch):
+    """Бот без R2 кладёт file_id — прежние принимаются (перестановка,
+    удаление соседних), а вот новый file_id через PATCH — инъекция мимо
+    модерации кадров, отказ."""
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
+
+    анкета = _profile("u-me", videos=["BAACAgIAAxkBAAI-старое", "BAACAgIAAxkBAAI-второе"])
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch(
+            "/api/profiles/me",
+            json={"videos": ["BAACAgIAAxkBAAI-второе", "BAACAgIAAxkBAAI-старое"]},
+        )
+
+    assert r.status_code == 200, r.text
+    assert анкета.videos == ["BAACAgIAAxkBAAI-второе", "BAACAgIAAxkBAAI-старое"]
+
+    анкета2 = _profile("u-me", videos=["BAACAgIAAxkBAAI-старое"])
+    session2 = _Session([_Result(scalar=анкета2)])
+    async with await _client(app, session2, _user()) as client:
+        r2 = await client.patch(
+            "/api/profiles/me",
+            json={"videos": ["BAACAgIAAxkBAAI-старое", "BAACAgIAAxkBAAI-новое"]},
+        )
+
+    assert r2.status_code == 400
+    assert анкета2.videos == ["BAACAgIAAxkBAAI-старое"]
+
+
+async def test_лимит_видео_в_анкете(app, monkeypatch):
+    """Сверхлимитное видео не встаёт даже из своих честных ссылок."""
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "R2_PUBLIC_URL", "https://media.simp.test", raising=False)
+
+    свои = [
+        f"https://media.simp.test/profile-videos/u-me/{i}.mp4"
+        for i in range(настройки.MAX_PROFILE_VIDEOS + 1)
+    ]
+    анкета = _profile("u-me", videos=[])
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.patch("/api/profiles/me", json={"videos": свои})
+
+    assert r.status_code == 400
+
+
+async def test_file_id_видео_не_уходит_в_чужую_анкету(app, monkeypatch):
+    """file_id Telegram — внутренняя валюта бота: чужому клиенту он
+    бесполезен и подсвечивает потроха. Наружу идут только http-ссылки."""
+    from routers import likes
+
+    monkeypatch.setattr(likes, "current_tier", _async_return("plus"))
+
+    лайк = SimpleNamespace(
+        liker_id="u-fan", liked_id="u-me", type="like", message="",
+        id="l1", created_at=datetime.now(timezone.utc),
+    )
+    видео_r2 = "https://media.simp.test/profile-videos/u-fan/a.mp4"
+    session = _Session([
+        _Result(rows=[]),
+        _Result(rows=[_входящий_лайк(лайк)]),
+        _Result(scalar=_profile("u-fan", videos=["BAACAgIAAxkBAAI-бот", видео_r2])),
+    ])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/likes/received")
+
+    (карточка,) = r.json()
+    assert карточка["videos"] == [видео_r2], "file_id утёк в чужую анкету"
+
+
+async def test_своя_анкета_отдаёт_видео_как_есть(app):
+    """Владельцу — весь список, включая file_id из бота: веб обязан вернуть
+    их в PATCH нетронутыми, а спрятать = молча стереть при первой правке."""
+    анкета = _profile("u-me", videos=["BAACAgIAAxkBAAI-бот"])
+    session = _Session([_Result(scalar=анкета)])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.get("/api/profiles/me")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["videos"] == ["BAACAgIAAxkBAAI-бот"]
 
 
 async def test_автобан_по_жалобам_отзывает_токены(app, monkeypatch):

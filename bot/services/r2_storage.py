@@ -61,3 +61,32 @@ async def upload_photo(user_id: str, data: bytes, content_type: str = "image/jpe
     except Exception as e:
         logger.error(f"R2 upload error: {e}")
         return None
+
+
+async def upload_video(
+    user_id: str, data: bytes, ext: str = "mp4", content_type: str = "video/mp4"
+) -> str | None:
+    """Загрузить видео анкеты в R2. None — если R2 не настроен/ошибка.
+
+    Префикс profile-videos/ — тот же, что у API (routers/upload.py): PATCH
+    принимает в поле videos только ссылки из этой папки, фото и видео не
+    перепутать. При None вызывающий код хранит Telegram file_id (бот его
+    рендерит, веб такие значения не отдаёт наружу).
+    """
+    client = _get_s3_client()
+    if not client:
+        return None
+
+    object_key = f"profile-videos/{user_id}/{uuid.uuid4()}.{ext}"
+    try:
+        await asyncio.to_thread(
+            client.put_object,
+            Bucket=R2_BUCKET_NAME,
+            Key=object_key,
+            Body=data,
+            ContentType=content_type,
+        )
+        return f"{R2_PUBLIC_URL}/{object_key}" if R2_PUBLIC_URL else None
+    except Exception as e:
+        logger.error(f"R2 video upload error: {e}")
+        return None

@@ -60,6 +60,9 @@ def _user_to_profile(user: User, profile: Profile | None) -> UserProfile:
         age=age,
         city=profile.city if profile else "",
         photos=as_list(profile.photos) if profile else [],
+        # Свой профиль — список как есть (включая file_id из бота): веб
+        # обязан вернуть их в PATCH нетронутыми, иначе сотрёт молча
+        videos=as_list(profile.videos) if profile else [],
         interests=as_list(profile.interests) if profile else [],
         ai_bio=profile.ai_bio if profile else None,
         looking_for=profile.looking_for if profile else "any",

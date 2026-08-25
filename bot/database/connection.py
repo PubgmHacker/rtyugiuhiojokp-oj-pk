@@ -1871,6 +1871,7 @@ def _user_to_dict(user: User) -> dict:
 
 def _profile_to_dict(profile: Profile) -> dict:
     photos = profile.photos if isinstance(profile.photos, list) else json.loads(profile.photos or "[]")
+    videos = profile.videos if isinstance(profile.videos, list) else json.loads(profile.videos or "[]")
     interests = profile.interests if isinstance(profile.interests, list) else json.loads(profile.interests or "[]")
 
     # «Скрыть возраст» должно действовать и в боте: в мини-аппе возраст
@@ -1891,6 +1892,7 @@ def _profile_to_dict(profile: Profile) -> dict:
         "age": age,
         "city": profile.city or "",
         "photos": photos,
+        "videos": videos,
         "interests": interests,
         "ai_bio": profile.ai_bio,
         "looking_for": profile.looking_for,

@@ -70,6 +70,7 @@ def _profile():
         latitude=None,
         longitude=None,
         photos=[],
+        videos=[],
         interests=[],
         ai_bio=None,
         goal="",
