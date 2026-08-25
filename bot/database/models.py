@@ -977,3 +977,30 @@ class AnalyticsEvent(Base):
     props: Mapped[dict] = mapped_column(JSON, default=dict)
     dedup_key: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OnboardingNudge(Base):
+    """Отложенный завлекающий пуш онбординга: одна строка — один несосланный.
+
+    Раньше рассылки про субкультуру и почту уходили прямо в онбординге, сразу
+    после согласия с политикой — человек получал три сообщения подряд и читал
+    это как спам. Теперь согласие и конец анкеты только СТАВЯТ пуш (upsert по
+    telegram_id+stage со сдвигом due_at), а services/nudges.py отправляет его,
+    когда человек уже помолчал. Отправленные и безнадёжные строки удаляются —
+    таблица держит только очередь, потому её нет в api/models/models.py:
+    create_all API своих таблиц не трогает, а бот создаёт её сам.
+    """
+
+    __tablename__ = "dating_onboarding_nudges"
+    __table_args__ = (
+        UniqueConstraint("telegram_id", "stage", name="uq_onboarding_nudge"),
+        Index("ix_onboarding_nudge_due", "due_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    #: Какой пуш: "style" — субкультура/стиль, "email" — привязка почты
+    stage: Mapped[str] = mapped_column(String(16))
+    locale: Mapped[str] = mapped_column(String(8), default="ru")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -19,6 +19,7 @@ from keyboards import main_kb
 from middlewares.ban_gate import BanGateMiddleware
 from middlewares.registration import RegistrationMiddleware
 from middlewares.throttle import ThrottleMiddleware
+from services.nudges import supervise_nudges
 from services.redis_subscriber import close_redis, supervise_redis_subscriber
 import texts as T
 
@@ -57,7 +58,21 @@ async def cmd_start(message, state):
     повторный опрос: язык → политика → «Начать», четыре сообщения ради того, что
     человек хотел сделать одним нажатием. У Mimolet выбор языка тоже разовый.
     """
+    # id прошлого экрана онбординга — ДО clear: state сейчас сотрётся вместе
+    # с ним. Повторный /start раньше оставлял в переписке второй рабочий
+    # онбординг, и каждый следующий добавлял ещё один — «оно спамит».
+    старый_экран = None
+    try:
+        старый_экран = (await state.get_data()).get("onb_msg_id")
+    except Exception as e:
+        logger.debug("не прочитали id старого экрана онбординга: %s", e)
     await state.clear()
+    if старый_экран:
+        try:
+            await message.bot.delete_message(message.chat.id, старый_экран)
+        except Exception as e:
+            # Уже удалён или старше 48 часов — лишний экран хуже не сделает
+            logger.debug("старый экран онбординга не удалился: %s", e)
 
     db_user = await get_or_create_user(
         message.from_user.id,
@@ -343,6 +358,10 @@ async def main():
     # в Telegram останавливались до перезапуска бота, и молча.
     redis_task = asyncio.create_task(supervise_redis_subscriber(bot))
 
+    # Очередь отложенных пушей онбординга (субкультура, почта): согласие и
+    # конец анкеты только ставят строки, отправляет их этот цикл
+    nudges_task = asyncio.create_task(supervise_nudges(bot))
+
     # Start polling
     logger.info(f"Simp Dating Bot @{BOT_USERNAME} started!")
     try:
@@ -353,6 +372,7 @@ async def main():
         )
     finally:
         redis_task.cancel()
+        nudges_task.cancel()
         await close_redis()
         await bot.session.close()
 

@@ -581,56 +581,62 @@ def onboarding_consent(locale: str, privacy_url: str, terms_url: str) -> str:
     return templates.get(loc, templates["en"])
 
 
-def onboarding_broadcast_style(locale: str = "ru") -> str:
-    """Рассылка про субкультуру. Ритм Mimolet, голос Симпа — без поэзии.
+def onboarding_broadcast_style(locale: str = "ru", with_cta: bool = True) -> str:
+    """Пуш про субкультуру. Ритм Mimolet, голос Симпа — без поэзии.
 
     В нерусских локалях марка латиницей: кириллическое «Симп» в английской
     или китайской строке читается как сбой кодировки, а не как название.
+
+    Уходит не в онбординге, а отложенным пушом (services/nudges.py): сразу
+    после согласия человек и так в чате, и реклама поверх живого диалога
+    читается как спам. `with_cta=False` убирает последнюю строку про «Начать»
+    для тех, у кого анкета уже есть: звать их регистрироваться нелепо.
     """
-    texts = {
+    lines = {
         "ru": (
             "🖤 В Симпе можно указать субкультуру или стиль: гот, эмо, "
-            "скейтер, гранж, альт, аниме и не только.\n"
-            "😉 Это помогает быстрее находить людей, которым близка твоя эстетика.\n"
-            "🔥 Если анкеты еще нет, нажми «Начать»."
+            "скейтер, гранж, альт, аниме и не только.",
+            "😉 Это помогает быстрее находить людей, которым близка твоя эстетика.",
+            "🔥 Если анкеты еще нет, нажми «Начать».",
         ),
         "en": (
             "🖤 In Simp you can set your subculture or style: goth, emo, "
-            "skater, grunge, alt, anime and more.\n"
-            "😉 That helps you find people who share your aesthetic faster.\n"
-            "🔥 If you don't have a profile yet, tap “Start”."
+            "skater, grunge, alt, anime and more.",
+            "😉 That helps you find people who share your aesthetic faster.",
+            "🔥 If you don't have a profile yet, tap “Start”.",
         ),
         "uz": (
             "🖤 Simp’da subkultura yoki uslubni belgilash mumkin: got, emo, "
-            "skeyter, granj, alt, anime va boshqalar.\n"
-            "😉 Bu o‘z estetikangizga yaqin odamlarni tezroq topishga yordam beradi.\n"
-            "🔥 Anketa hali yo‘q bo‘lsa, «Boshlash» ni bosing."
+            "skeyter, granj, alt, anime va boshqalar.",
+            "😉 Bu o‘z estetikangizga yaqin odamlarni tezroq topishga yordam beradi.",
+            "🔥 Anketa hali yo‘q bo‘lsa, «Boshlash» ni bosing.",
         ),
         "es": (
             "🖤 En Simp puedes indicar tu subcultura o estilo: gótico, emo, "
-            "skater, grunge, alt, anime y más.\n"
-            "😉 Así encuentras antes a gente con tu misma estética.\n"
-            "🔥 Si aún no tienes perfil, pulsa «Empezar»."
+            "skater, grunge, alt, anime y más.",
+            "😉 Así encuentras antes a gente con tu misma estética.",
+            "🔥 Si aún no tienes perfil, pulsa «Empezar».",
         ),
         "tr": (
             "🖤 Simp’te alt kültür veya stilini belirtebilirsin: goth, emo, "
-            "skater, grunge, alt, anime ve daha fazlası.\n"
-            "😉 Estetiğine yakın insanları daha hızlı bulmana yardım eder.\n"
-            "🔥 Profilin yoksa «Başla»ya dokun."
+            "skater, grunge, alt, anime ve daha fazlası.",
+            "😉 Estetiğine yakın insanları daha hızlı bulmana yardım eder.",
+            "🔥 Profilin yoksa «Başla»ya dokun.",
         ),
         "id": (
             "🖤 Di Simp kamu bisa memilih subkultur atau gaya: goth, emo, "
-            "skater, grunge, alt, anime, dan lainnya.\n"
-            "😉 Ini membantu menemukan orang dengan estetika yang sama lebih cepat.\n"
-            "🔥 Jika belum ada profil, ketuk «Mulai»."
+            "skater, grunge, alt, anime, dan lainnya.",
+            "😉 Ini membantu menemukan orang dengan estetika yang sama lebih cepat.",
+            "🔥 Jika belum ada profil, ketuk «Mulai».",
         ),
         "zh": (
-            "🖤 在 Simp 可以标注亚文化或风格：哥特、emo、滑板、grunge、alt、动漫等等。\n"
-            "😉 这样能更快找到审美相近的人。\n"
-            "🔥 还没有资料的话，点「开始」。"
+            "🖤 在 Simp 可以标注亚文化或风格：哥特、emo、滑板、grunge、alt、动漫等等。",
+            "😉 这样能更快找到审美相近的人。",
+            "🔥 还没有资料的话，点「开始」。",
         ),
     }
-    return texts.get(resolve_locale(locale), texts["en"])
+    строки = lines.get(resolve_locale(locale), lines["en"])
+    return "\n".join(строки if with_cta else строки[:-1])
 
 
 def onboarding_broadcast_email(locale: str = "ru") -> str:
@@ -692,6 +698,27 @@ def onboarding_broadcast_email(locale: str = "ru") -> str:
             "⏱ 大概 30 秒。\n\n"
             "打开「资料」并添加邮箱 📧"
         ),
+    }
+    return texts.get(resolve_locale(locale), texts["en"])
+
+
+def onboarding_ready(locale: str = "ru") -> str:
+    """Ответ на согласие с политикой: одно сообщение с кнопкой «Начать».
+
+    Раньше вместо него сразу уходили две маркетинговые рассылки — про
+    субкультуру и про почту. Человек ещё не сделал в боте ничего, а уже
+    получил три сообщения подряд: это читается как спам. Теперь рассылки
+    уезжают отложенными пушами (services/nudges.py), а здесь остаётся только
+    следующий шаг.
+    """
+    texts = {
+        "ru": "Готово! 🖤\nЖми «Начать» — заполним анкету за пару минут.",
+        "en": "All set! 🖤\nTap “Start” — your profile takes a couple of minutes.",
+        "uz": "Tayyor! 🖤\n«Boshlash» ni bosing — anketa bir necha daqiqa oladi.",
+        "es": "¡Listo! 🖤\nPulsa «Empezar»: el perfil toma un par de minutos.",
+        "tr": "Hazır! 🖤\n«Başla»ya dokun — profil birkaç dakika sürer.",
+        "id": "Siap! 🖤\nKetuk «Mulai» — profil hanya butuh beberapa menit.",
+        "zh": "好了！🖤\n点「开始」——几分钟就能填好资料。",
     }
     return texts.get(resolve_locale(locale), texts["en"])
 

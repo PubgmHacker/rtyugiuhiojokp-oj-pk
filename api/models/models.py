@@ -1397,3 +1397,32 @@ class AnalyticsEvent(Base):
     props: Mapped[dict] = mapped_column(JSON, default=dict)
     dedup_key: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OnboardingNudge(Base):
+    """Очередь отложенных пушей онбординга — зеркало модели бота.
+
+    Таблицей владеет бот (bot/services/nudges.py ставит и отправляет),
+    API её не читает. Зеркало здесь потому, что оба сервиса зовут
+    create_all на общей базе: кто первым стартует на пустой, тот и создаёт
+    схему — и она обязана быть одинаковой с обеих сторон (это сверяют
+    test_схема_бота_совпадает_с_api и test_колонки_совпадают_в_боте_и_api).
+    Меняется только вместе с bot/database/models.py.
+    """
+
+    __tablename__ = "dating_onboarding_nudges"
+    __table_args__ = (
+        # Один пуш каждого вида на человека: повторное согласие двигает
+        # срок существующей строки, а не плодит дубли
+        UniqueConstraint("telegram_id", "stage", name="uq_onboarding_nudge"),
+        # Тик очереди выбирает созревшее по due_at
+        Index("ix_onboarding_nudge_due", "due_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    #: "style" (совет про субкультуру) | "email" (просьба привязать почту)
+    stage: Mapped[str] = mapped_column(String(16))
+    locale: Mapped[str] = mapped_column(String(8), default="ru")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

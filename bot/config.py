@@ -171,6 +171,17 @@ SBP_ENABLED: bool = bool(PAYMENT_PROVIDER_TOKEN)
 REFERRAL_MIN_INVITES: int = int(os.getenv("REFERRAL_MIN_INVITES", "3"))
 REFERRAL_BOOST_PERCENT: int = int(os.getenv("REFERRAL_BOOST_PERCENT", "12"))
 
+# ── Отложенные пуши онбординга (services/nudges.py) ──────────────
+# Рассылки про субкультуру и почту не уходят в онбординге — они ставятся в
+# очередь и уезжают после паузы: согласие и конец анкеты двигают отсчёт.
+# 45 минут — человек успел либо заполнить анкету, либо отвлечься; сутки для
+# почты — просьба «сохрани доступ» звучит уместно, когда анкета уже пожила.
+NUDGE_STYLE_DELAY_MIN: int = int(os.getenv("NUDGE_STYLE_DELAY_MIN", "45"))
+NUDGE_EMAIL_DELAY_HOURS: int = int(os.getenv("NUDGE_EMAIL_DELAY_HOURS", "24"))
+# Пуш старше недели не отправляем, а строку удаляем: человек, молчащий семь
+# дней, от догоняющей рекламы не вернётся — это уже спам по мёртвой базе.
+NUDGE_MAX_AGE_DAYS: int = int(os.getenv("NUDGE_MAX_AGE_DAYS", "7"))
+
 # ── Cloudflare R2 (перезаливка фото из Telegram, чтобы видел веб) ─
 R2_ACCOUNT_ID: str = os.getenv("R2_ACCOUNT_ID", "")
 R2_ACCESS_KEY_ID: str = os.getenv("R2_ACCESS_KEY_ID", "")

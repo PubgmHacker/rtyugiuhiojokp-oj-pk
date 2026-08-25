@@ -32,6 +32,7 @@ from keyboards import (
     reg_bio_kb,
     remove_kb,
 )
+from services.nudges import запланировать_пуши_онбординга
 from services.enforcement import (
     TEXT_BAN_REASONS,
     answer_ban_screen,
@@ -607,6 +608,11 @@ async def _finish_registration(message: Message, state: FSMContext):
     # запись анкеты не считается. Повторное прохождение гасит dedup_key;
     # та же веха из мини-аппа (profiles.py) пишется тем же ключом
     await track_event(db_user["id"], "profile_created", once=True)
+
+    # Конец анкеты двигает отсчёт отложенных пушей: иначе «укажи субкультуру»
+    # пришло бы через 45 минут после согласия — посреди только что законченной
+    # анкеты. Ошибку функция гасит сама (см. services/nudges.py).
+    await запланировать_пуши_онбординга(message.chat.id, db_user.get("locale") or "ru")
 
     await state.clear()
     итог = T.REG_DONE
