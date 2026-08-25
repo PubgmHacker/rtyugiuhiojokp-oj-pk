@@ -73,6 +73,7 @@ def card_for_day(user_id: str, today: date | None = None) -> Card:
 async def phrase_for(card: Card) -> str:
     """Живая фраза от модели. Без ключа возвращает совет из справочника —
     раздел должен работать и на окружении без AI."""
+    from config import get_settings
     from services.ai_moderation import _get_zhipu_client
 
     client = _get_zhipu_client()
@@ -84,7 +85,7 @@ async def phrase_for(card: Card) -> str:
 
         response = await asyncio.to_thread(
             client.chat.completions.create,
-            model="glm-4-flash",
+            model=get_settings().ZHIPU_TEXT_MODEL,
             messages=[
                 {
                     "role": "system",

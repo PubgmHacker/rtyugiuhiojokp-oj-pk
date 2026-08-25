@@ -166,6 +166,7 @@ async def interpretation_for(
     """
     fallback = " ".join(f"{p.position}: {p.card.advice}." for p in positions)
 
+    from config import get_settings
     from services.ai_moderation import _get_zhipu_client
 
     client = _get_zhipu_client()
@@ -180,7 +181,7 @@ async def interpretation_for(
     try:
         response = await asyncio.to_thread(
             client.chat.completions.create,
-            model="glm-4-flash",
+            model=get_settings().ZHIPU_TEXT_MODEL,
             messages=[
                 {
                     "role": "system",

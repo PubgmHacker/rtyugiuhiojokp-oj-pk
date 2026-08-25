@@ -192,6 +192,15 @@ R2_PUBLIC_URL: str = os.getenv("R2_PUBLIC_URL", "")
 # ── AI-модерация (Zhipu GLM) ─────────────────────────────────────
 # Без ключа модерация в боте работает по словарному фильтру
 ZHIPU_API_KEY: str = os.getenv("ZHIPU_API_KEY", "")
+# Пусто — SDK идёт на материковый open.bigmodel.cn. Ключ с Z.ai
+# (международная площадка Zhipu, регистрация по почте) работает только
+# через https://api.z.ai/api/paas/v4 — адрес задаётся этой переменной.
+ZHIPU_BASE_URL: str = os.getenv("ZHIPU_BASE_URL", "")
+# Имена моделей на площадках расходятся: материк — glm-4-flash /
+# glm-4v-flash, на Z.ai бесплатные — glm-4.5-flash / glm-4.6v-flash.
+# Дефолты материковые, чтобы существующие ключи работали без правок.
+ZHIPU_TEXT_MODEL: str = os.getenv("ZHIPU_TEXT_MODEL", "glm-4-flash")
+ZHIPU_VISION_MODEL: str = os.getenv("ZHIPU_VISION_MODEL", "glm-4v-flash")
 
 # ── Антифлуд ─────────────────────────────────────────────────────
 # Минимальный интервал между действиями одного пользователя, секунды

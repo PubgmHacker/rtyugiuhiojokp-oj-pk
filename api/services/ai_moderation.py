@@ -44,7 +44,12 @@ def _get_zhipu_client():
             # wait_for отпускает ожидающего, но синхронный вызов продолжает
             # ВИСЕТЬ в потоке executor до сетевого таймаута httpx — без этой
             # цифры зависший Zhipu постепенно съедал бы весь пул потоков.
-            _zhipu_client = ZhipuAI(api_key=settings.ZHIPU_API_KEY, timeout=15.0)
+            kwargs = {"api_key": settings.ZHIPU_API_KEY, "timeout": 15.0}
+            # base_url только когда задан: пустая строка сломала бы URL,
+            # а отсутствие аргумента оставляет SDK его дефолт (материк)
+            if settings.ZHIPU_BASE_URL:
+                kwargs["base_url"] = settings.ZHIPU_BASE_URL
+            _zhipu_client = ZhipuAI(**kwargs)
         except ImportError:
             logger.warning("zhipuai package not installed")
     return _zhipu_client
@@ -119,7 +124,7 @@ async def moderate_text(text: str) -> dict:
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4-flash",
+                model=settings.ZHIPU_TEXT_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -220,7 +225,7 @@ async def moderate_image(image_bytes: bytes) -> dict:
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4v-flash",
+                model=settings.ZHIPU_VISION_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -353,7 +358,7 @@ async def verify_liveness(
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4v-flash",
+                model=settings.ZHIPU_VISION_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -474,7 +479,7 @@ async def verify_face_match(selfie: bytes, reference: bytes) -> dict:
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4v-flash",
+                model=settings.ZHIPU_VISION_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -567,7 +572,7 @@ async def verify_profile_photo(image_bytes: bytes) -> dict:
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4v-flash",
+                model=settings.ZHIPU_VISION_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -682,7 +687,7 @@ async def verify_person_in_photo(person: bytes, photo: bytes) -> dict:
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4v-flash",
+                model=settings.ZHIPU_VISION_MODEL,
                 messages=[
                     {
                         "role": "system",

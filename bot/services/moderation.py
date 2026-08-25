@@ -24,7 +24,13 @@ import base64
 import json
 import logging
 
-from config import DEBUG, ZHIPU_API_KEY
+from config import (
+    DEBUG,
+    ZHIPU_API_KEY,
+    ZHIPU_BASE_URL,
+    ZHIPU_TEXT_MODEL,
+    ZHIPU_VISION_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +123,12 @@ def _get_client():
 
         # Конечный таймаут обязателен: вызов синхронный, и зависший Zhipu
         # держал бы поток executor бесконечно (см. api/services/ai_moderation)
-        _client = ZhipuAI(api_key=ZHIPU_API_KEY, timeout=15.0)
+        kwargs = {"api_key": ZHIPU_API_KEY, "timeout": 15.0}
+        # base_url только когда задан: пустая строка сломала бы URL,
+        # а отсутствие аргумента оставляет SDK его дефолт (материк)
+        if ZHIPU_BASE_URL:
+            kwargs["base_url"] = ZHIPU_BASE_URL
+        _client = ZhipuAI(**kwargs)
     except ImportError:
         logger.warning("Пакет zhipuai не установлен — модерация по словарю")
     except Exception as e:
@@ -238,7 +249,7 @@ async def moderate_text(text: str) -> dict:
 
     def _call():
         response = client.chat.completions.create(
-            model="glm-4-flash",
+            model=ZHIPU_TEXT_MODEL,
             messages=[
                 {
                     "role": "system",
@@ -309,7 +320,7 @@ async def moderate_image(image_bytes: bytes) -> dict:
 
     def _call():
         response = client.chat.completions.create(
-            model="glm-4v-flash",
+            model=ZHIPU_VISION_MODEL,
             messages=[
                 {
                     "role": "user",
@@ -406,7 +417,7 @@ async def verify_profile_photo(image_bytes: bytes) -> dict:
 
     def _call():
         response = client.chat.completions.create(
-            model="glm-4v-flash",
+            model=ZHIPU_VISION_MODEL,
             messages=[
                 {
                     "role": "user",

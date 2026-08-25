@@ -31,7 +31,12 @@ def _get_zhipu_client():
             # 15с в SDK — добить поток, который _AI_TIMEOUT уже перестал
             # ждать: wait_for снимает ожидание, но не сетевой вызов, и без
             # таймаута httpx зависшие скоринги копились бы в executor
-            _zhipu_client = ZhipuAI(api_key=settings.ZHIPU_API_KEY, timeout=15.0)
+            kwargs = {"api_key": settings.ZHIPU_API_KEY, "timeout": 15.0}
+            # base_url только когда задан — как в ai_moderation: пустая
+            # строка ломает URL, отсутствие аргумента = дефолт SDK (материк)
+            if settings.ZHIPU_BASE_URL:
+                kwargs["base_url"] = settings.ZHIPU_BASE_URL
+            _zhipu_client = ZhipuAI(**kwargs)
         except ImportError:
             logger.warning("zhipuai package not installed")
     return _zhipu_client
@@ -68,7 +73,7 @@ async def score_match(
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4-flash",
+                model=settings.ZHIPU_TEXT_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -165,7 +170,7 @@ async def generate_icebreakers(
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model="glm-4-flash",
+                model=settings.ZHIPU_TEXT_MODEL,
                 messages=[
                     {
                         "role": "system",
