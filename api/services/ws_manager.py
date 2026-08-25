@@ -52,6 +52,12 @@ class RoomManager:
         # обработчик на канал означал бы, что вторая вкладка отбирает
         # приглашения у первой, а её закрытие снимает подписку у живой.
         self._handlers: dict[str, list[Callable[[dict], Awaitable[None]]]] = {}
+        # Фоновые задачи disconnect'а (снятие присутствия, отписка). Голый
+        # create_task без ссылки — это задача, о которой shutdown не знает:
+        # она доживает до закрытия цикла, и её добивает уже _cancel_all_tasks
+        # самого asyncio. Одна такая гонка на выходе вешала прогон в CI —
+        # aclose() обязан дождаться их сам, пока цикл ещё жив.
+        self._фоновые: set[asyncio.Task] = set()
 
     @staticmethod
     def _channel(match_id: str) -> str:
@@ -107,6 +113,12 @@ class RoomManager:
             await self._subscribe(match_id)
         await self._mark_presence(match_id, user_id, online=True)
 
+    def _в_фоне(self, корутина: Awaitable[None]) -> None:
+        """Запустить и ЗАПОМНИТЬ фоновую задачу — чтобы aclose() её дождался."""
+        задача = asyncio.create_task(корутина)
+        self._фоновые.add(задача)
+        задача.add_done_callback(self._фоновые.discard)
+
     def disconnect(self, match_id: str, ws: WebSocket) -> None:
         room = self.rooms.get(match_id)
         if not room:
@@ -114,7 +126,7 @@ class RoomManager:
         user_id = room.pop(ws, None)
         # Тот же пользователь может держать вторую вкладку на этом инстансе
         if user_id and user_id not in room.values():
-            asyncio.create_task(self._mark_presence(match_id, user_id, online=False))
+            self._в_фоне(self._mark_presence(match_id, user_id, online=False))
         if not room:
             self.rooms.pop(match_id, None)
             # Отписка асинхронная, а disconnect синхронный: его зовут из
@@ -122,7 +134,7 @@ class RoomManager:
             # здесь отменялась задача-читатель комнаты — а `broadcast` зовётся
             # ИЗ этой же задачи, и слушатель отменял сам себя на середине
             # итерации, если последний сокет умирал во время рассылки.
-            asyncio.create_task(self._unsubscribe(match_id))
+            self._в_фоне(self._unsubscribe(match_id))
 
     def is_user_connected(self, match_id: str, user_id: str) -> bool:
         """Подключён ли пользователь к ЭТОМУ процессу."""
@@ -304,7 +316,15 @@ class RoomManager:
             if старый is not None:
                 try:
                     await старый.aclose()
-                except BaseException:  # включая CancelledError во время cleanup
+                except asyncio.CancelledError:
+                    # Нас остановили (aclose при shutdown) ровно в момент
+                    # пересборки. Раньше отмена глоталась вместе с прочим
+                    # мусором cleanup'а — и «отменённый» читатель возвращался
+                    # в свой while True уже бессмертным: повторного cancel
+                    # не будет, gather в закрытии цикла ждёт его вечно.
+                    # Так висли выходы TestClient в CI.
+                    raise
+                except Exception:  # обрыв соединения — штатный случай здесь
                     pass
             каналы = [self._channel(m) for m in self.rooms] + list(self._handlers)
             if not каналы:
@@ -319,6 +339,18 @@ class RoomManager:
 
     async def aclose(self) -> None:
         """Остановить читателя и закрыть pubsub — для shutdown приложения."""
+        # Сначала хвосты disconnect'ов: снятие присутствия и отписки. Ждём,
+        # а не бросаем — иначе они доживают до закрытия цикла, где их отмена
+        # соревнуется с закрытием Redis (гонка, вешавшая выход TestClient).
+        # Потолок на случай мёртвого Redis: остановка процесса важнее.
+        if self._фоновые:
+            хвосты = [з for з in self._фоновые if not з.done()]
+            if хвосты:
+                _, pending = await asyncio.wait(хвосты, timeout=5.0)
+                for задача in pending:
+                    задача.cancel()
+                if pending:
+                    await asyncio.wait(pending, timeout=1.0)
         if self._reader is not None:
             self._reader.cancel()
             try:
