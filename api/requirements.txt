@@ -10,6 +10,12 @@ python-jose[cryptography]>=3.3.0
 python-multipart>=0.0.12
 boto3>=1.35.0
 zhipuai>=2.0.0
+# zhipuai в рантайме делает `import sniffio` (core/_utils/_utils.py), но не
+# декларирует его зависимостью, а свежие httpx (0.28+) и anyio (4.14+) больше
+# не тянут sniffio транзитивно. Без строки ниже чистая установка молча теряет
+# Zhipu-клиент (ImportError глотается фабрикой) — фото-модерация вечно
+# fail-closed, ИИ-мэтчер выключен. Ловится tests/test_zhipu_endpoint.py.
+sniffio>=1.3.0
 aiohttp>=3.10.0
 Pillow>=11.0.0
 alembic>=1.13.0
