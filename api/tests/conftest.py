@@ -17,6 +17,75 @@ API_ROOT = Path(__file__).resolve().parent.parent
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
+
+def _закрытие_циклов_с_доносом() -> None:
+    """Назвать задачу, вешающую закрытие event loop, вместо немого зависания.
+
+    CI дважды вис на выходе из TestClient: портальный поток anyio стоит в
+    `Runner.close() → _cancel_all_tasks → gather`, то есть какая-то задача
+    пережила отмену и ждёт события, которое никогда не придёт. pytest-timeout
+    дампит только ПОТОКИ — в дампе виден спящий select, но не имя задачи,
+    поэтому виновник до сих пор не назван.
+
+    Подменяем `asyncio.runners._cancel_all_tasks` (его зовёт и anyio — Runner
+    у него стандартный): вместо безлимитного gather ждём отменённые задачи с
+    потолком, а не уложившихся печатаем поимённо со стеками в sys.__stderr__ —
+    мимо перехвата pytest, чтобы строки дошли до лога CI даже при жёстком
+    снятии прогона. После доноса бросаем RuntimeError: тест падает сразу и
+    громко, а не висит 180 секунд до таймаута.
+
+    Потолок 20 с — заведомо больше любого штатного cleanup'а (потолки в
+    aclose — 5–6 с), так что зелёным прогонам подмена не видна: все задачи
+    умирают за миллисекунды, и ветка доноса не исполняется.
+    """
+    import asyncio.runners as _runners
+    import asyncio.tasks as _tasks
+
+    def _cancel_all_tasks(loop):  # сигнатура оригинала из asyncio/runners.py
+        to_cancel = _tasks.all_tasks(loop)
+        if not to_cancel:
+            return
+        for task in to_cancel:
+            task.cancel()
+
+        done, pending = loop.run_until_complete(
+            _tasks.wait(to_cancel, timeout=20.0)
+        )
+        if pending:
+            печать = sys.__stderr__ or sys.stderr
+            print(
+                f"\n=== {len(pending)} задач(а) пережили отмену при закрытии "
+                f"цикла — вечные, закрытие висело бы бесконечно ===",
+                file=печать,
+            )
+            for task in pending:
+                print(f"\n--- {task!r} ---", file=печать)
+                try:
+                    task.print_stack(file=печать)
+                except Exception as ошибка:  # noqa: BLE001 — донос не должен падать
+                    print(f"(стек недоступен: {ошибка!r})", file=печать)
+            печать.flush()
+            raise RuntimeError(
+                "закрытие event loop зависло: "
+                + "; ".join(repr(t) for t in pending)
+            )
+
+        # Хвост оригинала: показать исключения задач, погибших не от отмены
+        for task in done:
+            if task.cancelled():
+                continue
+            if task.exception() is not None:
+                loop.call_exception_handler({
+                    "message": "unhandled exception during test loop shutdown",
+                    "exception": task.exception(),
+                    "task": task,
+                })
+
+    _runners._cancel_all_tasks = _cancel_all_tasks
+
+
+_закрытие_циклов_с_доносом()
+
 # Настройки читаются на импорте модулей, поэтому задаём окружение раньше
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("JWT_SECRET", "test_secret_not_for_production")
