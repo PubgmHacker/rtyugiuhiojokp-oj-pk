@@ -9,7 +9,7 @@ from config import get_settings
 from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import Profile, User
-from services.r2_storage import upload_photo_to_r2, delete_photo_from_r2
+from services.r2_storage import upload_photo_to_r2, delete_photo_from_r2, uploads_available
 from services.ai_moderation import log_moderation, moderate_image, verify_profile_photo
 from services.enforcement import enforce_text_verdict
 from services.image_sanitizer import ImageRejected, sanitize_image
@@ -28,6 +28,11 @@ async def upload_photo(
     session: AsyncSession = Depends(get_session),
 ):
     """Загрузить фото профиля в R2 с AI-модерацией."""
+    if not uploads_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Загрузка медиа временно недоступна — хранилище не настроено",
+        )
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only images are allowed")
 
@@ -127,6 +132,11 @@ async def upload_profile_video(
     клиент через `PATCH /profiles/me` (поле videos), где проверяется
     происхождение ссылки и лимит.
     """
+    if not uploads_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Загрузка медиа временно недоступна — хранилище не настроено",
+        )
     # Лимит проверяем до тяжёлой работы: модерация кадров и заливка в R2
     # стоят денег, а видео сверх лимита в анкету всё равно не встанет.
     result = await session.execute(select(Profile).where(Profile.user_id == user.id))

@@ -51,7 +51,7 @@ from services.chat_delivery import (
     save_message,
 )
 from services.public_profile import публичный_возраст
-from services.r2_storage import delete_photo_from_r2, upload_photo_to_r2
+from services.r2_storage import delete_photo_from_r2, upload_photo_to_r2, uploads_available
 from services.video_validation import (
     MIN_COVERS,
     looks_like_video,
@@ -210,6 +210,11 @@ async def create_reel(
     (например, только начала ролика) недостаточно, чтобы поручиться за всё
     видео целиком.
     """
+    if not uploads_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Загрузка медиа временно недоступна — хранилище не настроено",
+        )
     if len(caption) > 300:
         raise HTTPException(status_code=400, detail="Подпись длиннее 300 символов")
 

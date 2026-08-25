@@ -119,11 +119,14 @@ async def lifespan(app: FastAPI):
     init_alerting(settings.SENTRY_DSN)
 
     # ── Префлайт конфигурации ──────────────────────────────────
-    # Ошибки конфигурации должны валить деплой одним понятным списком, а не
-    # обнаруживаться пользователями по одной: без ZHIPU-ключа модерация фото
-    # отклоняет все загрузки (fail-closed), без R2 фото некуда класть, без
-    # BOT_TOKEN нечем проверить подпись initData — «поднявшийся» процесс с
-    # такими дырами не работает, он лишь выглядит живым. DEBUG не трогаем:
+    # Ошибки конфигурации — двух сортов. Дыры БЕЗОПАСНОСТИ валят деплой одним
+    # понятным списком: с дефолтным JWT_SECRET токен подделает любой, кто читал
+    # исходники, а без BOT_TOKEN нечем проверить подпись initData — такой
+    # процесс опасен, а не неполон. Отсутствие внешних ключей (ZHIPU, R2) —
+    # деградация: сервис поднимается, вход/дека/чаты/оплаты работают, а каждая
+    # загрузка медиа честно отвечает 503 (fail-closed модерации и сторож
+    # uploads_available в services/r2_storage.py никто не снимает — профиль без
+    # фото в выдачу не попадёт, гейт полноты анкеты остаётся). DEBUG не трогаем:
     # локальная разработка обязана подниматься без ключей.
     if not settings.DEBUG:
         неисправимо: list[str] = []
@@ -137,21 +140,6 @@ async def lifespan(app: FastAPI):
                 "BOT_TOKEN пуст: подпись Telegram initData проверить нечем — "
                 "вход из Telegram не работает"
             )
-        if not settings.ZHIPU_API_KEY:
-            неисправимо.append(
-                "ZHIPU_API_KEY пуст: модерация фото не работает, а без неё "
-                "каждая загрузка отклоняется (fail-closed)"
-            )
-        if not all((
-            settings.R2_ACCOUNT_ID,
-            settings.R2_ACCESS_KEY_ID,
-            settings.R2_SECRET_ACCESS_KEY,
-            settings.R2_PUBLIC_URL,
-        )):
-            неисправимо.append(
-                "R2 настроен не полностью (нужны ACCOUNT_ID, ACCESS_KEY_ID, "
-                "SECRET_ACCESS_KEY, PUBLIC_URL): фото некуда сохранять"
-            )
         if неисправимо:
             raise RuntimeError(
                 "Продовая конфигурация неполна:\n  - " + "\n  - ".join(неисправимо)
@@ -160,6 +148,22 @@ async def lifespan(app: FastAPI):
         # Деградации, допустимые по дизайну, — но о каждой предупреждаем на
         # старте: одна строка в логе деплоя дешевле недели «почему у части
         # людей не соединяются звонки»
+        if not settings.ZHIPU_API_KEY:
+            logger.warning(
+                "ZHIPU_API_KEY пуст: модерация медиа недоступна — каждая "
+                "загрузка фото/видео отклоняется (fail-closed)"
+            )
+        if not all((
+            settings.R2_ACCOUNT_ID,
+            settings.R2_ACCESS_KEY_ID,
+            settings.R2_SECRET_ACCESS_KEY,
+            settings.R2_PUBLIC_URL,
+        )):
+            logger.warning(
+                "R2 настроен не полностью (нужны ACCOUNT_ID, ACCESS_KEY_ID, "
+                "SECRET_ACCESS_KEY, PUBLIC_URL): загрузка фото и видео "
+                "отвечает 503"
+            )
         if not settings.TURN_URL:
             logger.warning(
                 "TURN не настроен: звонки за симметричным NAT не соберутся "

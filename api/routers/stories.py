@@ -26,7 +26,7 @@ from services.ai_moderation import log_moderation, moderate_image, moderate_text
 from services.content_reports import подать_жалобу_на_контент
 from services.enforcement import enforce_text_verdict, register_content_strike
 from services.image_sanitizer import ImageRejected, sanitize_image
-from services.r2_storage import upload_photo_to_r2
+from services.r2_storage import upload_photo_to_r2, uploads_available
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,11 @@ async def publish_story(
     session: AsyncSession = Depends(get_session),
 ):
     """Выложить историю на сутки."""
+    if not uploads_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Загрузка медиа временно недоступна — хранилище не настроено",
+        )
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Нужна картинка")
 

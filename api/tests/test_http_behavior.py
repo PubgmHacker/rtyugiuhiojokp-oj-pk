@@ -1156,6 +1156,86 @@ async def test_своя_анкета_отдаёт_видео_как_есть(app
     assert r.json()["videos"] == ["BAACAgIAAxkBAAI-бот"]
 
 
+# ── Прод без внешних ключей: деградация, а не падение ───────────
+
+
+@pytest.fixture
+def прод_без_хранилища(monkeypatch):
+    """Прод-режим без реквизитов R2 — состояние свежего деплоя до выдачи
+    секретов: DEBUG снят, все четыре поля хранилища пусты. Настройки — один
+    lru_cache-инстанс на процесс, поэтому патч виден всем роутерам."""
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "DEBUG", False)
+    for поле in (
+        "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_PUBLIC_URL",
+    ):
+        monkeypatch.setattr(настройки, поле, "")
+
+
+async def test_прод_без_r2_отвечает_503_на_каждой_точке_загрузки(
+    app, прод_без_хранилища, кадры_видео_анкеты
+):
+    """Без ключей R2 сервис живёт, а каждая точка загрузки — фото и видео
+    анкеты, история, ролик — отвечает 503 сразу, до чтения лимитов и платной
+    модерации. Ответ различаем по detail сторожа: 503 «проверка недоступна»
+    от fail-closed модерации здесь был бы ложным зелёным — он значил бы, что
+    платный вызов уже сожжён."""
+    session = _Session([])
+
+    async with await _client(app, session, _user()) as client:
+        ответы = [
+            await client.post(
+                "/api/upload/photo", files={"file": ("p.jpg", _КАДР, "image/jpeg")}
+            ),
+            await client.post("/api/upload/video", files=_файлы_видео_анкеты(3)),
+            await client.post(
+                "/api/stories", files={"file": ("s.jpg", _КАДР, "image/jpeg")}
+            ),
+            await client.post(
+                "/api/reels",
+                files=[("video", ("v.mp4", _ВИДЕО, "video/mp4"))]
+                + [("covers", (f"c{i}.jpg", _КАДР, "image/jpeg")) for i in range(3)],
+            ),
+        ]
+
+    for ответ in ответы:
+        assert ответ.status_code == 503, ответ.text
+        assert ответ.json()["detail"].startswith("Загрузка медиа временно недоступна"), (
+            f"отказ не от сторожа хранилища: {ответ.text}"
+        )
+    assert not кадры_видео_анкеты.проверенные, "модерация жглась при мёртвом хранилище"
+    assert not кадры_видео_анкеты.ключи, "заливка в R2 всё же была"
+
+
+async def test_префлайт_валит_прод_только_за_дыры_безопасности(app, monkeypatch):
+    """Дефолтный JWT_SECRET (и пустой BOT_TOKEN) — RuntimeError до любого
+    I/O: с таким конфигом процесс опасен. А пустые ZHIPU/R2 — предупреждение,
+    сервис поднимается: иначе api вовсе не деплоится, пока не выданы внешние
+    ключи, и «нет соединения» получает даже вход по паролю."""
+    import inspect
+
+    import main
+    from config import get_settings
+
+    настройки = get_settings()
+    monkeypatch.setattr(настройки, "DEBUG", False)
+    monkeypatch.setattr(настройки, "JWT_SECRET", "change_this_in_production")
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        async with main.lifespan(app):
+            pass
+
+    # Зона предупреждений начинается после raise: ZHIPU/R2 не валят старт
+    исходник = inspect.getsource(main.lifespan)
+    порог = исходник.index("raise RuntimeError")
+    for ключ in ("ZHIPU_API_KEY", "R2_ACCOUNT_ID"):
+        assert исходник.index(ключ) > порог, (
+            f"{ключ} проверяется до raise — отсутствие ключа снова валит деплой"
+        )
+
+
 async def test_автобан_по_жалобам_отзывает_токены(app, monkeypatch):
     """Бан обязан гасить уже выданные сессии, а не только запрещать вход.
 
