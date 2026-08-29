@@ -18,6 +18,8 @@ export function useSectionOpen(section: Section): void {
   useEffect(() => {
     if (sent.current) return;
     sent.current = true;
-    recordSectionOpen(section);
+    // Аналитика не должна превращать потерянный интернет в unhandled
+    // rejection: это вспомогательное событие, экран уже открыт и работает.
+    void recordSectionOpen(section).catch(() => {});
   }, [section]);
 }

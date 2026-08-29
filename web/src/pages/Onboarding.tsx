@@ -96,6 +96,7 @@ export default function Onboarding() {
     draft?.coords ?? null
   );
   const [geoBusy, setGeoBusy] = useState(false);
+  const [geoError, setGeoError] = useState("");
   const { photos, addPhoto, removePhoto, makePrimary, reset: resetPhotos } =
     usePhotoSlots(draft?.photos ?? user?.photos ?? []);
   const [interests, setInterests] = useState<string[]>(
@@ -276,13 +277,16 @@ export default function Onboarding() {
   /* ── Геопозиция ──────────────────────────────────────────── */
   const detectLocation = useCallback(async () => {
     setGeoBusy(true);
+    setGeoError("");
     const pos = await getCurrentPosition();
     setGeoBusy(false);
     if (!pos) {
       haptic("error");
+      setGeoError("Не удалось определить геопозицию — проверьте доступ к ней");
       return;
     }
     setCoords({ lat: pos.latitude, lon: pos.longitude });
+    setGeoError("");
     haptic("success");
   }, []);
 
@@ -515,6 +519,11 @@ export default function Onboarding() {
                 {coords && (
                   <p className="mt-2 text-caption text-text-muted text-center">
                     Точные координаты другим не показываются — только расстояние
+                  </p>
+                )}
+                {geoError && (
+                  <p className="mt-2 text-caption text-danger text-center" role="alert">
+                    {geoError}
                   </p>
                 )}
               </StepShell>
@@ -805,11 +814,14 @@ function TextField({
 }) {
   return (
     <input
+      type="text"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       maxLength={maxLength}
       inputMode={inputMode}
+      aria-label={placeholder}
+      spellCheck={inputMode !== "numeric"}
       autoFocus={autoFocus}
       className="w-full h-14 px-4 rounded-[var(--radius-tile)]
                  bg-surface border border-hairline text-[17px]
@@ -829,12 +841,14 @@ function OptionList({
   options: { value: string; label: string }[];
 }) {
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2.5" role="group" aria-label="Выберите вариант">
       {options.map((o) => {
         const active = value === o.value;
         return (
           <button
             key={o.value}
+            type="button"
+            aria-pressed={active}
             onClick={() => {
               haptic("select");
               onChange(o.value);

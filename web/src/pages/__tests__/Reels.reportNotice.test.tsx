@@ -22,6 +22,7 @@ beforeEach(() => {
   };
   (HTMLMediaElement.prototype as any).play = () => Promise.resolve();
   (HTMLMediaElement.prototype as any).pause = () => {};
+  (HTMLMediaElement.prototype as any).load = () => {};
 });
 
 afterEach(() => {
@@ -88,5 +89,27 @@ describe("Reels — исход жалобы в правильном канале
 
     const плашка = await screen.findByText(/Не удалось отправить жалобу/);
     expect(плашка.className).toContain("text-danger");
+  });
+
+  it("показывает понятный retry, если CDN не отдал видео", async () => {
+    vi.spyOn(api, "recordReelView").mockResolvedValue(undefined as any);
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    vi.spyOn(api, "getReels").mockResolvedValue({
+      reels: [ролик()],
+      next_before: null,
+    } as any);
+
+    render(
+      <MemoryRouter>
+        <Reels />
+      </MemoryRouter>
+    );
+
+    const video = await screen.findByLabelText("Видео Аня");
+    fireEvent.error(video);
+    expect(await screen.findByText("Видео не удалось загрузить")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Повторить"));
+    expect(load).toHaveBeenCalled();
   });
 });

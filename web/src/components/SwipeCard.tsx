@@ -102,17 +102,25 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
     [photoIndex, media.length]
   );
 
-  // Прогреваем остальные фото, как только карточка стала верхней: иначе
-  // первый тап по краю показывает скелетон, потому что браузер начинает
-  // грузить снимок только в момент, когда тот попадает в разметку
+  // Прогреваем только ближайшие два фото. Полный прогрев галереи на каждой
+  // карточке съедал мобильный канал: пять быстрых свайпов запускали десятки
+  // загрузок, которые уже никому не нужны. Храним объекты до cleanup, чтобы
+  // прервать незавершённые запросы при уходе карточки из стека.
   useEffect(() => {
     if (!isTop || photos.length < 2) return;
-    photos.slice(1).forEach((src) => {
+    const pending: HTMLImageElement[] = [];
+    photos.slice(photoIndex + 1, photoIndex + 3).forEach((src) => {
       const img = new Image();
       img.decoding = "async";
       img.src = src;
+      pending.push(img);
     });
-  }, [isTop, photos]);
+    return () => {
+      pending.forEach((img) => {
+        img.src = "";
+      });
+    };
+  }, [isTop, photos, photoIndex]);
 
   /* ── Карточки под верхней: только фон, без интерактива ────── */
   if (!isTop) {

@@ -78,7 +78,7 @@ const FUN: Item[] = [
     premium: true,
   },
   {
-    path: "/likes",
+    path: "/likes?tab=top",
     icon: Trophy,
     title: "Топ недели",
     hint: "Кто собрал больше лайков",

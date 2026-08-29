@@ -156,12 +156,24 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
   const requestSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    // В фоне Telegram/WKWebView всё равно не показывает результат, а запросы
+    // только будят сеть и батарею. Первый вызов повторится при возвращении.
+    if (document.visibilityState === "hidden") return;
     const seq = ++requestSeqRef.current;
     try {
       const page = await getRoomMessages(room.id);
       if (!isMounted() || seq !== requestSeqRef.current) return;
       setСбой(false);
-      setMessages(page.messages);
+      // Не выбрасываем локально добавленное сообщение, если polling-ответ
+      // пересёкся с POST и сервер ещё отдаёт старый срез истории.
+      setMessages((current) => {
+        if (!current) return page.messages;
+        const serverIds = new Set(page.messages.map((message) => message.id));
+        return [
+          ...page.messages,
+          ...current.filter((message) => !serverIds.has(message.id)),
+        ];
+      });
     } catch {
       if (!isMounted() || seq !== requestSeqRef.current) return;
       // Переписку не трогаем: сбой фонового опроса не должен стирать уже
@@ -172,11 +184,18 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
   }, [room.id, isMounted]);
 
   useEffect(() => {
-    load();
+    void load();
     // Обновляем периодически: держать WebSocket ради общего чата, куда
     // заходят изредка, дороже, чем опрос раз в несколько секунд
-    const timer = window.setInterval(load, 7000);
-    return () => window.clearInterval(timer);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const timer = window.setInterval(refreshWhenVisible, 7000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -190,16 +209,18 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
     setError("");
     try {
       const message = await sendRoomMessage(room.id, trimmed);
+      if (!isMounted()) return;
       setMessages((cur) => [...(cur ?? []), message]);
       setText("");
       haptic("success");
     } catch (e: any) {
+      if (!isMounted()) return;
       haptic("error");
       setError(e?.response?.data?.detail ?? "Не удалось отправить");
     } finally {
-      setSending(false);
+      if (isMounted()) setSending(false);
     }
-  }, [text, sending, room.id]);
+  }, [text, sending, room.id, isMounted]);
 
   const пожаловаться = useCallback(
     async (reason: string) => {
@@ -242,7 +263,13 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 no-scrollbar">
+      <div
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Сообщения комнаты"
+        className="flex-1 overflow-y-auto px-4 py-3 no-scrollbar"
+      >
         {!messages ? (
           сбой ? (
             <LoadError onRetry={load} />

@@ -599,7 +599,7 @@ export default function Chat() {
 
         {status !== "open" && !loading && (
           <div className="px-4 pb-2">
-            <p className="text-[12px] text-warn text-center">
+            <p role="status" aria-live="polite" className="text-[12px] text-warn text-center">
               {status === "connecting" ? "Переподключение…" : "Нет связи с чатом"}
             </p>
           </div>
@@ -608,6 +608,10 @@ export default function Chat() {
 
       {/* ── Лента сообщений ─────────────────────────────────── */}
       <div
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Переписка"
         className="chat-surface flex-1 min-h-0 overflow-y-auto overscroll-contain
                    no-scrollbar px-3 py-3"
         data-pattern={theme?.pattern_key || "none"}

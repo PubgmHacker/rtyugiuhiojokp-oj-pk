@@ -9,7 +9,7 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import Block, Like, Match, Profile, User
 from models.schemas import UserProfile
-from utils import as_list
+from utils import public_photos
 
 router = APIRouter(prefix="/blocks", tags=["blocks"])
 
@@ -103,7 +103,7 @@ async def list_blocked(
             id=uid,
             display_name=profiles[uid].display_name if uid in profiles else "",
             bio=profiles[uid].bio if uid in profiles else "",
-            photos=as_list(profiles[uid].photos) if uid in profiles else [],
+            photos=public_photos(profiles[uid].photos) if uid in profiles else [],
         )
         for uid in ids
     ]

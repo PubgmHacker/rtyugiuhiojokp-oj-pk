@@ -15,7 +15,7 @@ from services.plans import deck_priority, tier_from_plan
 from services.public_profile import буст_активен, возраст_из_даты, публичный_возраст
 from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
-from utils import as_list, public_videos
+from utils import as_list, public_photos, public_videos
 
 settings = get_settings()
 
@@ -64,7 +64,7 @@ def _свежесть(created_at: Optional[datetime]) -> float:
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
     """Расстояние между двумя точками в км."""
-    if not all([lat1, lon1, lat2, lon2]):
+    if any(value is None for value in (lat1, lon1, lat2, lon2)):
         return 0
     R = 6371
     dlat = math.radians(lat2 - lat1)
@@ -432,8 +432,13 @@ async def get_deck_profiles(
         # выглядел рабочим, когда он не работает.
         distance = None
         за_радиусом = False
-        if (my_profile and my_profile.latitude and my_profile.longitude
-                and profile.latitude and profile.longitude):
+        if (
+            my_profile
+            and my_profile.latitude is not None
+            and my_profile.longitude is not None
+            and profile.latitude is not None
+            and profile.longitude is not None
+        ):
             distance = _haversine(
                 my_profile.latitude, my_profile.longitude,
                 profile.latitude, profile.longitude,
@@ -465,7 +470,7 @@ async def get_deck_profiles(
             age=публичный_возраст(profile),
             city=profile.city or "",
             bio=profile.bio or "",
-            photos=as_list(profile.photos),
+            photos=public_photos(profile.photos),
             videos=public_videos(profile.videos),
             interests=as_list(profile.interests),
             ai_bio=profile.ai_bio,
@@ -495,6 +500,9 @@ async def get_deck_profiles(
     my_interests = set(as_list(my_profile.interests)) if my_profile else set()
     my_city = (my_profile.city or "").strip().lower() if my_profile else ""
     my_relation_type = my_profile.relation_type if my_profile else ""
+    profiles_with_photos = {
+        profile.user_id for profile in profiles if as_list(profile.photos)
+    }
 
     referral_mult = 1 + settings.REFERRAL_BOOST_PERCENT / 100
 
@@ -511,7 +519,11 @@ async def get_deck_profiles(
         if p.id in referral_boost_ids:
             score *= referral_mult  # пригласил друзей — анкета выше
         доля = свежесть_по_id.get(p.id, 0.0)
-        if доля and p.photos:
+        # Наличие фото — внутренний сигнал полноты анкеты. В ответ чужому
+        # клиенту Telegram file_id фильтруется из `p.photos`, но такая анкета
+        # всё равно не должна терять новичковый буст (бот умеет отдать это
+        # фото через Telegram).
+        if доля and p.id in profiles_with_photos:
             # Буст новичка: свежая анкета выше — но только с фото, механика
             # не имеет права разгонять пустышки (PRD §2.4.5). Стоит ДО
             # платного буста, чтобы купленный буст оставался сильнее любого

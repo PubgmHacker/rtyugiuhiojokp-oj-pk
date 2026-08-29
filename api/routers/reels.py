@@ -58,7 +58,7 @@ from services.video_validation import (
     модерировать_кадры,
     прочитать_видео,
 )
-from utils import as_list
+from utils import public_photos
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ async def _to_out(
         author_id=reel.user_id,
         author_name=profile.display_name if profile else "",
         author_age=age,
-        author_photo=(as_list(profile.photos)[0] if profile and as_list(profile.photos) else ""),
+        author_photo=(public_photos(profile.photos)[0] if profile and public_photos(profile.photos) else ""),
         video_url=reel.video_url,
         cover_url=reel.cover_url,
         caption=reel.caption,
@@ -402,8 +402,8 @@ async def list_comments(
                 author_id=c.user_id,
                 author_name=(profiles[c.user_id].display_name if c.user_id in profiles else ""),
                 author_photo=(
-                    as_list(profiles[c.user_id].photos)[0]
-                    if c.user_id in profiles and as_list(profiles[c.user_id].photos)
+                    public_photos(profiles[c.user_id].photos)[0]
+                    if c.user_id in profiles and public_photos(profiles[c.user_id].photos)
                     else ""
                 ),
                 text=c.text,
@@ -474,7 +474,7 @@ async def add_comment(
         id=comment.id,
         author_id=user.id,
         author_name=profile.display_name if profile else "",
-        author_photo=(as_list(profile.photos)[0] if profile and as_list(profile.photos) else ""),
+        author_photo=(public_photos(profile.photos)[0] if profile and public_photos(profile.photos) else ""),
         text=comment.text,
         is_mine=True,
         created_at=comment.created_at,

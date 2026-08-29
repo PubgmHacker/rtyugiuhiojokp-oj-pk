@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
@@ -94,17 +95,23 @@ async def auth_telegram(
 
     tg_data = verify_telegram_init_data(init_data)
 
-    user_str = tg_data.get("user", "{}")
-    if isinstance(user_str, str):
-        tg_user = json.loads(user_str)
-    else:
-        tg_user = user_str
-
-    tg_id = int(tg_user.get("id", 0))
+    user_str = tg_data.get("user")
+    try:
+        tg_user = json.loads(user_str) if isinstance(user_str, str) else user_str
+    except (TypeError, json.JSONDecodeError):
+        raise HTTPException(status_code=401, detail="Invalid Telegram user")
+    if not isinstance(tg_user, dict):
+        raise HTTPException(status_code=401, detail="Invalid Telegram user")
+    try:
+        tg_id = int(tg_user.get("id", 0))
+    except (TypeError, ValueError):
+        tg_id = 0
+    if tg_id <= 0:
+        raise HTTPException(status_code=401, detail="Invalid Telegram user")
     # username из Telegram не храним: он меняется владельцем в любой момент,
     # а имя в анкете человек задаёт сам
-    first_name = tg_user.get("first_name", "")
-    last_name = tg_user.get("last_name", "")
+    first_name = str(tg_user.get("first_name", "") or "")[:50]
+    last_name = str(tg_user.get("last_name", "") or "")[:50]
 
     # Upsert user
     result = await session.execute(select(User).where(User.telegram_id == tg_id))
@@ -118,22 +125,32 @@ async def auth_telegram(
         # из памяти банов: временно забаненному достаётся остаток, а не вечность
         прошлый_бан = await banned_identity_record(session, telegram_id=tg_id)
 
-        user = User(
-            telegram_id=tg_id,
-            role="user",
-            is_banned=прошлый_бан is not None,
-            banned_until=прошлый_бан.banned_until if прошлый_бан else None,
-        )
-        session.add(user)
-        await session.flush()
-        if прошлый_бан is not None:
-            logger.warning(f"Повторная регистрация забаненного telegram_id={tg_id}")
-        # Create empty profile
-        profile = Profile(
-            user_id=user.id,
-            display_name=f"{first_name} {last_name}".strip(),
-        )
-        session.add(profile)
+        try:
+            # Два одновременных открытия Mini App не должны превращать
+            # UNIQUE(telegram_id) в 500: второй запрос использует уже
+            # созданного пользователя.
+            async with session.begin_nested():
+                user = User(
+                    telegram_id=tg_id,
+                    role="user",
+                    is_banned=прошлый_бан is not None,
+                    banned_until=прошлый_бан.banned_until if прошлый_бан else None,
+                )
+                session.add(user)
+                await session.flush()
+                session.add(
+                    Profile(
+                        user_id=user.id,
+                        display_name=f"{first_name} {last_name}".strip(),
+                    )
+                )
+            if прошлый_бан is not None:
+                logger.warning(f"Повторная регистрация забаненного telegram_id={tg_id}")
+        except IntegrityError:
+            result = await session.execute(select(User).where(User.telegram_id == tg_id))
+            user = result.scalar_one_or_none()
+            if user is None:
+                raise
     else:
         user.last_seen_at = datetime.now(timezone.utc)
 

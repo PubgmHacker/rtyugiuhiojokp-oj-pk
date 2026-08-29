@@ -32,7 +32,7 @@ from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import enforce_text_verdict, register_content_strike
 from services.content_reports import подать_жалобу_на_контент
 from services.chat_delivery import reel_preview
-from utils import as_list
+from utils import public_photos
 
 logger = logging.getLogger(__name__)
 
@@ -172,8 +172,8 @@ async def get_room_messages(
                 sender_id=m.sender_id,
                 sender_name=(profiles[m.sender_id].display_name if m.sender_id in profiles else ""),
                 sender_photo=(
-                    as_list(profiles[m.sender_id].photos)[0]
-                    if m.sender_id in profiles and as_list(profiles[m.sender_id].photos)
+                    public_photos(profiles[m.sender_id].photos)[0]
+                    if m.sender_id in profiles and public_photos(profiles[m.sender_id].photos)
                     else ""
                 ),
                 text=m.text,
@@ -224,7 +224,7 @@ async def send_room_message(
         id=message.id,
         sender_id=user.id,
         sender_name=profile.display_name if profile else "",
-        sender_photo=(as_list(profile.photos)[0] if profile and as_list(profile.photos) else ""),
+        sender_photo=(public_photos(profile.photos)[0] if profile and public_photos(profile.photos) else ""),
         text=message.text,
         is_mine=True,
         created_at=message.created_at,

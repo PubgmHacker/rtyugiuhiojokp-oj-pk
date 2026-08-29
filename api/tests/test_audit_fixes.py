@@ -8,9 +8,69 @@
 from __future__ import annotations
 
 import io
+import hashlib
+import hmac
+import json
+import time
+from urllib.parse import urlencode
 
 import pytest
+from fastapi import HTTPException
 from PIL import Image
+
+
+def test_public_photos_не_выдаёт_telegram_file_id():
+    """Публичные карточки не должны раскрывать внутренний идентификатор бота."""
+    from utils import public_photos
+
+    assert public_photos([
+        "AgAA_fake_telegram_file_id",
+        "https://cdn.example/photo.jpg",
+        "http://cdn.example/legacy.jpg",
+    ]) == ["https://cdn.example/photo.jpg", "http://cdn.example/legacy.jpg"]
+    assert public_photos(json.dumps(["AgAA_fake", "https://cdn.example/photo.jpg"])) == [
+        "https://cdn.example/photo.jpg"
+    ]
+
+
+def test_геопозиция_с_нулевой_координатой_не_теряется():
+    """Экватор и нулевой меридиан — валидные координаты, не «нет данных»."""
+    from services.matching import _haversine
+
+    assert _haversine(0, 0, 0, 1) == pytest.approx(111, abs=1)
+
+
+def _подписанные_init_data(*, auth_date: int | None = None) -> str:
+    from middleware import auth
+
+    token = "audit-bot-token"
+    auth.settings.BOT_TOKEN = token
+    params = {
+        "auth_date": str(auth_date if auth_date is not None else int(time.time())),
+        "query_id": "audit-query",
+        "user": json.dumps({"id": 123456, "first_name": "Audit"}, separators=(",", ":")),
+    }
+    check = "\n".join(f"{key}={value}" for key, value in sorted(params.items()))
+    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+    params["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    return urlencode(params)
+
+
+def test_telegram_init_data_валидируется_и_отвергает_дубли():
+    from middleware.auth import verify_telegram_init_data
+
+    valid = _подписанные_init_data()
+    assert verify_telegram_init_data(valid)["query_id"] == "audit-query"
+
+    with pytest.raises(HTTPException, match="Invalid initData"):
+        verify_telegram_init_data(valid + "&query_id=duplicate")
+
+
+def test_telegram_init_data_отвергает_будущее_время():
+    from middleware.auth import verify_telegram_init_data
+
+    with pytest.raises(HTTPException, match="initData expired"):
+        verify_telegram_init_data(_подписанные_init_data(auth_date=int(time.time()) + 301))
 
 
 # ── Санитайзер изображений ──────────────────────────────────────
@@ -450,6 +510,17 @@ def test_пересланный_ролик_есть_в_обеих_таблица
     for модель in (Message, RoomMessage):
         индексы = {i.name for i in модель.__table__.indexes}
         assert f"ix_{модель.__tablename__}_reel" in индексы, модель.__tablename__
+
+
+def test_бот_чинит_старую_колонку_videos_до_первого_запроса():
+    """create_all не меняет существующую dating_profiles на старой базе."""
+    from pathlib import Path
+
+    исходник = (
+        Path(__file__).resolve().parents[2] / "bot" / "database" / "connection.py"
+    ).read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS videos" in исходник
+    assert "conn.dialect.name == \"postgresql\"" in исходник
 
 
 # ── Отзыв сессий (JWT) ──────────────────────────────────────────
@@ -2257,7 +2328,7 @@ def test_очередь_не_сравнивает_json_в_sql():
 
     исходник = inspect.getsource(photo_ratings.get_rating_queue)
     assert "Profile.photos !=" not in исходник
-    assert "if as_list(p.photos)" in исходник
+    assert "if public_photos(p.photos)" in исходник
 
 
 def test_каждая_кнопка_бота_имеет_обработчик():

@@ -22,7 +22,7 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import Block, Like, Profile, User
 from models.schemas import LeaderboardEntry, LeaderboardOut
-from utils import as_list
+from utils import public_photos
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +123,8 @@ async def get_leaderboard(
             user_id=uid,
             display_name=(profiles_by_id[uid].display_name if uid in profiles_by_id else ""),
             photo=(
-                as_list(profiles_by_id[uid].photos)[0]
-                if uid in profiles_by_id and as_list(profiles_by_id[uid].photos)
+                public_photos(profiles_by_id[uid].photos)[0]
+                if uid in profiles_by_id and public_photos(profiles_by_id[uid].photos)
                 else ""
             ),
             likes=count,

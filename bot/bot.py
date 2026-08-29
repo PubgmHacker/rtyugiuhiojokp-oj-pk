@@ -13,7 +13,10 @@ from aiohttp import web
 
 from config import BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, WEBHOOK_PORT, REDIS_URL, SENTRY_DSN, SITE_URL, webapp_https, mini_app_url
 from database import init_db, get_or_create_user, get_profile, record_referral, get_user_by_id, track_event
-from handlers import registration, dating, matches, premium, referral, account, onboarding, unban
+from handlers import (
+    registration, dating, matches, premium, referral, account, onboarding, unban,
+    fallback,
+)
 from handlers.onboarding import send_language_picker
 from keyboards import main_kb
 from middlewares.ban_gate import BanGateMiddleware
@@ -310,6 +313,7 @@ def собрать_dispatcher(storage) -> Dispatcher:
     dp.include_router(registration.router)
     dp.include_router(dating.router)
     dp.include_router(matches.router)
+    dp.include_router(fallback.router)
     return dp
 
 

@@ -59,7 +59,7 @@ from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
-from utils import as_list, public_videos
+from utils import as_list, public_photos, public_videos
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ async def _deck_like_profile(
         # чужую анкету в разделе «Гости»
         age=публичный_возраст(profile),
         city=profile.city or "",
-        photos=as_list(profile.photos),
+        photos=public_photos(profile.photos),
         videos=public_videos(profile.videos),
         interests=as_list(profile.interests),
         goal=profile.goal or "",

@@ -62,6 +62,7 @@ export function Button({
       whileTap={isDisabled ? undefined : { scale: 0.96 }}
       transition={{ type: "spring", stiffness: 520, damping: 30 }}
       disabled={isDisabled}
+      aria-busy={loading || undefined}
       onClick={(e) => {
         if (isDisabled) return;
         haptic(hapticKind);
@@ -79,7 +80,14 @@ export function Button({
       `}
       {...rest}
     >
-      {loading ? <Spinner size={size === "lg" ? 22 : 18} /> : children}
+      {loading ? (
+        <>
+          <Spinner size={size === "lg" ? 22 : 18} />
+          <span>{children}</span>
+        </>
+      ) : (
+        children
+      )}
     </motion.button>
   );
 }
@@ -189,6 +197,7 @@ export function Chip({
   return (
     <motion.button
       type="button"
+      aria-pressed={interactive ? !!active : undefined}
       whileTap={interactive ? { scale: 0.94 } : undefined}
       onClick={
         interactive
@@ -199,7 +208,9 @@ export function Chip({
           : undefined
       }
       className={`
-        px-3.5 py-2 rounded-full text-sm font-medium transition-colors
+        min-h-[44px] min-w-[44px] px-3.5 py-2 rounded-full text-sm font-medium
+        transition-colors focus-visible:outline-2 focus-visible:outline-offset-2
+        focus-visible:outline-accent
         ${
           active
             ? "bg-accent text-on-accent"
@@ -294,6 +305,7 @@ export function EmptyState({
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 py-16 text-center">
       <motion.div
+        aria-hidden="true"
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: "spring", stiffness: 260, damping: 20 }}

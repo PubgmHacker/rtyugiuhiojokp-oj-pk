@@ -24,6 +24,7 @@ export default function VoiceRoulette() {
   const [stage, setStage] = useState<Stage>("idle");
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   // Кто на другом конце — иначе пожаловаться не на кого, а голос незнакомца
   // без кнопки жалобы это то, чего в дейтинге быть не должно
   const [partnerId, setPartnerId] = useState<string | null>(null);
@@ -34,29 +35,57 @@ export default function VoiceRoulette() {
   const localRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const iceRef = useRef<RTCIceServer[] | null>(null);
+  const connectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Экран открыт и звонок можно продолжать заводить. Одного mounted-флага
   // недостаточно: start() ждёт getIceServers()/getUserMedia(), и если за это
   // время компонент размонтируют, единственный шанс отпустить уже пойманный
   // микрофон — проверить этот флаг сразу после await, до того как поток и
   // сокет попадут в рефы.
   const activeRef = useRef(true);
+  const startingRef = useRef(false);
+  const startAttemptRef = useRef(0);
 
-  /** Снести соединение, но оставить сокет: он нужен для следующего поиска. */
+  const clearConnectionTimer = useCallback(() => {
+    if (connectionTimerRef.current !== null) {
+      clearTimeout(connectionTimerRef.current);
+      connectionTimerRef.current = null;
+    }
+  }, []);
+
+  /** Снести WebRTC-соединение, но оставить сокет для следующего поиска. */
   const teardownCall = useCallback(() => {
+    clearConnectionTimer();
     pcRef.current?.close();
     pcRef.current = null;
     if (audioRef.current) audioRef.current.srcObject = null;
+  }, [clearConnectionTimer]);
+
+  const releaseLocalMedia = useCallback(() => {
+    localRef.current?.getTracks().forEach((track) => track.stop());
+    localRef.current = null;
   }, []);
+
+  /** Полностью завершить текущий звонок, не отключая экран. */
+  const stopCall = useCallback(() => {
+    // Отменяем незавершённый getIceServers/getUserMedia. Иначе быстрый тап
+    // «завершить» во время системного запроса позже всё равно откроет сокет.
+    startAttemptRef.current += 1;
+    startingRef.current = false;
+    teardownCall();
+    releaseLocalMedia();
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (ws && ws.readyState !== WebSocket.CLOSED) ws.close();
+    setPartnerId(null);
+    setReported(false);
+    setMuted(false);
+    setStage("idle");
+  }, [releaseLocalMedia, teardownCall]);
 
   const stopAll = useCallback(() => {
     activeRef.current = false;
-    teardownCall();
-    localRef.current?.getTracks().forEach((t) => t.stop());
-    localRef.current = null;
-    wsRef.current?.close();
-    wsRef.current = null;
-    setStage("idle");
-  }, [teardownCall]);
+    stopCall();
+  }, [stopCall]);
 
   // Уходя с экрана, обязательно отпускаем микрофон: иначе индикатор записи
   // остаётся гореть, и это выглядит как слежка
@@ -67,6 +96,10 @@ export default function VoiceRoulette() {
 
   const createPeer = useCallback(
     (sendSignal: (payload: unknown) => void) => {
+      // Повторный matched не должен оставлять старый RTCPeerConnection жить
+      // рядом с новым: оба могли бы одновременно захватить аудио.
+      pcRef.current?.close();
+      pcRef.current = null;
       const pc = new RTCPeerConnection({ iceServers: iceRef.current ?? [] });
 
       localRef.current?.getTracks().forEach((track) => {
@@ -87,34 +120,49 @@ export default function VoiceRoulette() {
       };
 
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "connected") setStage("talking");
+        if (pc.connectionState === "connected") {
+          clearConnectionTimer();
+          setStage("talking");
+        }
         if (pc.connectionState === "failed") {
           setError("Не удалось соединиться. Попробуйте ещё раз.");
-          teardownCall();
-          setStage("idle");
+          stopCall();
         }
       };
 
       pcRef.current = pc;
+      connectionTimerRef.current = setTimeout(() => {
+        if (pcRef.current !== pc || pc.connectionState === "connected") return;
+        setError("Соединение не установилось. Попробуйте ещё раз.");
+        stopCall();
+      }, 20_000);
       return pc;
     },
-    [teardownCall]
+    [clearConnectionTimer, stopCall]
   );
 
   const start = useCallback(async () => {
+    if (!activeRef.current || startingRef.current) return;
+    startingRef.current = true;
+    const attempt = ++startAttemptRef.current;
     setError("");
+    setNotice("");
+    setStage("waiting");
     haptic("light");
 
     let stream: MediaStream | null = null;
     try {
       if (!iceRef.current) iceRef.current = await getIceServers();
-      if (!activeRef.current) return;
+      if (!activeRef.current || attempt !== startAttemptRef.current) return;
 
       if (!localRef.current) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
     } catch {
+      if (!activeRef.current || attempt !== startAttemptRef.current) return;
       setError("Нужен доступ к микрофону — разрешите его в настройках браузера");
+      setStage("idle");
+      startingRef.current = false;
       return;
     }
 
@@ -122,76 +170,98 @@ export default function VoiceRoulette() {
     // cleanup-эффект уже отработал и второй раз не сработает, так что
     // отпустить только что пойманный микрофон и не открывать сокет нужно
     // здесь, а не полагаться на размонтирование.
-    if (!activeRef.current) {
+    if (!activeRef.current || attempt !== startAttemptRef.current) {
       stream?.getTracks().forEach((t) => t.stop());
       return;
     }
     if (stream) localRef.current = stream;
 
-    setStage("waiting");
+    startingRef.current = false;
 
     const token = localStorage.getItem("sd_token") ?? "";
     const url = `${WS_URL.replace(/^http/, "ws")}/api/voice/ws/roulette?token=${token}`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
-    const sendSignal = (payload: unknown) =>
-      ws.send(JSON.stringify({ type: "signal", payload }));
+    const sendSignal = (payload: unknown) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "signal", payload }));
+      }
+    };
 
-    ws.onopen = () => ws.send(JSON.stringify({ type: "find" }));
+    ws.onopen = () => {
+      if (activeRef.current && wsRef.current === ws) {
+        ws.send(JSON.stringify({ type: "find" }));
+      }
+    };
 
     ws.onmessage = async (event) => {
-      const data = JSON.parse(event.data);
+      if (!activeRef.current || wsRef.current !== ws) return;
+      try {
+        const data = JSON.parse(event.data);
 
-      if (data.type === "matched") {
-        setPartnerId(data.partner_id ?? null);
-        setReported(false);
-        const pc = createPeer(sendSignal);
-        // Offer шлёт только тот, кого сервер назначил инициатором: иначе оба
-        // отправят offer и соединение не соберётся
-        if (data.initiator) {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          sendSignal({ sdp: offer });
-        }
-        return;
-      }
-
-      if (data.type === "signal") {
-        const pc = pcRef.current ?? createPeer(sendSignal);
-        const { sdp, candidate } = data.payload ?? {};
-
-        if (sdp) {
-          await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-          if (sdp.type === "offer") {
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sendSignal({ sdp: answer });
+        if (data.type === "matched") {
+          setPartnerId(data.partner_id ?? null);
+          setReported(false);
+          const pc = createPeer(sendSignal);
+          // Offer шлёт только тот, кого сервер назначил инициатором: иначе оба
+          // отправят offer и соединение не соберётся
+          if (data.initiator) {
+            const offer = await pc.createOffer();
+            if (!activeRef.current || pcRef.current !== pc) return;
+            await pc.setLocalDescription(offer);
+            sendSignal({ sdp: offer });
           }
-        } else if (candidate) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch {
-            /* кандидат мог прийти до описания — WebRTC переживает */
-          }
+          return;
         }
-        return;
-      }
 
-      if (data.type === "partner_left") {
-        haptic("warning");
-        teardownCall();
-        setStage("idle");
-        setError("Собеседник отключился");
+        if (data.type === "signal") {
+          const pc = pcRef.current ?? createPeer(sendSignal);
+          const { sdp, candidate } = data.payload ?? {};
+
+          if (sdp) {
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+            if (sdp.type === "offer") {
+              const answer = await pc.createAnswer();
+              if (!activeRef.current || pcRef.current !== pc) return;
+              await pc.setLocalDescription(answer);
+              sendSignal({ sdp: answer });
+            }
+          } else if (candidate) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch {
+              /* кандидат мог прийти до описания — WebRTC переживает */
+            }
+          }
+          return;
+        }
+
+        if (data.type === "partner_left") {
+          haptic("warning");
+          stopCall();
+          setError("Собеседник отключился");
+        }
+      } catch {
+        if (!activeRef.current) return;
+        setError("Не удалось установить голосовое соединение");
+        stopCall();
       }
     };
 
-    ws.onerror = () => setError("Нет связи с сервером");
+    ws.onerror = () => {
+      if (activeRef.current && wsRef.current === ws) setError("Нет связи с сервером");
+    };
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
       teardownCall();
-      setStage((cur) => (cur === "idle" ? cur : "idle"));
+      releaseLocalMedia();
+      wsRef.current = null;
+      setPartnerId(null);
+      setReported(false);
+      if (activeRef.current) setStage("idle");
     };
-  }, [createPeer, teardownCall]);
+  }, [createPeer, releaseLocalMedia, stopCall, teardownCall]);
 
   const report = useCallback(async () => {
     if (!partnerId || reported) return;
@@ -199,23 +269,32 @@ export default function VoiceRoulette() {
     try {
       await reportUser(partnerId, "harassment", "Жалоба из голосовой рулетки");
       setReported(true);
-      setError("Жалоба отправлена — модератор разберётся");
       // Разрываем звонок: продолжать разговор с тем, на кого пожаловался,
       // человек почти наверняка не хочет
-      teardownCall();
-      setStage("idle");
+      stopCall();
+      setNotice("Жалоба отправлена — модератор разберётся");
     } catch {
       haptic("error");
       setError("Не удалось отправить жалобу");
     }
-  }, [partnerId, reported, teardownCall]);
+  }, [partnerId, reported, stopCall]);
 
   const next = useCallback(() => {
     haptic("light");
+    setError("");
+    setNotice("");
     teardownCall();
-    setStage("waiting");
-    wsRef.current?.send(JSON.stringify({ type: "find" }));
-  }, [teardownCall]);
+    setPartnerId(null);
+    setReported(false);
+    const ws = wsRef.current;
+    if (localRef.current && ws?.readyState === WebSocket.OPEN) {
+      setStage("waiting");
+      ws.send(JSON.stringify({ type: "find" }));
+    } else {
+      stopCall();
+      void start();
+    }
+  }, [start, stopCall, teardownCall]);
 
   const toggleMute = useCallback(() => {
     const track = localRef.current?.getAudioTracks()[0];
@@ -263,6 +342,11 @@ export default function VoiceRoulette() {
             {error}
           </p>
         )}
+        {notice && (
+          <p role="status" aria-live="polite" className="mt-4 text-[13.5px] text-success max-w-[280px]">
+            {notice}
+          </p>
+        )}
 
         {stage !== "idle" && (
           <div className="flex items-center gap-3 mt-8">
@@ -300,7 +384,7 @@ export default function VoiceRoulette() {
             )}
 
             <button
-              onClick={stopAll}
+              onClick={stopCall}
               aria-label="Завершить"
               className="w-14 h-14 rounded-full bg-danger text-white flex items-center
                          justify-center active:scale-95 transition-transform"

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select, text, func, and_, not_, or_, case, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.exc import IntegrityError
 
 from config import DATABASE_URL
 from services.plans import tier_from_plan, tier_rank
@@ -65,9 +66,19 @@ def _session_cls() -> async_sessionmaker[AsyncSession]:
 
 
 async def init_db():
-    """Create tables if they don't exist."""
+    """Create tables and repair the one legacy column create_all cannot add."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Railway может поднять бот раньше API. ``create_all`` проверяет
+        # таблицы, но не добавляет новые колонки в уже существующие — именно
+        # так старый dating_profiles остался без videos и любой вход начал
+        # получать 500. API накатывает Alembic, а бот держит здесь маленькую
+        # идемпотентную страховку для общей критичной схемы.
+        if conn.dialect.name == "postgresql":
+            await conn.execute(text(
+                "ALTER TABLE dating_profiles "
+                "ADD COLUMN IF NOT EXISTS videos JSON NOT NULL DEFAULT '[]'"
+            ))
     logger.info("Database tables ensured")
 
 
@@ -105,18 +116,30 @@ async def get_or_create_user(telegram_id: int, username: str = "", name: str = "
                             delete(BannedIdentity).where(or_(*conds))
                         )
                         logger.info(f"Бан истёк и снят в боте: user={user.id}")
-                user.last_seen_at = datetime.now()
+                user.last_seen_at = datetime.now(timezone.utc)
                 await session.flush()
                 return _user_to_dict(user)
 
-            user = User(telegram_id=telegram_id, role="user")
-            session.add(user)
-            await session.flush()
-
-            # Create empty profile
-            profile = Profile(user_id=user.id, display_name=name)
-            session.add(profile)
-            await session.flush()
+            try:
+                # Два одновременных Telegram update не должны падать на
+                # UNIQUE(telegram_id): второй запрос использует уже созданную
+                # запись, а не оставляет апдейт без db_user.
+                async with session.begin_nested():
+                    user = User(telegram_id=telegram_id, role="user")
+                    session.add(user)
+                    await session.flush()
+                    session.add(Profile(user_id=user.id, display_name=name))
+                    await session.flush()
+            except IntegrityError:
+                result = await session.execute(
+                    select(User).where(User.telegram_id == telegram_id)
+                )
+                user = result.scalar_one_or_none()
+                if user is None:
+                    raise
+                user.last_seen_at = datetime.now(timezone.utc)
+                await session.flush()
+                return _user_to_dict(user)
 
             logger.info(f"New user registered: {telegram_id} @{username}")
             return _user_to_dict(user)
@@ -600,9 +623,20 @@ async def record_referral(referrer_id: str, invited_id: str) -> dict:
                 referrer_exists = result.scalar_one_or_none() is not None
 
                 if not already and is_fresh and referrer_exists:
-                    session.add(Referral(referrer_id=referrer_id, invited_id=invited_id))
-                    await session.flush()
-                    counted = True
+                    try:
+                        async with session.begin_nested():
+                            session.add(
+                                Referral(
+                                    referrer_id=referrer_id,
+                                    invited_id=invited_id,
+                                )
+                            )
+                            await session.flush()
+                        counted = True
+                    except IntegrityError:
+                        # Параллельный /start уже засчитал приглашение.
+                        # Сохранить ответ успешным, но не начислить второй раз.
+                        counted = False
 
             result = await session.execute(
                 select(func.count(Referral.id)).where(Referral.referrer_id == referrer_id)

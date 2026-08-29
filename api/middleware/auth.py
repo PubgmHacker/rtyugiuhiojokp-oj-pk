@@ -17,7 +17,12 @@ from database.connection import get_session
 from models.models import User
 
 settings = get_settings()
-security = HTTPBearer()
+# При отсутствии заголовка HTTPBearer по умолчанию отдаёт 403. Клиент Mini
+# App трактует 401 как протухшую сессию и возвращает на экран входа, поэтому
+# отсутствие/неверный Bearer должны иметь единый auth-ответ 401.
+security = HTTPBearer(auto_error=False)
+
+MAX_TELEGRAM_INIT_DATA_LENGTH = 8192
 
 #: Машинный код бана в теле ответа. Тот же литерал ждёт перехватчик в
 #: `web/src/lib/api.ts` — при правке менять оба места.
@@ -84,7 +89,21 @@ def verify_telegram_init_data(init_data: str, max_age_seconds: int = 86400) -> d
     """
     from urllib.parse import parse_qsl
 
-    params = dict(parse_qsl(init_data, keep_blank_values=True))
+    if not isinstance(init_data, str) or not init_data:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid initData")
+    if len(init_data) > MAX_TELEGRAM_INIT_DATA_LENGTH:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="initData too long")
+    try:
+        pairs = parse_qsl(
+            init_data,
+            keep_blank_values=True,
+            strict_parsing=True,
+        )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid initData")
+    if not pairs or len({key for key, _ in pairs}) != len(pairs):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid initData")
+    params = dict(pairs)
 
     if not settings.BOT_TOKEN:
         if settings.DEBUG:
@@ -111,20 +130,28 @@ def verify_telegram_init_data(init_data: str, max_age_seconds: int = 86400) -> d
     # Защита от replay: initData не старше суток
     try:
         auth_date = int(params.get("auth_date", "0"))
-    except ValueError:
+    except (TypeError, ValueError):
         auth_date = 0
     now_ts = int(datetime.now(timezone.utc).timestamp())
-    if auth_date and now_ts - auth_date > max_age_seconds:
+    if auth_date <= 0:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid auth_date")
+    if now_ts - auth_date > max_age_seconds or auth_date - now_ts > 300:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="initData expired")
 
     return params
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     session: AsyncSession = Depends(get_session),
 ) -> User:
     """FastAPI dependency: возвращает текущего пользователя по JWT."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = verify_access_token(credentials.credentials)
     user_id = payload.get("sub")
     if not user_id:
@@ -153,9 +180,15 @@ async def get_current_user(
 
 
 async def get_current_token_payload(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """Payload текущего токена — нужен, чтобы отозвать именно его при выходе."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return verify_access_token(credentials.credentials)
 
 

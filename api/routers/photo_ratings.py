@@ -28,7 +28,7 @@ from models.schemas import (
     PhotoRatingTarget,
     PhotoRatingTargets,
 )
-from utils import as_list
+from utils import as_list, public_photos
 
 logger = logging.getLogger(__name__)
 
@@ -87,14 +87,14 @@ async def get_rating_queue(
         .order_by(desc(Profile.boost_until > now), Profile.sample_key)
         .limit(limit * 3)
     )
-    profiles = [p for p in result.scalars().all() if as_list(p.photos)][:limit]
+    profiles = [p for p in result.scalars().all() if public_photos(p.photos)][:limit]
 
     return PhotoRatingTargets(
         targets=[
             PhotoRatingTarget(
                 user_id=p.user_id,
                 display_name=p.display_name or "",
-                photo=as_list(p.photos)[0],
+                photo=public_photos(p.photos)[0],
             )
             for p in profiles
         ]

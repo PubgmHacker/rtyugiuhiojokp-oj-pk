@@ -33,3 +33,12 @@ def public_videos(value) -> list[str]:
     return [
         v for v in as_list(value) if isinstance(v, str) and v.startswith("http")
     ]
+
+
+def public_photos(value) -> list[str]:
+    """Фото, безопасные для выдачи в чужую анкету."""
+    return [
+        photo
+        for photo in as_list(value)
+        if isinstance(photo, str) and photo.startswith(("http://", "https://"))
+    ]

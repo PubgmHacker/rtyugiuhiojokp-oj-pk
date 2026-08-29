@@ -9,7 +9,7 @@
  * лента, которая молча не играет, выглядит поломанной.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { askConfirm } from "../lib/telegram";
 import {
   Heart, MessageCircle, Flag, Plus, Trash2, Volume2, VolumeX, EyeOff, Eye,
@@ -46,6 +46,7 @@ export default function Reels() {
   const [notice, setNotice] = useState("");
   const [сбой, setСбой] = useState(false);
   const loadingRef = useRef(false);
+  const scrollFrameRef = useRef<number | null>(null);
 
   const load = useCallback(
     async (cursor?: string | null) => {
@@ -54,8 +55,12 @@ export default function Reels() {
       try {
         const page = await getReels(cursor);
         setReels((cur) => (cursor && cur ? [...cur, ...page.reels] : page.reels));
-        setBefore(page.next_before ?? null);
-        if (!page.reels.length) setExhausted(true);
+        const nextBefore = page.next_before ?? null;
+        setBefore(nextBefore);
+        // Последняя непустая страница тоже заканчивается без курсора. Иначе
+        // следующий scroll вызывает load(null) и заменяет ленту первой
+        // страницей вместо завершения пагинации.
+        if (!page.reels.length || !nextBefore) setExhausted(true);
       } catch {
         if (cursor) {
           // Догрузка следующей страницы: лента на месте, хватит плашки
@@ -74,7 +79,31 @@ export default function Reels() {
 
   useEffect(() => {
     load();
+    return () => {
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
   }, [load]);
+
+  const handleScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (scrollFrameRef.current !== null) return;
+      const element = event.currentTarget;
+      scrollFrameRef.current = requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        if (
+          !exhausted &&
+          element.scrollHeight - element.scrollTop - element.clientHeight <
+            element.clientHeight
+        ) {
+          void load(before);
+        }
+      });
+    },
+    [before, exhausted, load]
+  );
 
   const handleLike = useCallback(async (reel: Reel) => {
     haptic(reel.liked_by_me ? "light" : "success");
@@ -201,16 +230,7 @@ export default function Reels() {
     <div className="relative h-[calc(100dvh-68px)]">
       <div
         className="h-full overflow-y-auto snap-y snap-mandatory no-scrollbar"
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          // Подгружаем за экран до конца, иначе виден рывок
-          if (
-            !exhausted &&
-            el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight
-          ) {
-            load(before);
-          }
-        }}
+        onScroll={handleScroll}
       >
         {reels.map((reel) => (
           <ReelItem
@@ -323,6 +343,9 @@ function ReelItem({
   onForward: () => void;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const [videoState, setVideoState] = useState<"loading" | "ready" | "error">(
+    "loading"
+  );
   // Просмотр отмечаем один раз за монтирование: карточка перерисовывается на
   // каждый жест, и без этого один ролик давал бы десяток просмотров
   const viewSent = useRef(false);
@@ -366,7 +389,14 @@ function ReelItem({
         loop
         playsInline
         preload="metadata"
+        aria-label={`Видео ${reel.author_name || "автора"}`}
         className="w-full h-full object-contain"
+        onLoadStart={() => setVideoState("loading")}
+        onCanPlay={() => setVideoState("ready")}
+        onPlaying={() => setVideoState("ready")}
+        onWaiting={() => setVideoState("loading")}
+        onStalled={() => setVideoState("loading")}
+        onError={() => setVideoState("error")}
         onClick={() => {
           const video = ref.current;
           if (!video) return;
@@ -374,6 +404,37 @@ function ReelItem({
           else video.pause();
         }}
       />
+
+      {videoState === "loading" && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
+        >
+          <Spinner size={24} />
+          <span className="sr-only">Видео загружается</span>
+        </div>
+      )}
+      {videoState === "error" && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/55 px-8 text-center">
+          <p role="alert" className="text-[14px] text-white">
+            Видео не удалось загрузить
+          </p>
+          <button
+            type="button"
+            className="rounded-full bg-white/15 px-4 py-2 text-[13px] text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            onClick={() => {
+              const video = ref.current;
+              if (!video) return;
+              setVideoState("loading");
+              video.load();
+              video.play().catch(() => {});
+            }}
+          >
+            Повторить
+          </button>
+        </div>
+      )}
 
       {/* Действия справа — тот же столбец, что и в свайп-ленте */}
       <div className="absolute right-3 bottom-32 z-20 flex flex-col items-center gap-4">

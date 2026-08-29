@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, X, Lock, Crown, ChevronRight, MessageCircleHeart } from "lucide-react";
 import {
@@ -39,7 +39,13 @@ type Tab = "likes" | "top";
  * кто кому нравится, — и своей вкладки не заслуживает.
  */
 export default function Likes() {
-  const [tab, setTab] = useState<Tab>("likes");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab") === "top" ? "top" : "likes";
+  const [tab, setTab] = useState<Tab>(requestedTab);
+
+  useEffect(() => {
+    setTab(requestedTab);
+  }, [requestedTab]);
 
   return (
     <div>
@@ -58,6 +64,7 @@ export default function Likes() {
               onClick={() => {
                 haptic("select");
                 setTab(value);
+                setSearchParams(value === "top" ? { tab: "top" } : {});
               }}
               aria-pressed={tab === value}
               className={`flex-1 py-2 rounded-full text-[14px] font-semibold

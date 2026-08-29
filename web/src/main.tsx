@@ -38,7 +38,13 @@ if (
     });
   });
 } else if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.getRegistrations().then((regs) => {
-    regs.forEach((r) => r.unregister());
-  });
+  void navigator.serviceWorker
+    .getRegistrations()
+    .then((regs) => {
+      regs.forEach((r) => void r.unregister());
+    })
+    .catch(() => {
+      // В приватном режиме доступ к SW может быть запрещён — это не должно
+      // превращаться в unhandled rejection и ломать запуск приложения.
+    });
 }

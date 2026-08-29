@@ -88,6 +88,7 @@ function EditForm({ base }: { base: UserProfile }) {
   const [city, setCity] = useState(base.city ?? "");
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [geoBusy, setGeoBusy] = useState(false);
+  const [geoError, setGeoError] = useState("");
   const { photos, addPhoto, removePhoto, makePrimary } = usePhotoSlots(
     base.photos ?? []
   );
@@ -211,13 +212,16 @@ function EditForm({ base }: { base: UserProfile }) {
 
   const detectLocation = async () => {
     setGeoBusy(true);
+    setGeoError("");
     const pos = await getCurrentPosition();
     setGeoBusy(false);
     if (!pos) {
       haptic("error");
+      setGeoError("Не удалось определить геопозицию — проверьте доступ к ней");
       return;
     }
     setCoords({ lat: pos.latitude, lon: pos.longitude });
+    setGeoError("");
     haptic("success");
   };
 
@@ -388,6 +392,11 @@ function EditForm({ base }: { base: UserProfile }) {
               </>
             )}
           </Button>
+          {geoError && (
+            <p className="mt-2 text-caption text-danger text-center" role="alert">
+              {geoError}
+            </p>
+          )}
         </Section>
 
         <Section

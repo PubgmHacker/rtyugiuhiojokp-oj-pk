@@ -554,7 +554,8 @@
   --color-text: #0d1017;
   --color-text-secondary: #333a47;
   --color-text-muted: #5b6473;
-  --color-text-faint: #6f7a86;
+  /* 4.08:1 было недостаточно для мелких таймстемпов и подсказок. */
+  --color-text-faint: #5b6473;
   --color-accent: #e51f5c;
   --color-accent-soft: #ff5c8a;
   --color-accent-deep: #b8134a;
@@ -579,7 +580,8 @@
   --color-text: #221b12;
   --color-text-secondary: #453927;
   --color-text-muted: #6b5c45;
-  --color-text-faint: #8a7a61;
+  /* На фоне #f6f1e7 это держит AA для служебного текста. */
+  --color-text-faint: #6b5c45;
   --color-accent: #b4531f;
   --color-accent-soft: #d97742;
   --color-accent-deep: #8e3d12;
@@ -614,6 +616,13 @@
   --color-accent-deep: #a87f18;
   --color-accent-dim: #2a2110;
   --color-on-accent: #17130b;
+}
+
+/* Утилита `outline-none` используется в старых формах, но не должна
+   выключать единственный видимый индикатор клавиатурного фокуса. */
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--color-accent) !important;
+  outline-offset: 2px;
 }
 
 /* Живой фон отвечает схеме: верх-слева — flame-start / акцент,
