@@ -28,6 +28,11 @@ _MIGRATIONS = [
     # Страховка для баз, заведённых до Alembic: идемпотентные ALTER'ы, которые
     # create_all не делает. Основной путь изменения схемы — миграции ниже.
     "ALTER TABLE dating_users ALTER COLUMN telegram_id TYPE BIGINT",
+    # До появления Alembic старая база могла быть помечена как актуальная
+    # через create_all. Он не добавляет колонки в уже существующие таблицы,
+    # поэтому ревизия b8e12f4a97c3 с видео могла считаться применённой, хотя
+    # поле фактически отсутствовало — и любой вход падал при чтении Profile.
+    "ALTER TABLE dating_profiles ADD COLUMN IF NOT EXISTS videos JSON NOT NULL DEFAULT '[]'",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_like_pair ON dating_likes (liker_id, liked_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_match_pair ON dating_matches (user1_id, user2_id)",
 ]
