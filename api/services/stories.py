@@ -19,6 +19,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.models import Match, Profile, Story, StoryView
 from services.r2_storage import delete_photo_from_r2
+from utils import public_photos
+
+
+def _аватар(photos) -> str | None:
+    """Первое ПУБЛИЧНОЕ фото чужой анкеты — как avatar в ленте и зрителях.
+
+    Список анкеты может содержать file_id из бота (человек заполнял анкету
+    там, где R2 ещё не настроен): наружу такие «ссылки» отдавать нельзя —
+    получатель увидит не аватар, а сырой идентификатор. Тот же фильтр, что
+    стоит в деке, лайках и чатах (utils.public_photos).
+    """
+    публичные = public_photos(photos)
+    return публичные[0] if публичные else None
 
 #: Сколько живёт история.
 СРОК = timedelta(hours=24)
@@ -172,7 +185,7 @@ async def лента(session: AsyncSession, user_id: str) -> list[Автор]:
             Автор(
                 user_id=uid,
                 display_name=name or "Без имени",
-                avatar=(photos or [None])[0] if photos else None,
+                avatar=_аватар(photos),
                 count=count,
                 latest_at=latest,
                 has_unseen=seen_count < count,
@@ -320,7 +333,7 @@ async def зрители(
         .limit(limit)
     )
     return [
-        (uid, name or "Без имени", (photos or [None])[0] if photos else None, at)
+        (uid, name or "Без имени", _аватар(photos), at)
         for uid, name, photos, at in result.all()
     ]
 

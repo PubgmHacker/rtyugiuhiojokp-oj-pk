@@ -220,14 +220,24 @@ export interface ChatMessage {
 // ── API Functions ──────────────────────────────────────────────
 
 export async function authWithTelegram(initData: string): Promise<{ token: string; user: UserProfile }> {
-  const { data } = await api.post("/auth/telegram", { initData });
+  // Таймаут длиннее инстансного: холодный старт Railway с миграциями
+  // занимает дольше 15 секунд, и обрыв по таймауту здесь выглядит у
+  // человека как «не удалось войти» без объяснений
+  const { data } = await api.post("/auth/telegram", { initData }, { timeout: 30000 });
+  // Сервер отвечает success:false статусом 200 (пустой initData и т.п.).
+  // Без этой проверки пустой токен сохранялся бы в store, Protected
+  // возвращал бы на /login, авто-вход запускался бы снова — цикл
+  // перезагрузок вместо одного честного сообщения об ошибке
+  if (!data.success || !data.token) {
+    throw new Error("Telegram не передал данные входа. Откройте приложение через бота ещё раз");
+  }
   return { token: data.token, user: data.user };
 }
 
 /** Вход по одноразовому коду из бота (команда /link) — путь для iOS-приложения,
  *  где Telegram initData недоступен. */
 export async function authWithLinkCode(code: string): Promise<{ token: string; user: UserProfile }> {
-  const { data } = await api.post("/auth/link", { code });
+  const { data } = await api.post("/auth/link", { code }, { timeout: 30000 });
   if (!data.success) throw new Error("Неверный или устаревший код");
   return { token: data.token, user: data.user };
 }
@@ -253,7 +263,7 @@ export async function loginByEmail(
   email: string,
   code: string
 ): Promise<{ token: string; user: UserProfile }> {
-  const { data } = await api.post("/auth/email/login", { email, code });
+  const { data } = await api.post("/auth/email/login", { email, code }, { timeout: 30000 });
   if (!data.success) throw new Error("Код неверный или устарел");
   return { token: data.token, user: data.user };
 }

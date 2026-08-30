@@ -82,6 +82,99 @@ def _отметить_схему_свежей() -> None:
     command.stamp(_конфиг_alembic(), "head")
 
 
+def _нейтральный_дефолт(колонка) -> str | None:
+    """Значение по умолчанию для NOT NULL-колонки на легаси-строках.
+
+    Нейтральный эквивалент питоновского default модели: новым записям его
+    и так проставит SQLAlchemy, а существующим строкам нужно хоть что-то,
+    иначе ALTER с NOT NULL на непустой таблице упадёт. Default из модели —
+    не скаляр (фабрика uuid4/list/now) — смотрим по типу колонки. Не
+    придумали значения — возвращаем None: колонка без DEFAULT и правда
+    обязательна, пусть такой ремонт падает громко, а не пишет мусор.
+    """
+    import decimal
+    from datetime import datetime as _datetime
+
+    arg = getattr(колонка.default, "arg", None) if колонка.default else None
+    if callable(arg):
+        arg = None
+    if isinstance(arg, bool):
+        return "TRUE" if arg else "FALSE"
+    if isinstance(arg, (int, float, decimal.Decimal)):
+        return str(arg)
+    if isinstance(arg, str):
+        return f"'{arg.replace(chr(39), chr(39) * 2)}'"
+
+    py_type = колонка.type.python_type
+    if py_type is bool:
+        return "FALSE"
+    if py_type in (int, float, decimal.Decimal):
+        return "0"
+    if py_type is str:
+        return "''"
+    if py_type in (dict, list):
+        return "'[]'"
+    if py_type is _datetime:
+        return "CURRENT_TIMESTAMP"
+    return None
+
+
+async def _догнать_колонки(engine) -> int:
+    """Добавить в существующие таблицы колонки, объявленные в моделях.
+
+    Вторая половина истории с легаси-базой (первая — точечный ALTER для
+    videos в _MIGRATIONS). База, размеченная до Alembic, штампуется как
+    «head» без прогона цепочки: create_all создаёт недостающие ТАБЛИЦЫ,
+    но не трогает существующие, поэтому каждая колонка, добавленная новой
+    ревизией (videos, email, apple_id, locale…), на такой базе отсутствует.
+    Любое чтение модели падает UndefinedColumn-ом — на логине это выглядит
+    как «не удалось войти» у всех сразу.
+
+    Один общий ремонт вместо ALTER'а на каждую колонку: сравниваем схему
+    моделей с фактической и добавляем только недостающие колонки. Колонки
+    не трогаем — как и create_all, ремонт только достраивает: ничего не
+    переименовывает и не удаляет, тип существующей колонки не меняет
+    (разъехавшие типы чинит _MIGRATIONS). Вызовется один раз — на базе без
+    alembic_version; дальше схему ведут миграции.
+    """
+    from sqlalchemy import inspect as sa_inspect, text as sa_text
+    from sqlalchemy.schema import CreateColumn
+
+    from models.models import Base
+
+    stmts: list[str] = []
+
+    def _собрать(sync_conn) -> list[str]:
+        инспектор = sa_inspect(sync_conn)
+        таблицы = set(инспектор.get_table_names())
+        for таблица in Base.metadata.sorted_tables:
+            if таблица.name not in таблицы:
+                continue  # новую таблицу целиком создаст create_all
+            имеющиеся = {c["name"] for c in инспектор.get_columns(таблица.name)}
+            for колонка in таблица.columns:
+                if колонка.name in имеющиеся:
+                    continue
+                определение = str(
+                    CreateColumn(колонка).compile(dialect=sync_conn.dialect)
+                ).strip()
+                if (
+                    not колонка.nullable
+                    and колонка.server_default is None
+                    and "DEFAULT" not in определение.upper()
+                ):
+                    дефолт = _нейтральный_дефолт(колонка)
+                    if дефолт is not None:
+                        определение = f"{определение} DEFAULT {дефолт}"
+                stmts.append(f"ALTER TABLE {таблица.name} ADD COLUMN {определение}")
+        return stmts
+
+    async with engine.begin() as conn:
+        await conn.run_sync(_собрать)
+        for stmt in stmts:
+            await conn.execute(sa_text(stmt))
+    return len(stmts)
+
+
 async def _уборка_историй(интервал: int = 3600) -> None:
     """Снимать истёкшие истории раз в час, вечно.
 
@@ -244,8 +337,18 @@ async def lifespan(app: FastAPI):
                 async with engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
             else:
-                # Чистая база: схему ставит create_all по моделям и сразу
-                # штампуем последнюю ревизию — цепочку догонять нечего.
+                # База без alembic_version. Два случая:
+                #  • чистая база — схему ставит create_all по моделям;
+                #  • легаси-база (таблицы есть, размечена до Alembик) —
+                #    create_all их не достраивает по колонкам, поэтому
+                #    сначала дотягиваем отсутствующие колонки до моделей
+                #    (_догнать_колонки), и только потом штампуем head.
+                # Без этого новая колонка из свежей ревизии считалась
+                # применённой, отсутствовала в таблице — и каждый вход
+                # падал при чтении профиля.
+                добавлено = await _догнать_колонки(engine)
+                if добавлено:
+                    logger.info(f"Legacy schema repair: добавлено колонок: {добавлено}")
                 async with engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
                 await asyncio.to_thread(_отметить_схему_свежей)

@@ -23,6 +23,29 @@ import BrandMark from "../components/BrandMark";
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
 const CODE_LENGTH = 6;
 
+/** Понятный текст сбоя входа вместо одного «не удалось войти» на все случаи.
+ *
+ * Три разные ситуации, которые человек должен различать глазами:
+ * сервер ответил отказом (его текст честнее нашего), сеть отвалилась
+ * (ответа нет вовсе — таймаут, обрыв, недоступный хост), и всё прочее.
+ * Раньше сетевой сбой и отказ сервера выглядели одинаково, и за общей
+ * формулировкой пряталась, например, лежащая бэкенд-недоступность. */
+function ошибкаВхода(e: unknown): string {
+  const err = e as any;
+  if (err?.isAxiosError) {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === "string" && detail) return detail;
+    const безОтвета = err?.code === "ECONNABORTED" || err?.response === undefined;
+    if (безОтвета) {
+      return "Сервер недоступен — проверьте интернет и попробуйте ещё раз через минуту";
+    }
+    return "Не удалось войти. Попробуйте ещё раз.";
+  }
+  // Свои Error из lib/api (success:false, проверка initData) несут готовый текст
+  if (e instanceof Error && e.message) return e.message;
+  return "Не удалось войти. Попробуйте ещё раз.";
+}
+
 function getDeviceId(): string {
   let id = localStorage.getItem("sd_device_id");
   if (!id) {
@@ -74,8 +97,8 @@ export default function Login() {
     try {
       const { token, user } = await authWithTelegram(initData);
       finishLogin(token, user);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Не удалось войти. Попробуйте ещё раз.");
+    } catch (e: unknown) {
+      setError(ошибкаВхода(e));
       haptic("error");
     } finally {
       setLoading(false);
@@ -88,10 +111,12 @@ export default function Login() {
     try {
       const { token, user } = await authWithLinkCode(code);
       finishLogin(token, user);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setError(
-        e?.response?.data?.detail ??
-          "Код неверный или устарел. Запросите новый командой /link у бота."
+        (e as any)?.response?.data?.detail ??
+          (ошибкаВхода(e).startsWith("Сервер недоступен")
+            ? ошибкаВхода(e)
+            : "Код неверный или устарел. Запросите новый командой /link у бота.")
       );
       setCode("");
       haptic("error");
@@ -159,10 +184,15 @@ export default function Login() {
     try {
       const { token, user } = await signInWithApple();
       finishLogin(token, user);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Отмену не показываем ошибкой: человек сам закрыл окно
       if (!(e instanceof ВходОтменён)) {
-        setError("Не удалось войти через Apple. Попробуйте ещё раз");
+        setError(
+          (e as any)?.response?.data?.detail ??
+            (e instanceof Error && !(e as any).isAxiosError && e.message
+              ? e.message
+              : ошибкаВхода(e))
+        );
         haptic("error");
       }
     } finally {
@@ -176,8 +206,14 @@ export default function Login() {
     try {
       const { token, user } = await authDev(getDeviceId());
       finishLogin(token, user);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Гостевой вход недоступен");
+    } catch (e: unknown) {
+      const err = e as any;
+      setError(
+        err?.response?.data?.detail ??
+          (err?.response === undefined || err?.code === "ECONNABORTED"
+            ? "Сервер недоступен — проверьте интернет и попробуйте позже"
+            : "Гостевой вход недоступен")
+      );
       haptic("error");
     } finally {
       setLoading(false);
