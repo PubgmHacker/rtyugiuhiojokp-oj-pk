@@ -43,7 +43,7 @@ import {
 /** Минимальная страница лендинга: канон, кнопка шапки, ссылка на раздел. */
 function страница({
   канон = '<link rel="canonical" href="https://example.org/terms.html">',
-  кнопка = '<a class="btn btn-primary btn-sm" href="https://t.me/simp_dating_bot">Открыть в Telegram</a>',
+  кнопка = '<a class="btn btn-primary btn-sm" href="https://t.me/simpmatchbot">Открыть в Telegram</a>',
   подвал = '<a href="/#how">Как работает</a>',
 } = {}) {
   return `<!DOCTYPE html>\n${канон}\n${кнопка}\n${подвал}\n`;

@@ -114,7 +114,7 @@ export const ЗАМЕНЫ = [
     зачем: "«Открыть в Telegram» внутри Telegram — возврат в приложение",
     было:
       '<a class="btn btn-primary btn-sm" ' +
-      'href="https://t.me/simp_dating_bot">Открыть в Telegram</a>',
+      'href="https://t.me/simpmatchbot">Открыть в Telegram</a>',
     стало: '<a class="btn btn-primary btn-sm" href="/">Вернуться в приложение</a>',
   },
 ];
