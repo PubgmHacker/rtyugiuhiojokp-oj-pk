@@ -69,3 +69,6 @@ web/ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
 
 # ── Аналитика конкурента (локальный референс, не продукт) ──────
 .mimolet-compare/
+
+# ── Playwright CLI (логи прогонов, не артефакт проекта) ────────
+.playwright-cli/
