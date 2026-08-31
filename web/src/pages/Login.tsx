@@ -20,7 +20,7 @@ import BrandMark from "../components/BrandMark";
 
 // Дефолт — рабочий юзернейм: с неверным весь канал привлечения обрывался на
 // первом клике, и это уже ловил аудит на лендинге
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simpmatchbot";
 const CODE_LENGTH = 6;
 
 /** Понятный текст сбоя входа вместо одного «не удалось войти» на все случаи.

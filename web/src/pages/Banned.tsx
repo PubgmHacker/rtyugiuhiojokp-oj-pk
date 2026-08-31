@@ -21,7 +21,7 @@ import { legalUrl, SUPPORT_EMAIL, type LegalPage } from "../lib/legal";
 import { haptic } from "../lib/haptics";
 import { Button } from "../components/ui";
 
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simpmatchbot";
 /** Цена досрочной разблокировки — та же, что в боте (UNBAN_PRICE_RUB). */
 const UNBAN_PRICE_RUB = Number(import.meta.env.VITE_UNBAN_PRICE_RUB) || 349;
 

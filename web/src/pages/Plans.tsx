@@ -31,7 +31,7 @@ import {
 import { useStore } from "../lib/store";
 import { Button, Card, LoadError, ScreenHeader, Skeleton, Spinner } from "../components/ui";
 
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simpmatchbot";
 
 /** Уровни в порядке старшинства; бесплатный в витрине покупать нечего.
  *

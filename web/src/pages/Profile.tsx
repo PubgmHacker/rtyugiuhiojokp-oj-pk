@@ -53,7 +53,7 @@ import { getCurrentPosition, openExternal } from "../lib/native";
 import { Button, Card, Chip, LoadError, Skeleton, Toggle, VerifiedBadge, Spinner } from "../components/ui";
 import EmailRecovery from "../components/EmailRecovery";
 
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simp_dating_bot";
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simpmatchbot";
 
 export default function Profile() {
   const navigate = useNavigate();

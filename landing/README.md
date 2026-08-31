@@ -56,11 +56,11 @@ server {
 
 Значения-заглушки, которые нужно обновить на реальные:
 
-1. **Ссылка на бота** — `https://t.me/simp_dating_bot` встречается во всех
+1. **Ссылка на бота** — `https://t.me/simpmatchbot` встречается во всех
    HTML-файлах. Замените на реальное имя бота:
    ```bash
    cd landing
-   sed -i '' 's|t.me/simp_dating_bot|t.me/ВАШ_БОТ|g' *.html
+   sed -i '' 's|t.me/simpmatchbot|t.me/ВАШ_БОТ|g' *.html
    ```
 2. **Домен** — `https://simp.app` в `canonical`, Open Graph,
    `sitemap.xml` и `robots.txt`.
