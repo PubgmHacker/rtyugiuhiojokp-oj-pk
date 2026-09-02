@@ -40,15 +40,10 @@ async def база(tmp_path, monkeypatch):
             люди[tg] = uid
         await s.commit()
 
-    async def _сессия():
-        return Session()
-
     monkeypatch.setattr("database.connection.async_session_factory", Session)
     # Модули импортируют фабрику напрямую — подменяем и у них
     import database.connection as dc
     monkeypatch.setattr(dc, "async_session_factory", Session)
-    from routers import photo_ratings as pr
-    monkeypatch.setattr(pr, "get_session", _сессия)
 
     yield Session, люди
 
@@ -57,10 +52,45 @@ async def база(tmp_path, monkeypatch):
 
 @pytest.fixture
 async def клиент(база):
-    from main import app
+    """HTTP-клиент с сессией из тестовой базы.
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        yield c
+    Сессию подменяем через app.dependency_overrides, а не через атрибут
+    модуля роутера: Depends(get_session) захватил функцию при объявлении
+    маршрута, и setattr на модуль до неё не дотягивался. Прежние подмены
+    (соседний файл прогона мог их не снять) убираем на время теста и
+    возвращаем после — иначе запрос уходил в чужую базу и отвечал 404.
+    """
+    from database.connection import get_session
+    from main import app
+    from middleware.auth import get_current_user
+
+    Session, _ = база
+
+    async def _sess():
+        async with Session() as s:
+            try:
+                yield s
+                await s.commit()
+            except Exception:
+                await s.rollback()
+                raise
+
+    прежние = {
+        get_session: app.dependency_overrides.get(get_session),
+        get_current_user: app.dependency_overrides.get(get_current_user),
+    }
+    app.dependency_overrides[get_session] = _sess
+    # Авторизация настоящая, по JWT из _заголовок — чужую подмену снимаем
+    app.dependency_overrides.pop(get_current_user, None)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            yield c
+    finally:
+        for ключ, значение in прежние.items():
+            if значение is None:
+                app.dependency_overrides.pop(ключ, None)
+            else:
+                app.dependency_overrides[ключ] = значение
 
 
 def _заголовок(uid: str) -> dict:

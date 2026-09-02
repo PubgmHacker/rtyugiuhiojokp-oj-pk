@@ -83,7 +83,9 @@ async def попробуй_бота(tmp_path, monkeypatch):
     from database.connection import get_session
     app.dependency_overrides[get_session] = _sess
 
-    return {"app": app, "юзер_id": юзера_id}
+    yield {"app": app, "юзер_id": юзера_id}
+    # Подмену снимаем — иначе она утекала в следующие файлы прогона
+    app.dependency_overrides.pop(get_session, None)
 
 
 @pytest.mark.asyncio

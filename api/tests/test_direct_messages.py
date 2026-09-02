@@ -160,6 +160,11 @@ async def клиент(app, три_человека, monkeypatch):
         c.журнал_локов = журнал_локов  # type: ignore[attr-defined]
         yield c
 
+    # Подмены снимаем: без этого они утекали в следующие файлы прогона —
+    # оценка фото ловила 404 «Анкета не найдена» из чужой базы.
+    app.dependency_overrides.pop(get_session, None)
+    app.dependency_overrides.pop(get_current_user, None)
+
 
 async def test_бесплатному_личка_без_лайка_закрыта(клиент, три_человека):
     """Free — тариф не позволяет вовсе, а не «лимит на сегодня 0»."""

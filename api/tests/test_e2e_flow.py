@@ -114,6 +114,11 @@ async def клиент(app, живая_база, monkeypatch):
         c.от_имени = lambda uid: текущий.update(id=uid)  # type: ignore[attr-defined]
         yield c
 
+    # Подмены снимаем: без этого они утекали в следующие файлы прогона —
+    # оценка фото ловила 404 «Анкета не найдена» из чужой базы.
+    app.dependency_overrides.pop(get_session, None)
+    app.dependency_overrides.pop(get_current_user, None)
+
 
 async def test_путь_от_деки_до_мэтча(клиент, живая_база):
     """Главный путь продукта целиком, на настоящей базе."""
