@@ -257,17 +257,6 @@ export default function Login() {
   // Композиция: бренд сверху, сразу к действию, мелочи внизу
   return (
     <div className="relative h-screen-safe overflow-hidden flex flex-col">
-      <div
-        aria-hidden
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: [
-            "radial-gradient(52% 34% at 22% 8%, rgb(255 45 111 / 0.12), transparent 72%)",
-            "radial-gradient(44% 30% at 78% 4%, rgb(184 22 72 / 0.10), transparent 70%)",
-          ].join(","),
-        }}
-      />
-
       {/* pt-* нельзя рядом с safe-top: оба пишут padding-top, и утилита
           отступа под Dynamic Island проигрывает в каскаде. */}
       <div className="relative px-6 safe-top">

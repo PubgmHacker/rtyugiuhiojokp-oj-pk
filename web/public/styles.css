@@ -7,28 +7,28 @@
 
 /* ── Design tokens ─────────────────────────────────────────────── */
 :root {
-  /* Фон и поверхности — холодная нейтральная база, как в мини-аппе.
+  /* Фон и поверхности — глубокая фиолетовая база «Туманность», как в мини-аппе.
      Значения повторяют web/src/styles/globals.css вручную: лендинг
      собирается без тулчейна, поэтому токены надо менять в двух местах. */
-  --color-bg: #0a0b0f;
-  --color-bg-elevated: #13141a;
-  --color-surface: #16181f;
-  --color-surface-2: #1c1f28;
-  --color-surface-3: #252935;
-  --color-hairline: #272a35;
+  --color-bg: #080615;
+  --color-bg-elevated: #100c26;
+  --color-surface: #140f2e;
+  --color-surface-2: #1c1540;
+  --color-surface-3: #281d58;
+  --color-hairline: #251c4d;
 
-  /* Акцент + края факела (как в web/src/styles/globals.css) */
-  --color-accent: #ff2d6f;
-  --color-accent-soft: #ff5c8a;
-  --color-accent-deep: #d61e5a;
+  /* Акцент — фиолет базовой схемы; края факела остались фирменному знаку-пламени */
+  --color-accent: #a855f7;
+  --color-accent-soft: #c88bff;
+  --color-accent-deep: #7c2fd4;
   --color-flame-start: #ff7a1a;
   --color-flame-end: #b81648;
 
   /* Текст */
   --color-text: #fafbfc;
-  --color-text-secondary: #c8cdd4;
-  --color-text-muted: #9ba1ab;
-  --color-text-faint: #868d96;
+  --color-text-secondary: #cdc7e2;
+  --color-text-muted: #a29bbf;
+  --color-text-faint: #8c86a8;
   --color-on-accent: #ffffff;
 
   /* Семантика */
@@ -72,15 +72,15 @@
   /* CTA: тонкий torch-градиент там, где раньше был плоский акцент. */
   --gradient-torch: linear-gradient(
     145deg,
-    var(--color-flame-start) 0%,
+    var(--color-accent-soft) 0%,
     var(--color-accent) 45%,
-    var(--color-flame-end) 100%
+    var(--color-accent-deep) 100%
   );
   --gradient-dawn: var(--gradient-torch);
   --gradient-dawn-soft: var(--color-accent-soft);
-  --gradient-placeholder: linear-gradient(145deg, #3d2a2f 0%, #261a1d 100%);
+  --gradient-placeholder: linear-gradient(145deg, #1b1538 0%, #110c28 100%);
   --gradient-plum: var(--gradient-placeholder);
-  --gradient-scrim: linear-gradient(to top, rgb(12 8 9 / 0.94) 0%, rgb(12 8 9 / 0.74) 24%, rgb(12 8 9 / 0.28) 52%, transparent 76%);
+  --gradient-scrim: linear-gradient(to top, rgb(8 6 21 / 0.94) 0%, rgb(8 6 21 / 0.74) 24%, rgb(8 6 21 / 0.28) 52%, transparent 76%);
 
   /* Стекло */
   --glass-bg: rgb(255 255 255 / 0.05);
@@ -134,7 +134,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-image:
     radial-gradient(80% 50% at 18% -6%, rgb(255 122 26 / 0.12) 0%, transparent 62%),
-    radial-gradient(70% 45% at 82% -4%, rgb(255 45 111 / 0.1) 0%, transparent 64%);
+    radial-gradient(70% 45% at 82% -4%, rgb(168 85 247 / 0.1) 0%, transparent 64%);
   background-attachment: fixed;
   background-repeat: no-repeat;
 }
@@ -310,7 +310,7 @@ section[id] {
   height: 6px;
   border-radius: 50%;
   background: var(--gradient-dawn);
-  box-shadow: 0 0 0 4px rgb(255 45 111 / 0.18);
+  box-shadow: 0 0 0 4px rgb(168 85 247 / 0.18);
 }
 
 .section-title {
@@ -670,7 +670,7 @@ section[id] {
   inset: 10% -20% -10% -20%;
   background:
     radial-gradient(55% 55% at 35% 35%, rgb(255 122 26 / 0.28), transparent 70%),
-    radial-gradient(55% 55% at 65% 55%, rgb(255 45 111 / 0.22), transparent 72%);
+    radial-gradient(55% 55% at 65% 55%, rgb(168 85 247 / 0.22), transparent 72%);
   filter: blur(40px);
   z-index: -1;
 }
@@ -743,7 +743,7 @@ section[id] {
   inset: 0;
   background:
     radial-gradient(120% 90% at 25% 15%, rgb(255 255 255 / 0.14), transparent 55%),
-    linear-gradient(160deg, #573d44 0%, #3d2a2f 55%, #261a1d 100%);
+    linear-gradient(160deg, #2c2160 0%, #1b1538 55%, #110c28 100%);
 }
 
 .mock-card__badge {
@@ -1008,7 +1008,7 @@ section[id] {
 
 .bento-tile:hover {
   transform: translateY(-3px);
-  border-color: rgb(255 45 111 / 0.35);
+  border-color: rgb(168 85 247 / 0.35);
 }
 
 .bento-tile--feature {
@@ -1029,7 +1029,7 @@ section[id] {
   align-items: center;
   justify-content: center;
   margin-bottom: var(--space-5);
-  background: rgb(255 45 111 / 0.12);
+  background: rgb(168 85 247 / 0.12);
   color: var(--color-accent-soft);
 }
 

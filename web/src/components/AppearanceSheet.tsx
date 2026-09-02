@@ -5,16 +5,19 @@
  * жест примерки, и ожидание сети здесь ломает саму суть выбора. Сервер
  * догоняет, а при отказе (платная схема без подписки) откатываем.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Check, Lock } from "lucide-react";
 import { Sheet } from "./Sheet";
+import { Toggle } from "./ui";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { recordSectionOpen, updateMyProfile } from "../lib/api";
 import {
   APPEARANCES,
   applyAppearance,
+  applyLivingMotion,
   loadAppearance,
+  loadLivingMotion,
   type AppearanceKey,
 } from "../lib/appearance";
 
@@ -30,6 +33,7 @@ export function AppearanceSheet({ open, onClose, onNeedPlus }: Props) {
   const setUser = useStore((s) => s.setUser);
   const [active, setActive] = useState<AppearanceKey>(() => loadAppearance());
   const [error, setError] = useState<string | null>(null);
+  const [motion, setMotion] = useState<boolean>(() => loadLivingMotion());
 
   // Панель смонтирована вместе со страницей, поэтому считаем не
   // монтирование, а показ: иначе каждый заход в профиль выглядел бы
@@ -62,6 +66,15 @@ export function AppearanceSheet({ open, onClose, onNeedPlus }: Props) {
     }
   };
 
+  // Движение орбов — настройка устройства, а не анкеты: применяется сразу,
+  // без сети (см. applyLivingMotion).
+  const переключитьДвижение = () => {
+    haptic("light");
+    const next = !motion;
+    setMotion(next);
+    applyLivingMotion(next);
+  };
+
   return (
     <Sheet
       open={open}
@@ -85,24 +98,37 @@ export function AppearanceSheet({ open, onClose, onNeedPlus }: Props) {
               key={a.key}
               onClick={() => (закрыта ? onNeedPlus() : выбрать(a.key))}
               className={`relative overflow-hidden rounded-[14px] border p-3 text-left transition-transform active:scale-[0.98] ${
-                выбрана ? "border-accent" : "border-hairline"
-              }`}
-              style={{ background: a.swatch[0] }}
+                a.orbs ? "living-preview" : ""
+              } ${выбрана ? "border-accent" : "border-hairline"}`}
+              style={
+                a.orbs
+                  ? ({
+                      background: a.swatch[0],
+                      "--preview-canvas": a.swatch[0],
+                      "--orb-1": a.orbs[0],
+                      "--orb-2": a.orbs[1],
+                      "--orb-3": a.orbs[2],
+                      "--spark": a.spark ?? "transparent",
+                    } as CSSProperties)
+                  : { background: a.swatch[0] }
+              }
             >
-              {/* Предпросмотр — три плашки: фон, поверхность, акцент.
-                  Абстрактные точки не читаются; форма пузыря читается. */}
+              {/* Предпросмотр — схема как она есть: орбы схемы на канве
+                  (.living-preview) и две стеклянные плашки поверх, чтобы
+                  было видно, как читаются поверхности. Светлые схемы без
+                  орбов показывают плашки на ровной канве. */}
               <div className="mb-2.5 space-y-1.5">
                 <div
                   className="h-4 w-3/5 rounded-full"
-                  style={{ background: a.swatch[2] }}
+                  style={{ background: a.orbs ? "rgb(255 255 255 / 0.16)" : a.swatch[2] }}
                 />
                 <div
                   className="ml-auto h-4 w-2/5 rounded-full"
-                  style={{ background: a.swatch[1] }}
+                  style={{ background: a.orbs ? "rgb(255 255 255 / 0.1)" : a.swatch[1] }}
                 />
                 <div
                   className="h-4 w-4/5 rounded-full"
-                  style={{ background: a.swatch[1] }}
+                  style={{ background: a.orbs ? "rgb(255 255 255 / 0.1)" : a.swatch[1] }}
                 />
               </div>
 
@@ -138,6 +164,20 @@ export function AppearanceSheet({ open, onClose, onNeedPlus }: Props) {
           );
         })}
       </div>
+
+      <button
+        onClick={переключитьДвижение}
+        aria-pressed={motion}
+        className="mb-3 flex w-full items-center gap-3 rounded-[14px] border border-hairline bg-surface px-3.5 py-3 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px]">Живое движение</p>
+          <p className="text-caption leading-snug text-text-muted">
+            Орбы фона медленно плывут. Выключи, если отвлекает или бережёшь батарею
+          </p>
+        </div>
+        <Toggle on={motion} />
+      </button>
     </Sheet>
   );
 }

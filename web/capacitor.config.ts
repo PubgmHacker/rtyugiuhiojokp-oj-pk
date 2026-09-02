@@ -3,7 +3,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 /**
  * Конфигурация нативной обёртки Симп.
  * Цвета синхронизированы с дизайн-системой (web/src/styles/globals.css):
- * фон #0a0b0f, акцент #ff2d6f. Сплэш — первый экран, который видит
+ * фон #080615, акцент #a855f7 (базовая схема «Туманность»). Сплэш — первый экран, который видит
  * человек: расхождение с палитрой приложения читается как подмена.
  */
 const config: CapacitorConfig = {
@@ -15,7 +15,7 @@ const config: CapacitorConfig = {
     androidScheme: "https",
     // iosScheme намеренно НЕ "https": WKWebView.handlesURLScheme("https") == true,
     // Capacitor сбрасывает схему на capacitor://, а ассеты уходят в сетевой стек
-    // с ошибкой -1003 (CannotFindHost) — чёрный экран #0a0b0f без React.
+    // с ошибкой -1003 (CannotFindHost) — чёрный экран #080615 без React.
     // Live-reload (только при живом Vite на хосте):
     // url: "http://localhost:5173",
     // cleartext: true,
@@ -25,10 +25,10 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 1200,
       launchAutoHide: true,
-      backgroundColor: "#0a0b0f",
+      backgroundColor: "#080615",
       showSpinner: false,
       iosSpinnerStyle: "small",
-      spinnerColor: "#ff2d6f",
+      spinnerColor: "#a855f7",
       splashFullScreen: true,
       splashImmersive: true,
     },
@@ -46,7 +46,7 @@ const config: CapacitorConfig = {
     // contentInset "never" вместе с safe-area в CSS: раскладку
     // контролирует вёрстка, а не WebView
     contentInset: "never",
-    backgroundColor: "#0a0b0f",
+    backgroundColor: "#080615",
     scrollEnabled: true,
     // true без WKAppBoundDomains в Info.plist ломает загрузку capacitor:// ассетов
     limitsNavigationsToAppBoundDomains: false,

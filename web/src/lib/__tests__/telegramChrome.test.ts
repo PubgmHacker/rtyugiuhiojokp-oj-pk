@@ -181,10 +181,10 @@ describe("следование теме Telegram", () => {
       "../appearance"
     );
 
-    applyAppearance("nebula"); // выбрал сам в шторке оформления
+    applyAppearance("midnight"); // выбрал сам в шторке оформления
     followTelegramTheme();
 
-    expect(loadAppearance()).toBe("nebula");
+    expect(loadAppearance()).toBe("midnight");
   });
 
   it("догоняет тему, переключённую на ходу", async () => {
@@ -195,7 +195,7 @@ describe("следование теме Telegram", () => {
 
     initAppearance();
     const отписаться = followTelegramTheme();
-    expect(loadAppearance()).toBe("dawn");
+    expect(loadAppearance()).toBe("nebula");
 
     tg.colorScheme = "light";
     подписчики.forEach((cb) => cb());

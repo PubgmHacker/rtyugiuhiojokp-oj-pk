@@ -3809,20 +3809,26 @@ def test_цвета_интерфейса_читаемы_и_различимы():
 def test_живой_фон_не_закрашен_сплошной_заливкой():
     """Градиент был написан, но не виден — и по скриншоту это не читалось.
 
-    `body::before` лежит на `z-index: -1`. Отрицательный слой уходит за фон
-    СВОЕГО элемента, но не за фон предка. Пока `background: var(--color-bg)`
-    стоял на `body`, непрозрачная заливка закрывала собственный
-    псевдоэлемент, и фон оставался ровным. Лечится переносом базовой
-    заливки на `html`; `body` и `#root` обязаны быть прозрачными.
+    Живой фон (`components/LivingBackground.tsx`, слой `.living-bg`) лежит
+    на `z-index: -1`. Отрицательный слой уходит за фон СВОЕГО контекста
+    наложения, но не за фон предка. Пока `background: var(--color-bg)`
+    стоял на `body`, непрозрачная заливка закрывала орбы, и фон оставался
+    ровным. Лечится переносом базовой заливки на `html`; `body` и `#root`
+    обязаны быть прозрачными.
     """
     import re
     from pathlib import Path
 
-    css = (
-        Path(__file__).resolve().parents[2] / "web" / "src" / "styles" / "globals.css"
-    ).read_text(encoding="utf-8")
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    css = (web / "styles" / "globals.css").read_text(encoding="utf-8")
 
-    assert re.search(r"(?m)^\s*body::before\s*\{", css), "живой фон исчез из стилей"
+    assert re.search(r"(?m)^\s*\.living-bg\s*\{", css), "живой фон исчез из стилей"
+    assert (web / "components" / "LivingBackground.tsx").exists(), (
+        "компонент живого фона исчез"
+    )
+    assert "<LivingBackground" in (web / "App.tsx").read_text(encoding="utf-8"), (
+        "живой фон не смонтирован в App"
+    )
 
     # Заливка на html — есть; на body/#root — нет.
     assert re.search(r"\bhtml\s*\{[^}]*background:\s*var\(--color-bg\)", css), (

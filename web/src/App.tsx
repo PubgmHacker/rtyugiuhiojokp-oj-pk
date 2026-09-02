@@ -32,6 +32,7 @@ import { Spinner } from "./components/ui";
 // иначе весь интерфейс приезжает одним куском при первом открытии
 import Discover from "./pages/Discover";
 import Login from "./pages/Login";
+import { LivingBackground } from "./components/LivingBackground";
 
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const EditProfile = lazy(() => import("./pages/EditProfile"));
@@ -324,6 +325,9 @@ export default function App() {
     // CSS-ветка в globals.css её не покрывает — Framer анимирует из JS.
     <MotionConfig reducedMotion="user">
     <BrowserRouter>
+      {/* Орбы схемы под всеми экранами, включая вход: атмосфера — часть
+          продукта, а не награда за авторизацию */}
+      <LivingBackground />
       <OfflineBanner />
       <TelegramBack />
       {/* Исключение в любом экране не должно оставлять белый экран без выхода */}

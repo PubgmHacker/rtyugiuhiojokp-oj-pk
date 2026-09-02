@@ -11,15 +11,18 @@ from services.plans import tier_allows
 
 #: Все схемы. Порядок = порядок в списке выбора.
 THEME_KEYS: tuple[str, ...] = (
-    "dawn", "midnight", "graphite", "light", "sepia", "nebula", "goldleaf",
+    "nebula", "dawn", "midnight", "graphite", "light", "sepia", "goldleaf",
 )
 
-#: Схема по умолчанию — базовые токены дизайн-системы.
-DEFAULT_THEME = "dawn"
+#: Схема по умолчанию — базовые токены дизайн-системы. «Туманность»:
+#: ключ исторический (была платной), переименовывать нельзя — заперт в
+#: анкетах и localStorage клиентов.
+DEFAULT_THEME = "nebula"
 
-#: Платные. Ровно две: оформление продаётся плохо, если бесплатных мало,
-#: и человек решает, что приложение выкрашено в подписку.
-PREMIUM_THEMES: frozenset[str] = frozenset({"nebula", "goldleaf"})
+#: Платные. Одна: оформление продаётся плохо, если бесплатных мало, и
+#: человек решает, что приложение выкрашено в подписку. Кастомное
+#: оформление по подписке появится отдельным слоем поверх схем.
+PREMIUM_THEMES: frozenset[str] = frozenset({"goldleaf"})
 
 
 def нормализовать(key: str | None) -> str:

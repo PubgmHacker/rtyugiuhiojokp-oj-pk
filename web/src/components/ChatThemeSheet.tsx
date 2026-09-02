@@ -58,7 +58,7 @@ export function ChatThemeSheet({
 
   const [mine, setMine] = useState("#ff2d6f");
   const [theirs, setTheirs] = useState("#1c1f28");
-  const [bg, setBg] = useState("#0a0b0f");
+  const [bg, setBg] = useState("#080615");
   const [pattern, setPattern] = useState("none");
 
   // Панель смонтирована вместе с чатом, поэтому раздел считаем по показу.
@@ -92,7 +92,7 @@ export function ChatThemeSheet({
     if (!open) return;
     setMine(theme?.bubble_mine_color || "#ff2d6f");
     setTheirs(theme?.bubble_theirs_color || "#1c1f28");
-    setBg(theme?.background_color || "#0a0b0f");
+    setBg(theme?.background_color || "#080615");
     setPattern(theme?.pattern_key || "none");
   }, [open, theme]);
 

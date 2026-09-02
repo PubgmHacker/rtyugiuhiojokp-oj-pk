@@ -27,11 +27,35 @@ export interface Appearance {
   hint: string;
   /** Точки предпросмотра: фон, поверхность, акцент. */
   swatch: [string, string, string];
+  /**
+   * Три орба живого фона — как в Plink (V4Theme: accent, second, third).
+   * `null` — схема без орбов: светлым цветное пятно читается грязью на
+   * экране, а не воздухом, поэтому «День» и «Сепия» остаются ровными.
+   */
+  orbs: [string, string, string] | null;
+  /**
+   * Искра — четвёртое, маленькое и светлое пятно контрастного оттенка.
+   * Даёт фону глубину: три близких по кругу цвета без неё читаются одним
+   * пятном. `undefined` — схема без искры (графит обещает «без цвета»).
+   */
+  spark?: string;
   /** Платная схема — доступна с Plus. */
   premium?: boolean;
 }
 
 export const APPEARANCES: Appearance[] = [
+  {
+    // Базовая схема продукта. Ключ заперт в базах и localStorage — не
+    // переименовывать. Токены базовой схемы живут в @theme без атрибута.
+    key: "nebula",
+    name: "Туманность",
+    hint: "Основная: глубокий фиолет, живой свет",
+    swatch: ["#080615", "#1c1540", "#a855f7"],
+    // Фиолет, розовый, индиго — соседи по кругу; блик — лавандово-белый:
+    // тёплый на этой канве читался пылью, холодный — лунным светом.
+    orbs: ["#a855f7", "#ec4899", "#5560ee"],
+    spark: "#e6dcff",
+  },
   {
     // Ключ исторический и заперт в базах и localStorage — не переименовывать.
     // Витринное имя нейтральное: продукт не тематизируется под название.
@@ -39,54 +63,66 @@ export const APPEARANCES: Appearance[] = [
     name: "Классика",
     hint: "Тёмная база, малиновый акцент",
     swatch: ["#0a0b0f", "#1c1f28", "#ff2d6f"],
+    // Факел марки: малина и оранж, третий — розовая магента (328°). Тёмный
+    // край факела #b81648 на канве не виден вовсе; сливового хвоста нет.
+    orbs: ["#ff2d6f", "#ff7a1a", "#e8449a"],
+    spark: "#ffe4b8",
   },
   {
     key: "midnight",
     name: "Полночь",
     hint: "Глубокая синяя, спокойнее к вечеру",
     swatch: ["#05070f", "#151c38", "#4f7cff"],
+    // Как Plink «electric»: акцент, циан, фиолет — соседи по кругу ±35°.
+    orbs: ["#4f7cff", "#38c6ff", "#6a4cff"],
+    spark: "#d6e4ff",
   },
   {
     key: "graphite",
     name: "Графит",
     hint: "Без цвета совсем — только фотографии",
     swatch: ["#0c0c0d", "#1f1f23", "#d8d8dc"],
+    // Орбы без оттенка: дым трёх серых — обещание «без цвета» держится.
+    orbs: ["#8e93a3", "#c9ccd6", "#6b7080"],
   },
   {
     key: "light",
     name: "День",
     hint: "Светлая: на улице читается лучше",
     swatch: ["#f6f7f9", "#eff1f5", "#e51f5c"],
+    orbs: null,
   },
   {
     key: "sepia",
     name: "Сепия",
     hint: "Тёплая бумага, мягче для глаз",
     swatch: ["#f6f1e7", "#efe6d6", "#b4531f"],
-  },
-  {
-    key: "nebula",
-    name: "Туманность",
-    hint: "Фиолетовая, плотная",
-    swatch: ["#080615", "#1c1540", "#a855f7"],
-    premium: true,
+    orbs: null,
   },
   {
     key: "goldleaf",
     name: "Золото",
     hint: "Тёмная с золотом",
     swatch: ["#0b0904", "#1f1a0f", "#d4a72c"],
+    // Как Plink «ember»: золото, оранж, кирпичный — третий обязан быть светлым,
+    // бронза #8a5a12 на тёмной канве не читалась.
+    orbs: ["#d4a72c", "#ff8a3c", "#cf4f2a"],
+    spark: "#fff0d6",
     premium: true,
   },
 ];
 
-export const DEFAULT_APPEARANCE: AppearanceKey = "dawn";
+export const DEFAULT_APPEARANCE: AppearanceKey = "nebula";
 
 const STORAGE_KEY = "sd_appearance";
 //: Схему поставили за человека (по теме Telegram), а не он сам. Флаг нужен,
 //: чтобы отличать «выбрал тёмную» от «мы подставили тёмную по умолчанию»:
 //: первое надо уважать и не трогать, второе — вести за темой Telegram дальше.
 const AUTO_KEY = "sd_appearance_auto";
+//: «Живое движение» — плывут ли орбы фона. По умолчанию включено, как в
+//: Plink (PlinkAppearancePrefs.livingMotion). Хранится только на устройстве:
+//: это про производительность и вкус конкретного телефона, а не про анкету.
+const MOTION_KEY = "sd_living_motion";
 
 export function isAppearance(value: unknown): value is AppearanceKey {
   return APPEARANCES.some((a) => a.key === value);
@@ -108,7 +144,7 @@ export function loadAppearance(): AppearanceKey {
 /**
  * Применить схему к документу.
  *
- * Базовую схему ставим удалением атрибута, а не значением "dawn":
+ * Базовую схему ставим удалением атрибута, а не значением "nebula":
  * иначе селектор :root без атрибута перестал бы работать как база, и
  * добавление схемы требовало бы правки этой функции.
  *
@@ -128,6 +164,21 @@ export function applyAppearance(
   if (auto) localStorage.setItem(AUTO_KEY, "1");
   else localStorage.removeItem(AUTO_KEY);
 
+  // Орбы живого фона (components/LivingBackground.tsx) читают переменные
+  // с <html>. Палитра живёт здесь, а не в CSS, чтобы предпросмотр в шторке
+  // оформления и сам фон красились из одного места.
+  const схема = appearanceByKey(key);
+  if (схема.orbs) {
+    схема.orbs.forEach((цвет, i) => root.style.setProperty(`--orb-${i + 1}`, цвет));
+    if (схема.spark) root.style.setProperty("--spark", схема.spark);
+    else root.style.removeProperty("--spark");
+    root.removeAttribute("data-living");
+  } else {
+    [1, 2, 3].forEach((i) => root.style.removeProperty(`--orb-${i}`));
+    root.style.removeProperty("--spark");
+    root.setAttribute("data-living", "off");
+  }
+
   // Telegram Mini App и iOS-обвязка красят свои панели по этому мета-тегу.
   // Без него шапка остаётся тёмной на светлой схеме — самый заметный шов.
   const bg = getComputedStyle(root).getPropertyValue("--color-bg").trim();
@@ -144,9 +195,30 @@ export function applyAppearance(
   syncTelegramChrome();
 }
 
+/** Плывут ли орбы фона на этом устройстве. */
+export function loadLivingMotion(): boolean {
+  return localStorage.getItem(MOTION_KEY) !== "0";
+}
+
+/**
+ * Включить или заморозить движение орбов.
+ *
+ * Атрибут, а не класс на слое: фон смонтирован один раз в App и не знает о
+ * шторке оформления, а CSS-правило `:root[data-motion="still"]` ставит
+ * анимации на паузу там, где они есть. Орбы замирают на месте — без
+ * прыжка в исходную позу.
+ */
+export function applyLivingMotion(on: boolean): void {
+  const root = document.documentElement;
+  if (on) root.removeAttribute("data-motion");
+  else root.setAttribute("data-motion", "still");
+  localStorage.setItem(MOTION_KEY, on ? "1" : "0");
+}
+
 /** Ставим сохранённую схему до первого кадра — из main.tsx. */
 export function initAppearance(): void {
   applyAppearance(loadAppearance(), { auto: !localStorage.getItem(STORAGE_KEY) });
+  applyLivingMotion(loadLivingMotion());
 }
 
 /**
