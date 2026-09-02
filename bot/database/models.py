@@ -122,7 +122,7 @@ class Profile(Base):
     boost_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Суперлайки из кейсов — см. api/models/models.py
+    # Бонусные суперлайки: паки за Stars и остатки от кейсов — см. api/models/models.py
     bonus_superlikes: Mapped[int] = mapped_column(Integer, default=0)
     # Включения буста, купленные паком за Stars — см. api/models/models.py
     bonus_boosts: Mapped[int] = mapped_column(Integer, default=0)

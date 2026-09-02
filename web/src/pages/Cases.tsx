@@ -1,40 +1,68 @@
 /**
- * Кейсы — бонус подписки.
+ * Кейсы — оформление анкеты, а не расходники.
  *
- * У конкурента из кейса выпадают коллекционные персонажи. Здесь награда
- * двойная: полезная — суперлайки и минуты буста, они работают сразу; и
- * коллекционная — наклейки и рамки карточки, которые больше нигде не
- * достаются. Первая держит подписку, вторая — интерес к самому кейсу.
+ * Три кейса, у каждого свой набор наклеек: «Керопи», «Star Rail», «Хеллоуин».
+ * Из кейса выпадает наклейка его набора — сначала те, которых ещё нет, — а с
+ * небольшим шансом обложка анкеты. Ничего сгораемого: раньше отсюда падали
+ * суперлайки и минуты буста, их тратили и забывали, и повода вернуться к
+ * кейсу не оставалось. Наклейка остаётся навсегда и ложится значком на фото
+ * в анкете — как оформление профиля в Discord. Поэтому кейс стал витриной
+ * внешнего вида, а не лотереей полезностей.
  *
- * Шансы показаны рядом с каждой наградой. Скрытые шансы — ровно то, за что
+ * Шансы редкостей показаны на каждой плитке. Скрытые шансы — ровно то, за что
  * гача-механики и не любят, а честные превращают кейс из ловушки в понятный
  * бонус.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Gift, Star, Zap } from "lucide-react";
+import { Check, Gift, Lock, Sparkles, Sticker as StickerIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   getCaseState,
   openCase,
-  type CaseReward,
+  selectDecor,
+  selectSticker,
+  type CaseDef,
+  type CaseOpenResult,
   type CaseState,
 } from "../lib/api";
+import { decorPreviewShadow } from "../lib/decor";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, Card, LoadError, ScreenHeader, Skeleton, Spinner } from "../components/ui";
-import StickerCollection from "../components/StickerCollection";
+import StickerCollection, { РедкостьПодпись } from "../components/StickerCollection";
 import DecorPicker from "../components/DecorPicker";
+
+/** От ценного к частому: так шансы читаются как «что искать», а не как список. */
+const ПОРЯДОК_РЕДКОСТЕЙ = ["legend", "epic", "rare", "common"];
+const ИМЯ_РЕДКОСТИ: Record<string, string> = {
+  common: "обычные",
+  rare: "редкие",
+  epic: "эпические",
+  legend: "легендарные",
+};
+
+interface Выигрыш {
+  кейс: CaseDef | null;
+  result: CaseOpenResult;
+}
 
 export default function Cases() {
   useSectionOpen("cases");
   const [state, setState] = useState<CaseState | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [дубль, setДубль] = useState(false);
-  const [won, setWon] = useState<CaseReward | null>(null);
+  //: Код открываемого кейса. Один за раз: попытки общие, и две плитки
+  //: одновременно означали бы гонку за последнюю попытку.
+  const [busy, setBusy] = useState<string | null>(null);
+  const [won, setWon] = useState<Выигрыш | null>(null);
+  const [надеваю, setНадеваю] = useState(false);
+  const [надето, setНадето] = useState(false);
   const [error, setError] = useState("");
   const [сбой, setСбой] = useState(false);
+  //: Растёт после каждого дропа — коллекция ниже перечитывается без
+  //: перемонтирования. Обложки отдельно: их витрина грузится сама и редко.
+  const [версия, setВерсия] = useState(0);
+  const [версияОбложек, setВерсияОбложек] = useState(0);
 
   const загрузить = useCallback(() => {
     setСбой(false);
@@ -48,33 +76,68 @@ export default function Cases() {
 
   useEffect(загрузить, [загрузить]);
 
-  const open = useCallback(async () => {
-    if (busy) return;
-    setBusy(true);
+  const open = useCallback(
+    async (код: string) => {
+      if (busy) return;
+      setBusy(код);
+      setError("");
+      setWon(null);
+      setНадето(false);
+      try {
+        const result = await openCase(код);
+        haptic("success");
+        const кодКейса = result.case || код;
+        setWon({ кейс: state?.cases.find((к) => к.code === кодКейса) ?? null, result });
+        setState((cur) =>
+          cur
+            ? {
+                ...cur,
+                left: result.left,
+                per_month: result.per_month,
+                resets_at: result.resets_at ?? cur.resets_at,
+                // Прогресс плитки растёт сразу, не дожидаясь перечитывания:
+                // новая наклейка набора — плюс один к собранному
+                cases: cur.cases.map((к) =>
+                  к.code === кодКейса && result.reward.sticker && !result.duplicate
+                    ? { ...к, owned: Math.min(к.total, к.owned + 1) }
+                    : к
+                ),
+              }
+            : cur
+        );
+        setВерсия((v) => v + 1);
+        if (result.reward.decor) setВерсияОбложек((v) => v + 1);
+      } catch (e: any) {
+        haptic("error");
+        setError(e?.response?.data?.detail ?? "Не удалось открыть кейс");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [busy, state]
+  );
+
+  /** Надеть выпавшее сразу, не ища его в коллекции: дроп → анкета в один тап. */
+  const надеть = useCallback(async () => {
+    if (!won || надеваю || надето) return;
+    const { sticker, decor } = won.result.reward;
+    if (!sticker && !decor) return;
+    setНадеваю(true);
     setError("");
-    setWon(null);
     try {
-      const result = await openCase();
+      if (sticker) await selectSticker(sticker.code);
+      else if (decor) await selectDecor(decor.code);
       haptic("success");
-      setWon(result.reward);
-      setДубль(Boolean(result.duplicate));
-      setState((cur) =>
-        cur
-          ? {
-              ...cur,
-              left: result.left,
-              per_month: result.per_month,
-              resets_at: result.resets_at ?? cur.resets_at,
-            }
-          : cur
-      );
+      setНадето(true);
+      setВерсия((v) => v + 1);
+      if (decor) setВерсияОбложек((v) => v + 1);
     } catch (e: any) {
       haptic("error");
-      setError(e?.response?.data?.detail ?? "Не удалось открыть кейс");
+      setError(e?.response?.data?.detail ?? "Не удалось надеть");
     } finally {
-      setBusy(false);
+      setНадеваю(false);
     }
-  }, [busy]);
+  }, [won, надеваю, надето]);
 
   if (!state) {
     return (
@@ -84,113 +147,177 @@ export default function Cases() {
           <LoadError onRetry={загрузить} />
         ) : (
           <div className="px-4 pt-4 flex flex-col gap-3">
-            <Skeleton className="h-40 rounded-[var(--radius-tile)]" />
-            <Skeleton className="h-32 rounded-[var(--radius-tile)]" />
+            <Skeleton className="h-20 rounded-[var(--radius-tile)]" />
+            <Skeleton className="h-44 rounded-[var(--radius-card)]" />
+            <Skeleton className="h-44 rounded-[var(--radius-card)]" />
+            <Skeleton className="h-44 rounded-[var(--radius-card)]" />
           </div>
         )}
       </div>
     );
   }
 
+  const платно = state.per_month === 0;
+  const награда = won?.result.reward;
+  const можноНадеть = Boolean(награда?.sticker || награда?.decor);
+
   return (
     <div className="pb-6">
       <ScreenHeader title="Кейсы" />
 
       <div className="px-4 pt-3">
-        <Card className="p-5 mb-4 text-center">
-          <motion.div
-            animate={busy ? { rotate: [0, -8, 8, -8, 0] } : { rotate: 0 }}
-            transition={{ duration: 0.5, repeat: busy ? Infinity : 0 }}
-            className="inline-flex items-center justify-center w-20 h-20 mb-3
-                       rounded-full bg-accent/15"
-          >
-            <Gift size={36} className="text-accent" />
-          </motion.div>
+        {/* ── Попытки: одна квота на все кейсы ─────────────────────── */}
+        <Card className="p-4 mb-4">
+          <div className="flex items-center gap-3">
+            <motion.div
+              animate={busy ? { rotate: [0, -8, 8, -8, 0] } : { rotate: 0 }}
+              transition={{ duration: 0.5, repeat: busy ? Infinity : 0 }}
+              className="inline-flex items-center justify-center w-12 h-12 shrink-0
+                         rounded-full bg-accent/15"
+            >
+              <Gift size={22} className="text-accent" />
+            </motion.div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[17px] font-extrabold leading-tight">
+                Попыток: {state.left}
+              </p>
+              <p className="text-caption text-text-muted">
+                {платно
+                  ? `Попытки даются с подпиской${state.required_tier_name ? ` ${state.required_tier_name}` : ""}`
+                  : `${state.per_month} ${plural(state.per_month, "попытка", "попытки", "попыток")} в месяц на вашем уровне, общие на все кейсы` +
+                    (state.left === 0 && state.resets_at
+                      ? ` · обновятся ${когда(state.resets_at)}`
+                      : "")}
+              </p>
+            </div>
+          </div>
 
-          <p className="text-[17px] font-extrabold mb-1">
-            Попыток: {state.left}
-          </p>
-          <p className="text-caption text-text-muted mb-4">
-            {state.per_month === 0
-              ? `Попытки даются с подпиской${state.required_tier_name ? ` ${state.required_tier_name}` : ""}`
-              : `${state.per_month} ${plural(state.per_month, "попытка", "попытки", "попыток")} в месяц на вашем уровне` +
-                (state.left === 0 && state.resets_at
-                  ? ` · обновятся ${когда(state.resets_at)}`
-                  : "")}
-          </p>
-
-          {/* Выигрыш показываем на месте кнопки: отдельная модалка ради одной
-              строки только добавляет тап */}
-          <AnimatePresence mode="wait">
-            {won ? (
-              <motion.div
-                key="won"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="mb-3 px-4 py-3 rounded-[var(--radius-tile)]
-                           bg-success/12 border border-success/30"
-              >
-                <div className="flex items-center gap-3">
-                  {won.sticker && (
-                    <motion.img
-                      initial={{ scale: 0.5, rotate: -12 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      transition={{ type: "spring", stiffness: 340, damping: 16 }}
-                      src={won.sticker.image}
-                      alt=""
-                      className="w-14 h-14 shrink-0"
-                    />
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-[15px] font-bold">Выпало: {won.title}</p>
-                    <p className="text-caption text-text-muted">
-                      {won.sticker
-                        ? дубль
-                          ? `Такая уже есть — начислен суперлайк (${won.sticker.rarity_title})`
-                          : `Новая в коллекции · ${won.sticker.rarity_title}`
-                        : won.code === "boost"
-                          ? "Буст уже включён"
-                          : "Суперлайки добавлены к вашим"}
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
-          {state.per_month === 0 ? (
-            <Link to="/plans" onClick={() => haptic("light")}>
-              <Button size="lg" fullWidth>
+          {платно && (
+            <Link to="/plans" onClick={() => haptic("light")} className="block mt-3">
+              <Button size="md" fullWidth>
                 Оформить подписку
               </Button>
             </Link>
-          ) : (
-            <Button
-              size="lg"
-              fullWidth
-              disabled={busy || state.left === 0}
-              onClick={open}
-            >
-              {busy ? (
-                <Spinner size={20} />
-              ) : state.left === 0 ? (
-                "Попытки закончились"
-              ) : (
-                "Открыть кейс"
-              )}
-            </Button>
-          )}
-
-          {error && (
-            <p role="alert" className="mt-3 text-[13px] text-danger">
-              {error}
-            </p>
           )}
         </Card>
 
-        <h2 className="text-caption text-text-muted mb-2.5 px-1">
-          Что можно выиграть
+        {/* ── Выигрыш: на месте, без модалки, с кнопкой «Надеть» ───── */}
+        <AnimatePresence mode="wait">
+          {won && награда ? (
+            <motion.div
+              key={`${награда.code}-${награда.sticker?.code ?? награда.decor?.code ?? ""}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              role="status"
+              className="mb-4 px-4 py-3 rounded-[var(--radius-tile)]
+                         bg-success/12 border border-success/30"
+            >
+              <div className="flex items-center gap-3">
+                {награда.sticker ? (
+                  <motion.img
+                    initial={{ scale: 0.5, rotate: -18 }}
+                    animate={{ scale: 1, rotate: -6 }}
+                    transition={{ type: "spring", stiffness: 340, damping: 16 }}
+                    src={награда.sticker.image}
+                    alt=""
+                    className="w-16 h-16 shrink-0 object-contain
+                               drop-shadow-[0_3px_8px_rgba(0,0,0,.45)]"
+                  />
+                ) : награда.decor ? (
+                  <motion.div
+                    aria-hidden="true"
+                    initial={{ scale: 0.6 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 340, damping: 16 }}
+                    className="w-12 h-16 shrink-0 rounded-[10px]"
+                    style={{
+                      background: "var(--gradient-placeholder)",
+                      boxShadow: decorPreviewShadow(награда.decor.code),
+                    }}
+                  />
+                ) : null}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-bold">
+                    Выпало: {награда.sticker?.title ?? награда.decor?.title ?? награда.title}
+                  </p>
+                  <p className="text-caption text-text-muted">
+                    {won.кейс ? `Кейс «${won.кейс.title}» · ` : ""}
+                    {награда.sticker ? (
+                      won.result.duplicate ? (
+                        "такая уже есть — повтор отмечен в коллекции"
+                      ) : (
+                        <>
+                          новая в коллекции ·{" "}
+                          <РедкостьПодпись
+                            rarity={награда.sticker.rarity}
+                            title={награда.sticker.rarity_title}
+                          />
+                        </>
+                      )
+                    ) : награда.decor ? (
+                      won.result.duplicate ? (
+                        "такая обложка уже есть"
+                      ) : (
+                        <>
+                          обложка анкеты ·{" "}
+                          <РедкостьПодпись
+                            rarity={награда.decor.rarity}
+                            title={награда.decor.rarity_title}
+                          />
+                        </>
+                      )
+                    ) : null}
+                  </p>
+                </div>
+                {можноНадеть && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={надеваю || надето}
+                    onClick={надеть}
+                    className="shrink-0"
+                  >
+                    {надеваю ? (
+                      <Spinner size={16} />
+                    ) : надето ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Check size={14} strokeWidth={3} />
+                        Надето
+                      </span>
+                    ) : (
+                      "Надеть"
+                    )}
+                  </Button>
+                )}
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {error && (
+          <p role="alert" className="mb-4 px-1 text-[13px] text-danger">
+            {error}
+          </p>
+        )}
+
+        {/* ── Витрина кейсов ────────────────────────────────────────── */}
+        <div className="flex flex-col gap-3">
+          {state.cases.map((к) => (
+            <ПлиткаКейса
+              key={к.code}
+              кейс={к}
+              открываю={busy === к.code}
+              заблокировано={busy !== null || state.left === 0}
+              платно={платно}
+              onOpen={() => open(к.code)}
+            />
+          ))}
+        </div>
+
+        {/* ── Что выпадает — одинаково для всех кейсов ─────────────── */}
+        <h2 className="text-caption text-text-muted mt-6 mb-2.5 px-1">
+          Что выпадает из любого кейса
         </h2>
         <div className="flex flex-col gap-2">
           {state.rewards.map((reward) => (
@@ -199,13 +326,13 @@ export default function Cases() {
               className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
                          bg-surface-2 border border-hairline"
             >
-              {reward.code === "boost" ? (
-                <Zap size={17} className="text-warn shrink-0" />
+              {reward.code === "decor" ? (
+                <Sparkles size={17} className="text-warn shrink-0" />
               ) : (
-                <Star size={17} className="text-info shrink-0" fill="currentColor" />
+                <StickerIcon size={17} className="text-accent shrink-0" />
               )}
               <span className="flex-1 text-[15px]">{reward.title}</span>
-              <span className="text-[13px] font-semibold text-text-muted">
+              <span className="text-[13px] font-semibold text-text-muted tabular-nums">
                 {reward.chance_percent}%
               </span>
             </div>
@@ -213,17 +340,119 @@ export default function Cases() {
         </div>
       </div>
 
-      {/* Коллекция под витриной шансов: сначала «что можно выиграть», потом
+      {/* Коллекция под витриной: сначала «что можно выиграть», потом
           «что уже собрано» — в этом порядке человек и думает */}
-      <StickerCollection />
-
-      {/* Рамка — награда за коллекцию, поэтому строго под ней:
-          обратный порядок показывал бы цель до того, как понятно,
-          чем её брать */}
       <div className="mt-6">
-        <DecorPicker />
+        <StickerCollection версия={версия} />
+      </div>
+
+      {/* Обложка — награда за коллекцию, поэтому строго под ней */}
+      <div className="mt-2 px-4">
+        <DecorPicker key={версияОбложек} />
       </div>
     </div>
+  );
+}
+
+function ПлиткаКейса({
+  кейс,
+  открываю,
+  заблокировано,
+  платно,
+  onOpen,
+}: {
+  кейс: CaseDef;
+  открываю: boolean;
+  заблокировано: boolean;
+  платно: boolean;
+  onOpen: () => void;
+}) {
+  const собрано = кейс.total > 0 && кейс.owned >= кейс.total;
+  //: Цвет свечения приходит с сервера. Новый кейс не должен требовать
+  //: выкладки клиента, а неверный цвет — ломать плитку: CSS просто
+  //: проигнорирует невалидный градиент, и останется ровная поверхность.
+  const акцент = /^#[0-9a-f]{6}$/i.test(кейс.accent) ? кейс.accent : "";
+
+  return (
+    <section
+      aria-label={`Кейс «${кейс.title}»`}
+      className="relative overflow-hidden rounded-[var(--radius-card)]
+                 bg-surface border border-hairline p-4"
+      style={
+        акцент
+          ? {
+              backgroundImage: `radial-gradient(120% 90% at 100% 0%, ${акцент}33, transparent 62%)`,
+              boxShadow: `inset 0 0 0 1px ${акцент}2e`,
+            }
+          : undefined
+      }
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-[17px] font-extrabold leading-tight">{кейс.title}</p>
+          <p className="text-[12.5px] text-text-muted mt-0.5">{кейс.hint}</p>
+          <p className="mt-1.5 text-[12px] text-text-muted tabular-nums">
+            {собрано
+              ? "Набор собран — дальше выпадают обложки, потом повторы"
+              : `Собрано ${кейс.owned} из ${кейс.total}`}
+          </p>
+        </div>
+
+        {/* Веер персонажей — самые ценные из набора: приманка честная,
+            именно они и выпадают, только реже */}
+        {кейс.preview.length > 0 && (
+          <div className="flex -space-x-3 shrink-0 pt-0.5" aria-hidden="true">
+            {кейс.preview.slice(0, 4).map((src, i) => (
+              <img
+                key={src}
+                src={src}
+                alt=""
+                loading="lazy"
+                className="w-11 h-11 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,.45)]"
+                style={{ transform: `rotate(${(i - 1.5) * 8}deg)` }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {ПОРЯДОК_РЕДКОСТЕЙ.filter((r) => кейс.rarity_chances[r] != null).map((r) => (
+          <span
+            key={r}
+            className="px-2 py-0.5 rounded-full bg-surface-2 border border-hairline
+                       text-[11px] font-semibold tabular-nums"
+          >
+            <РедкостьПодпись rarity={r} title={ИМЯ_РЕДКОСТИ[r] ?? r} /> ·{" "}
+            {кейс.rarity_chances[r]}%
+          </span>
+        ))}
+      </div>
+
+      {платно ? (
+        <p className="mt-3 flex items-center gap-1.5 text-[12.5px] text-text-muted">
+          <Lock size={13} className="shrink-0" />
+          Открывается с подпиской
+        </p>
+      ) : (
+        <Button
+          size="md"
+          fullWidth
+          className="mt-3"
+          disabled={заблокировано}
+          onClick={onOpen}
+          aria-label={`Открыть кейс «${кейс.title}»`}
+        >
+          {открываю ? (
+            <Spinner size={20} />
+          ) : заблокировано && !открываю ? (
+            "Попытки закончились"
+          ) : (
+            "Открыть"
+          )}
+        </Button>
+      )}
+    </section>
   );
 }
 

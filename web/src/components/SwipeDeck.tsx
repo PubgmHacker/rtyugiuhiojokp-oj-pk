@@ -295,7 +295,8 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
     try {
       await likeProfile(шаг.profile.id, "pass");
       // Остатки спрашиваем у сервера, а не прибавляем единицу локально:
-      // суперлайк мог уйти из бонусных (кейсы), и они назад не возвращаются —
+      // суперлайк мог уйти из бонусных (начисленных раньше акциями), и они
+      // назад не возвращаются —
       // угаданный счётчик обещал бы то, чего нет
       const [лимиты, квота] = await Promise.all([
         getDailyLimits().catch(() => null),

@@ -297,6 +297,19 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
       {/* Информация о профиле. Правый отступ — под столбец кнопок действий,
           иначе длинное имя уезжает под них */}
       <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 pr-[84px] z-20 pointer-events-none">
+        {/* Наклейка из коллекции — средний значок, «наклеенный» на фото над
+            именем: лица не закрывает, лежит на нижней трети снимка и читается
+            как оформление анкеты, а не как ещё одна иконка в строке. Одна:
+            витрина достижений отвлекала бы от человека */}
+        {profile.sticker && (
+          <img
+            src={profile.sticker}
+            alt=""
+            draggable={false}
+            className="block w-16 h-16 mb-2 -ml-1 -rotate-6 select-none
+                       drop-shadow-[0_3px_8px_rgba(0,0,0,.55)]"
+          />
+        )}
         {profile.match_score != null && (
           <div className="inline-flex items-center gap-1.5 mb-3 px-2.5 py-1 rounded-full glass-strong">
             <Sparkles size={13} className="text-accent" />
@@ -317,15 +330,6 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
           )}
           {/* Галочка живой проверки: человек в анкете — реальный */}
           {profile.is_verified && <VerifiedBadge size={20} />}
-          {/* Наклейка из коллекции — маленький знак характера рядом с именем.
-              Одна: витрина достижений отвлекала бы от человека */}
-          {profile.sticker && (
-            <img
-              src={profile.sticker}
-              alt=""
-              className="w-7 h-7 shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,.5)]"
-            />
-          )}
           {/* «Сейчас в сети» — самый полезный сигнал на карточке: подсказывает,
               ответят ли сегодня. Точное время последнего входа не показываем,
               это была бы слежка */}

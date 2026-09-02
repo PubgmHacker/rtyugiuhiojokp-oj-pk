@@ -546,6 +546,8 @@ class StickerOut(BaseModel):
     rarity: str
     rarity_title: str
     image: str
+    #: Код набора — он же код кейса, из которого наклейка выпадает.
+    set: str = ""
     #: Сколько раз выпала этому человеку. 0 — ещё нет в коллекции.
     owned: int = 0
 
@@ -589,12 +591,38 @@ class CaseRewardOut(BaseModel):
     decor: Optional[DecorOut] = None
 
 
+class CaseOut(BaseModel):
+    """Один кейс на витрине: что за набор и сколько из него уже собрано."""
+
+    code: str
+    title: str
+    hint: str = ""
+    #: Цвет свечения плитки — с сервера, чтобы новый кейс не требовал клиента.
+    accent: str = ""
+    #: Сколько наклеек в наборе и сколько из них уже у человека.
+    total: int = 0
+    owned: int = 0
+    #: Несколько картинок набора для плитки — чтобы было видно, что собирать.
+    preview: list[str] = Field(default_factory=list)
+    #: Доли редкостей внутри набора, процентами: {"common": 60.0, ...}.
+    rarity_chances: dict[str, float] = Field(default_factory=dict)
+
+
+class CaseOpenIn(BaseModel):
+    """Какой кейс открыть. Код обязателен: наборы разные, случайного нет."""
+
+    case: str = Field(min_length=1, max_length=32)
+
+
 class CaseStateOut(BaseModel):
     left: int = 0
     per_month: int = 0
     #: Когда квота обновится — первое число следующего месяца (UTC).
     resets_at: Optional[datetime] = None
+    #: Типы наград и их шансы — одинаковы для всех кейсов.
     rewards: list[CaseRewardOut] = Field(default_factory=list)
+    #: Кейсы в порядке витрины.
+    cases: list[CaseOut] = Field(default_factory=list)
     #: Уровень, с которого кейсы открываются. С сервера, а не словом в
     #: клиенте: фича уже переезжала между уровнями.
     required_tier_name: str = ""
@@ -602,12 +630,23 @@ class CaseStateOut(BaseModel):
 
 class CaseOpenResult(BaseModel):
     reward: CaseRewardOut
+    #: Код открытого кейса — клиент обновляет счётчик именно этой плитки.
+    case: str = ""
     left: int = 0
     per_month: int = 0
     resets_at: Optional[datetime] = None
     #: Повтор наклейки. Возможен только у полной коллекции: пока есть
     #: недостающие, кейс выбирает среди них.
     duplicate: bool = False
+
+
+class StickerSetOut(BaseModel):
+    """Набор наклеек в коллекции: заголовок группы и прогресс по ней."""
+
+    code: str
+    title: str
+    owned: int = 0
+    total: int = 0
 
 
 class StickerCollectionOut(BaseModel):
@@ -618,6 +657,8 @@ class StickerCollectionOut(BaseModel):
     """
 
     stickers: list[StickerOut] = Field(default_factory=list)
+    #: Наборы в порядке витрины — коллекция на экране группируется по ним.
+    sets: list[StickerSetOut] = Field(default_factory=list)
     owned: int = 0
     total: int = 0
     #: Выбранная наклейка — её видят другие в анкете.

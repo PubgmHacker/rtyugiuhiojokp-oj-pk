@@ -192,6 +192,16 @@ function Просмотр({
         )}
 
         <div className="absolute inset-x-0 bottom-0 z-20 p-5 pointer-events-none">
+          {/* Наклейка — там же и такая же, как в деке: над именем, на фото */}
+          {profile.sticker && (
+            <img
+              src={profile.sticker}
+              alt=""
+              draggable={false}
+              className="block w-14 h-14 mb-2 -ml-1 -rotate-6 select-none
+                         drop-shadow-[0_3px_8px_rgba(0,0,0,.55)]"
+            />
+          )}
           <div className="flex items-center gap-2">
             <h2 className="text-[28px] font-extrabold tracking-[-0.03em] leading-none text-white">
               {profile.display_name}
@@ -202,13 +212,6 @@ function Просмотр({
               </span>
             )}
             {profile.is_verified && <VerifiedBadge size={18} />}
-            {profile.sticker && (
-              <img
-                src={profile.sticker}
-                alt=""
-                className="w-6 h-6 shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,.5)]"
-              />
-            )}
             {profile.is_online && (
               <span className="flex items-center gap-1.5 text-[12px] text-white/85">
                 <span

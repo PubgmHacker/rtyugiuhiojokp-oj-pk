@@ -1,14 +1,18 @@
-"""Кейсы — бонус подписки, награды только коллекционные.
+"""Кейсы — бонус подписки, награды только для оформления анкеты.
 
-Попытки не хранятся счётчиком: считаются как «положено по уровню минус
-открыто с начала месяца». Счётчик пришлось бы обнулять по расписанию, и
-пропущенный запуск открыл бы безлимит — тот же приём, что у суперлайков
-и бустов.
+Кейсов три — по одному на набор наклеек (services/cases.py: CASES). Человек
+выбирает кейс и получает наклейку его набора; с небольшим шансом из любого
+кейса выпадает обложка карточки. Расходников (суперлайков, бустов) здесь нет.
 
-Из кейса выпадает либо лимитированная обложка карточки, либо наклейка.
+Попытки общие на все кейсы и не хранятся счётчиком: считаются как «положено
+по уровню минус открыто с начала месяца». Счётчик пришлось бы обнулять по
+расписанию, и пропущенный запуск открыл бы безлимит — тот же приём, что у
+суперлайков и бустов.
+
 Выбор всегда идёт среди того, чего у человека ещё нет: редкая месячная
 попытка не имеет права сгорать на дубликат. Повтор возможен только у
-полностью собранной коллекции — там он честно помечается `duplicate`.
+полностью собранного набора (и всех обложек) — там он честно помечается
+`duplicate`.
 """
 
 from __future__ import annotations
@@ -25,11 +29,11 @@ from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import CaseOpening, DecorOwned, Profile, StickerOwned, User
 from models.schemas import (
-    CaseOpenResult, CaseRewardOut, CaseStateOut, DecorCollectionOut, DecorOut,
-    StickerCollectionOut, StickerOut,
+    CaseOpenIn, CaseOpenResult, CaseOut, CaseRewardOut, CaseStateOut,
+    DecorCollectionOut, DecorOut, StickerCollectionOut, StickerOut, StickerSetOut,
 )
 from services.cases import (
-    REWARD_DECOR, REWARD_STICKER, REWARDS,
+    CASES, REWARD_DECOR, REWARD_STICKER, REWARDS, Case, case_by_code,
     начало_месяца, начало_следующего_месяца, openings_per_month, roll,
 )
 from services.decor import (
@@ -37,7 +41,12 @@ from services.decor import (
 )
 from services.plans import TIER_ORDER
 from services.premium import current_tier
-from services.stickers import Наклейка, выпала as наклейка_выпала, каталог
+from services.stickers import (
+    Наклейка, выпала as наклейка_выпала, каталог, набор, шансы_по_редкости,
+)
+
+#: Порядок редкостей от ценной к обычной — для превью на плитке кейса.
+_РАНГ_РЕДКОСТИ = {"legend": 0, "epic": 1, "rare": 2, "common": 3}
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +65,7 @@ def _наклейка_наружу(н: Наклейка, owned: int = 0) -> Stic
         rarity=н.rarity,
         rarity_title=н.rarity_title,
         image=н.image,
+        set=н.set,
         owned=owned,
     )
 
@@ -82,6 +92,33 @@ def _showcase() -> list[CaseRewardOut]:
         )
         for r in REWARDS
     ]
+
+
+def _кейс_наружу(кейс: Case, мои: set[str]) -> CaseOut:
+    """Плитка кейса: набор, прогресс по нему и несколько картинок-приманок.
+
+    В превью — самые ценные наклейки набора: витрина показывает, ради чего
+    открывать, а прогресс «N из M» — сколько ещё собирать.
+    """
+    наклейки = набор(кейс.code)
+    превью = sorted(наклейки, key=lambda н: _РАНГ_РЕДКОСТИ.get(н.rarity, 9))[:4]
+    return CaseOut(
+        code=кейс.code,
+        title=кейс.title,
+        hint=кейс.hint,
+        accent=кейс.accent,
+        total=len(наклейки),
+        owned=sum(1 for н in наклейки if н.code in мои),
+        preview=[н.image for н in превью],
+        rarity_chances=шансы_по_редкости(кейс.code),
+    )
+
+
+async def _мои_коды_наклеек(session: AsyncSession, user_id: str) -> set[str]:
+    result = await session.execute(
+        select(StickerOwned.code).where(StickerOwned.user_id == user_id)
+    )
+    return set(result.scalars().all())
 
 
 def _минимальный_тариф() -> str:
@@ -112,27 +149,34 @@ async def get_case_state(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Сколько попыток осталось в этом месяце и что можно выиграть."""
+    """Сколько попыток осталось в этом месяце, какие кейсы есть и что в них."""
     tier = await current_tier(session, user.id)
+    мои = await _мои_коды_наклеек(session, user.id)
     return CaseStateOut(
         left=await _openings_left(session, user.id, tier),
         per_month=openings_per_month(tier),
         resets_at=начало_следующего_месяца(datetime.now(timezone.utc)),
         rewards=_showcase(),
+        cases=[_кейс_наружу(к, мои) for к in CASES],
         required_tier_name=_минимальный_тариф(),
     )
 
 
 @router.post("/open", response_model=CaseOpenResult)
 async def open_case(
+    data: CaseOpenIn,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Открыть кейс и записать выпавшее в коллекцию."""
+    """Открыть выбранный кейс и записать выпавшее в коллекцию."""
     tier = await current_tier(session, user.id)
     per_month = openings_per_month(tier)
     if not per_month:
         raise HTTPException(status_code=403, detail="Кейсы доступны с подпиской Plus")
+
+    кейс = case_by_code(data.case.strip())
+    if кейс is None:
+        raise HTTPException(status_code=400, detail="Такого кейса нет")
 
     # Лимит «столько-то в месяц» считается запросом и тут же подтверждается
     # записью. Без блокировки пять параллельных запросов успевают прочитать
@@ -166,8 +210,9 @@ async def open_case(
     мои_обложки = set(result.scalars().all())
 
     # Редкая месячная попытка не сгорает на «уже есть»: если выпавший тип
-    # собран целиком, отдаём другой. Дубликат остаётся только человеку с
-    # полной коллекцией — и он помечается честно.
+    # собран целиком, отдаём другой. Наклейка — только из набора этого кейса.
+    # Дубликат остаётся только человеку с полным набором и всеми обложками —
+    # и он помечается честно.
     хочу = roll().code
     выпавшая_наклейка: Наклейка | None = None
     выпавшая_обложка: Оформление | None = None
@@ -179,16 +224,18 @@ async def open_case(
             хочу = REWARD_STICKER
 
     if хочу == REWARD_STICKER and выпавшая_обложка is None:
-        выпавшая_наклейка = наклейка_выпала(исключая=мои_наклейки)
+        выпавшая_наклейка = наклейка_выпала(
+            исключая=мои_наклейки, набор_код=кейс.code
+        )
         if выпавшая_наклейка is None:
-            # Все наклейки собраны — пробуем обложку, прежде чем сдаться
+            # Набор собран — пробуем обложку, прежде чем сдаться
             выпавшая_обложка = обложка_выпала(мои_обложки)
             if выпавшая_обложка is None:
-                выпавшая_наклейка = наклейка_выпала()
+                выпавшая_наклейка = наклейка_выпала(набор_код=кейс.code)
                 if выпавшая_наклейка is None:
                     # Каталог недоступен (папку не выложили). Отказ, а не
                     # молча съеденная попытка: до записи открытия не дошло
-                    logger.error("Каталог наклеек пуст — кейс не открыть")
+                    logger.error(f"Набор {кейс.code} пуст — кейс не открыть")
                     raise HTTPException(
                         status_code=503, detail="Награды временно недоступны"
                     )
@@ -223,6 +270,7 @@ async def open_case(
             decor=_обложка_наружу(выпавшая_обложка, unlocked=True)
             if выпавшая_обложка else None,
         ),
+        case=кейс.code,
         duplicate=дубликат,
         left=await _openings_left(session, user.id, tier),
         per_month=per_month,
@@ -230,7 +278,7 @@ async def open_case(
     )
     await session.commit()
     logger.info(
-        f"Кейс открыт: user={user.id} reward={итог_код} "
+        f"Кейс открыт: user={user.id} case={кейс.code} reward={итог_код} "
         f"code={(выпавшая_обложка or выпавшая_наклейка).code}"
     )
     return out
@@ -257,6 +305,15 @@ async def my_stickers(
     все = каталог()
     return StickerCollectionOut(
         stickers=[_наклейка_наружу(н, моё.get(н.code, 0)) for н in все],
+        sets=[
+            StickerSetOut(
+                code=к.code,
+                title=к.title,
+                owned=sum(1 for н in все if н.set == к.code and н.code in моё),
+                total=sum(1 for н in все if н.set == к.code),
+            )
+            for к in CASES
+        ],
         owned=len(моё),
         total=len(все),
         selected=profile.sticker if profile else None,

@@ -236,12 +236,15 @@ export default function Matches() {
                       >
                         {m.locked ? "Кто-то вам написал" : m.partner.display_name}
                       </span>
-                      {/* Наклейка рядом с именем — там же, где она в деке.
-                          20px, а не 16: на 16 детальные мотивы (лабиринт,
-                          созвездие, колибри) превращаются в пятно — проверено
-                          рендером в реальных размерах */}
+                      {/* Наклейка рядом с именем: в списке фото нет, значку
+                          лечь некуда. 24px, не меньше: персонажи с деталями
+                          (Март 7, Пепе в маске) на 16–20 сливаются в пятно */}
                       {m.partner.sticker && (
-                        <img src={m.partner.sticker} alt="" className="w-5 h-5 shrink-0" />
+                        <img
+                          src={m.partner.sticker}
+                          alt=""
+                          className="w-6 h-6 shrink-0 object-contain"
+                        />
                       )}
                       {m.partner.is_verified && <VerifiedBadge size={14} />}
                       {/* Beседа без взаимного лайка — отличаем визуально: это

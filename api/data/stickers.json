@@ -1,0 +1,236 @@
+[
+  {
+    "code": "keropi-desk",
+    "title": "Керопи за уроками",
+    "rarity": "common",
+    "set": "keropi"
+  },
+  {
+    "code": "keropi-bike",
+    "title": "Керопи на велике",
+    "rarity": "common",
+    "set": "keropi"
+  },
+  {
+    "code": "keropi-shy",
+    "title": "Керопи смущён",
+    "rarity": "rare",
+    "set": "keropi"
+  },
+  {
+    "code": "keropi-gogo",
+    "title": "Керопи: GO GO",
+    "rarity": "rare",
+    "set": "keropi"
+  },
+  {
+    "code": "keropi-yes",
+    "title": "Керопи: YES!",
+    "rarity": "legend",
+    "set": "keropi"
+  },
+  {
+    "code": "march-point",
+    "title": "Март 7: вот так",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-cry",
+    "title": "Март 7 в слезах",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-proud",
+    "title": "Март 7 гордится",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-stare",
+    "title": "Март 7 смотрит",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-thumbsup",
+    "title": "Март 7: класс!",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "pompom-shock",
+    "title": "Пом-Пом в шоке",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-snicker",
+    "title": "Март 7 хихикает",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-glare",
+    "title": "Март 7 недовольна",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-pout",
+    "title": "Март 7 дуется",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "stelle-question",
+    "title": "Стелла: что?",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-camera",
+    "title": "Март 7 фотографирует",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "ghost-cry",
+    "title": "Призрак в слезах",
+    "rarity": "common",
+    "set": "starrail"
+  },
+  {
+    "code": "march-cake",
+    "title": "Март 7 с тортом",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "pompom-music",
+    "title": "Пом-Пом напевает",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "pompom-peek",
+    "title": "Пом-Пом подглядывает",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "march-candy",
+    "title": "Март 7 с леденцом",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "march-shop",
+    "title": "Март 7 на шопинге",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "facepalm",
+    "title": "Фейспалм",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "seele-angry",
+    "title": "Зеле злится",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "march-summer",
+    "title": "Март 7 на каникулах",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "march-megaphone",
+    "title": "Март 7 болеет за тебя",
+    "rarity": "rare",
+    "set": "starrail"
+  },
+  {
+    "code": "himeko-formulas",
+    "title": "Химеко за расчётами",
+    "rarity": "epic",
+    "set": "starrail"
+  },
+  {
+    "code": "seele-gun",
+    "title": "Зеле на прицеле",
+    "rarity": "epic",
+    "set": "starrail"
+  },
+  {
+    "code": "silverwolf-headphones",
+    "title": "Серебряный Волк в наушниках",
+    "rarity": "epic",
+    "set": "starrail"
+  },
+  {
+    "code": "bailu-treat",
+    "title": "Байлу с угощением",
+    "rarity": "epic",
+    "set": "starrail"
+  },
+  {
+    "code": "silverwolf-gum",
+    "title": "Серебряный Волк с жвачкой",
+    "rarity": "epic",
+    "set": "starrail"
+  },
+  {
+    "code": "clara-heart",
+    "title": "Клара с сердцем",
+    "rarity": "legend",
+    "set": "starrail"
+  },
+  {
+    "code": "seele-mic",
+    "title": "Зеле у микрофона",
+    "rarity": "legend",
+    "set": "starrail"
+  },
+  {
+    "code": "pepe-myers",
+    "title": "Пепе-Майерс",
+    "rarity": "common",
+    "set": "halloween"
+  },
+  {
+    "code": "pepe-jason",
+    "title": "Пепе-Джейсон",
+    "rarity": "common",
+    "set": "halloween"
+  },
+  {
+    "code": "pepe-chucky",
+    "title": "Пепе-Чаки",
+    "rarity": "rare",
+    "set": "halloween"
+  },
+  {
+    "code": "pepe-freddy",
+    "title": "Пепе-Фредди",
+    "rarity": "rare",
+    "set": "halloween"
+  },
+  {
+    "code": "pepe-jigsaw",
+    "title": "Пепе-Пила",
+    "rarity": "epic",
+    "set": "halloween"
+  },
+  {
+    "code": "pepe-pennywise",
+    "title": "Пепе-Пеннивайз",
+    "rarity": "legend",
+    "set": "halloween"
+  }
+]

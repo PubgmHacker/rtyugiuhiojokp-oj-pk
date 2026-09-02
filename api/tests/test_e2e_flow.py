@@ -183,22 +183,29 @@ async def test_кейс_выдаёт_наклейки_и_копит_коллек
     """
     import routers.cases as cases_mod
     from models.models import DecorOwned, Profile, StickerOwned
+    from services.cases import CASES
     from services.decor import ОФОРМЛЕНИЯ
-    from services.stickers import каталог
+    from services.stickers import набор, по_коду
 
     # Лимит попыток проверяется отдельно; здесь интересна механика наград.
     # Через monkeypatch, а не присваиванием: прямая замена утекала в соседние
     # тесты и ломала проверку «бесплатному кейс не открыть»
     monkeypatch.setattr(cases_mod, "openings_per_month", lambda tier: 99)
 
+    # Кейсы открываем по кругу: каждый обязан отдавать только свой набор
+    кейсы = [к.code for к in CASES]
     наклеек = 0
     обложек = 0
-    for _ in range(25):
-        r = await клиент.post("/api/cases/open")
+    for i in range(25):
+        кейс = кейсы[i % len(кейсы)]
+        r = await клиент.post("/api/cases/open", json={"case": кейс})
         assert r.status_code == 200, r.text
-        награда = r.json()["reward"]
+        тело = r.json()
+        assert тело["case"] == кейс
+        награда = тело["reward"]
         if награда.get("sticker"):
             наклеек += 1
+            assert награда["sticker"]["set"] == кейс, "наклейка чужого набора"
         if награда.get("decor"):
             обложек += 1
 
@@ -224,9 +231,17 @@ async def test_кейс_выдаёт_наклейки_и_копит_коллек
     # Обложка не выпадает дважды: выбор идёт только среди недостающих
     assert len({о.code for о in мои_обложки}) == len(мои_обложки)
 
-    # Дубликат наклейки допустим только когда собраны все
-    if len(мои) < len(каталог()):
-        assert all(x.count == 1 for x in мои), "дубликат при несобранной коллекции"
+    # Дубликат наклейки допустим только когда собран её набор и все обложки:
+    # пока есть недостающее, кейс выбирает среди него
+    свои_коды = {x.code for x in мои}
+    for x in мои:
+        if x.count > 1:
+            н = по_коду(x.code)
+            assert н is not None
+            assert {s.code for s in набор(н.set)} <= свои_коды, (
+                f"дубликат {x.code} при несобранном наборе {н.set}"
+            )
+            assert len(мои_обложки) == len(ОФОРМЛЕНИЯ), "дубликат при недостающих обложках"
 
 
 @pytest.fixture

@@ -842,8 +842,32 @@ export interface Sticker {
   rarity: string;
   rarity_title: string;
   image: string;
+  /** Код набора — он же код кейса, из которого наклейка выпадает. */
+  set: string;
   /** Сколько раз выпала. 0 — ещё нет в коллекции. */
   owned: number;
+}
+
+/** Набор наклеек в коллекции: заголовок группы и прогресс по ней. */
+export interface StickerSet {
+  code: string;
+  title: string;
+  owned: number;
+  total: number;
+}
+
+/** Кейс на витрине: набор, прогресс и картинки-приманки. */
+export interface CaseDef {
+  code: string;
+  title: string;
+  hint: string;
+  /** Цвет свечения плитки — с сервера, чтобы новый кейс не требовал клиента. */
+  accent: string;
+  total: number;
+  owned: number;
+  preview: string[];
+  /** Доли редкостей внутри набора, процентами. */
+  rarity_chances: Record<string, number>;
 }
 
 export interface CaseReward {
@@ -859,6 +883,8 @@ export interface CaseReward {
 
 export interface StickerCollection {
   stickers: Sticker[];
+  /** Наборы в порядке витрины — коллекция группируется по ним. */
+  sets: StickerSet[];
   owned: number;
   total: number;
   /** Выбранная — её видят другие в анкете. */
@@ -870,13 +896,18 @@ export interface CaseState {
   per_month: number;
   /** Когда квота обновится — первое число следующего месяца (UTC). */
   resets_at?: string | null;
+  /** Типы наград и их шансы — одинаковы для всех кейсов. */
   rewards: CaseReward[];
+  /** Кейсы в порядке витрины. */
+  cases: CaseDef[];
   /** Уровень, с которого кейсы открываются, — с сервера, не словом в клиенте. */
   required_tier_name: string;
 }
 
 export interface CaseOpenResult {
   reward: CaseReward;
+  /** Код открытого кейса. */
+  case: string;
   left: number;
   per_month: number;
   resets_at?: string | null;
@@ -900,8 +931,9 @@ export async function getCaseState(): Promise<CaseState> {
   return data;
 }
 
-export async function openCase(): Promise<CaseOpenResult> {
-  const { data } = await api.post("/cases/open");
+/** Открыть кейс по коду: наборы разные, «какой-нибудь» нет. */
+export async function openCase(caseCode: string): Promise<CaseOpenResult> {
+  const { data } = await api.post("/cases/open", { case: caseCode });
   return data;
 }
 

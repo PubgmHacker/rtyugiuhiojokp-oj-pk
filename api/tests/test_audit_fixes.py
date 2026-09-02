@@ -4117,16 +4117,83 @@ def test_наклейки_каталог_и_картинки_совпадают(
     assert все, "каталог наклеек пуст"
 
     for н in все:
-        файл = папка / f"{н.code}.svg"
+        файл = папка / н.set / f"{н.code}.webp"
         assert файл.exists(), f"нет картинки для {н.code}"
-        assert н.image == f"/stickers/{н.code}.svg"
+        assert н.image == f"/stickers/{н.set}/{н.code}.webp"
 
     # И наоборот: картинка без записи в каталоге никогда не выпадет
-    коды = {н.code for н in все}
+    пути = {f"{н.set}/{н.code}" for н in все}
     лишние = {
-        f.stem for f in папка.glob("*.svg") if f.stem not in коды
+        str(f.relative_to(папка).with_suffix(""))
+        for f in папка.rglob("*") if f.is_file()
+        if str(f.relative_to(папка).with_suffix("")) not in пути
     }
-    assert not лишние, f"картинки без записи в каталоге: {sorted(лишние)}"
+    assert not лишние, f"файлы без записи в каталоге: {sorted(лишние)}"
+
+    # Коды уникальны сквозь наборы: в анкете хранится только код
+    assert len({н.code for н in все}) == len(все), "дубль кода наклейки"
+
+
+def test_наклейки_каталог_внутри_api():
+    """Каталог обязан доехать до контейнера API.
+
+    Сервис на Railway собирается из папки api/ (Dockerfile: COPY . .), папки
+    web/ там нет. Пока каталог лежал рядом с картинками в web/public, все тесты
+    были зелёными, а в проде коллекция была бы пуста и каждый кейс отвечал 503 —
+    ровно там, где тесты не бегают. Здесь держим оба условия: файл внутри api/
+    и не вырезан .dockerignore.
+    """
+    from fnmatch import fnmatch
+    from pathlib import Path
+
+    from services.stickers import _КАТАЛОГ
+
+    api = Path(__file__).resolve().parents[1]
+    assert _КАТАЛОГ.is_relative_to(api), f"каталог наклеек вне api/: {_КАТАЛОГ}"
+    assert _КАТАЛОГ.is_file(), f"каталог наклеек не найден: {_КАТАЛОГ}"
+
+    внутри = _КАТАЛОГ.relative_to(api)
+    кандидаты = {str(внутри), внутри.name, *(str(р) for р in внутри.parents if str(р) != ".")}
+    for строка in (api / ".dockerignore").read_text(encoding="utf-8").splitlines():
+        шаблон = строка.strip().rstrip("/")
+        if not шаблон or шаблон.startswith("#"):
+            continue
+        for к in кандидаты:
+            assert not fnmatch(к, шаблон), f".dockerignore вырезает каталог наклеек: {строка!r}"
+
+
+def test_каждый_набор_наклеек_это_кейс():
+    """Кейс выдаёт наклейки своего набора. Набор без кейса не выпадет никогда,
+    кейс без набора отдаст 503 — оба расхождения ловим здесь, а не на живом
+    человеке с оплаченной попыткой."""
+    from services.cases import CASES
+    from services.stickers import набор, наборы
+
+    assert {к.code for к in CASES} == set(наборы())
+    for к in CASES:
+        assert len(набор(к.code)) >= 5, f"в наборе {к.code} меньше пяти наклеек"
+        assert к.title and к.hint and к.accent.startswith("#")
+    assert len({к.code for к in CASES}) == len(CASES)
+
+
+def test_кейс_выдаёт_только_свой_набор():
+    """Человек открывает «Керопи» — и получает Керопи, а не случайную картинку
+    из общей кучи. Собранный набор возвращает None: кейс тогда идёт за
+    обложкой, а не сжигает попытку на дубликат."""
+    from services.cases import CASES
+    from services.stickers import выпала, набор
+
+    for к in CASES:
+        for _ in range(300):
+            н = выпала(набор_код=к.code)
+            assert н is not None and н.set == к.code
+        все_коды = {н.code for н in набор(к.code)}
+        assert выпала(исключая=все_коды, набор_код=к.code) is None
+        # Недостающая одна — выпадает именно она
+        последняя = next(iter(все_коды))
+        assert выпала(исключая=все_коды - {последняя}, набор_код=к.code).code == последняя
+
+    assert выпала(набор_код="несуществующий") is None
 
 
 def test_шансы_наклеек_честные():

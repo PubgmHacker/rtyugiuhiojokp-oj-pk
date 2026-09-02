@@ -87,7 +87,7 @@ const FUN: Item[] = [
     path: "/cases",
     icon: Gift,
     title: "Кейсы",
-    hint: "Суперлайки и буст по подписке",
+    hint: "Наклейки и обложки для анкеты",
     paid: true,
   },
   {

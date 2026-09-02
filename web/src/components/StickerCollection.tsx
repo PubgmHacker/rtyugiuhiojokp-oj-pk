@@ -11,6 +11,10 @@ import { Button, EmptyState, Skeleton } from "./ui";
  * коллекции. Без них не видно ни что собирать, ни сколько осталось, и кейс
  * снова превращается в раздачу расходников.
  *
+ * Группируем по наборам — набор и есть кейс, из которого наклейка выпадает.
+ * Плоская сетка из четырёх десятков персонажей не отвечала на главный
+ * вопрос «какой кейс открывать дальше»; по наборам он читается сам.
+ *
  * Одну можно поставить в анкету — её увидят другие. Именно одну: витрина
  * достижений отвлекает от человека, а на карточку смотрят ради него.
  */
@@ -22,7 +26,64 @@ const ЦВЕТ_РЕДКОСТИ: Record<string, string> = {
   legend: "text-warn",
 };
 
-export default function StickerCollection_({ onClose }: { onClose?: () => void }) {
+interface Группа {
+  code: string;
+  title: string;
+  owned: number;
+  total: number;
+  stickers: Sticker[];
+}
+
+/**
+ * Разложить коллекцию по наборам в порядке витрины. Наклейка без известного
+ * набора не теряется — уходит в хвост отдельной группой: старый клиент с
+ * новым сервером не должен «терять» выпавшее.
+ */
+export function группировать(данные: StickerCollection): Группа[] {
+  const наборы = данные.sets ?? [];
+  if (наборы.length === 0) {
+    return [
+      {
+        code: "",
+        title: "",
+        owned: данные.owned,
+        total: данные.total,
+        stickers: данные.stickers,
+      },
+    ];
+  }
+  const известные = new Set(наборы.map((s) => s.code));
+  const группы: Группа[] = наборы.map((s) => {
+    const свои = данные.stickers.filter((н) => н.set === s.code);
+    return {
+      code: s.code,
+      title: s.title,
+      owned: свои.filter((н) => н.owned > 0).length,
+      total: свои.length,
+      stickers: свои,
+    };
+  });
+  const прочие = данные.stickers.filter((н) => !известные.has(н.set));
+  if (прочие.length > 0) {
+    группы.push({
+      code: "other",
+      title: "Другие",
+      owned: прочие.filter((н) => н.owned > 0).length,
+      total: прочие.length,
+      stickers: прочие,
+    });
+  }
+  return группы.filter((г) => г.stickers.length > 0);
+}
+
+export default function StickerCollection_({
+  onClose,
+  версия = 0,
+}: {
+  onClose?: () => void;
+  /** Растёт после каждого открытого кейса — коллекция перечитывается без перемонтирования. */
+  версия?: number;
+}) {
   const [данные, setДанные] = useState<StickerCollection | null>(null);
   const [сбой, setСбой] = useState(false);
   const [занято, setЗанято] = useState(false);
@@ -34,7 +95,7 @@ export default function StickerCollection_({ onClose }: { onClose?: () => void }
       .catch(() => setСбой(true));
   }, []);
 
-  useEffect(загрузить, [загрузить]);
+  useEffect(загрузить, [загрузить, версия]);
 
   const выбрать = async (н: Sticker) => {
     if (!н.owned || занято) return;
@@ -77,6 +138,8 @@ export default function StickerCollection_({ onClose }: { onClose?: () => void }
     );
   }
 
+  const группы = группировать(данные);
+
   return (
     <div className="px-4 pb-6">
       <div className="flex items-baseline justify-between mb-1 pt-1">
@@ -86,49 +149,63 @@ export default function StickerCollection_({ onClose }: { onClose?: () => void }
         </p>
       </div>
       <p className="text-[12.5px] text-text-muted mb-4 leading-relaxed">
-        Наклейки выпадают из кейсов. Одну можно поставить в анкету — её увидят
-        другие.
+        Наклейки выпадают из кейсов. Одну можно поставить в анкету — она
+        ляжет значком на фото, и её увидят другие.
       </p>
 
-      <div className="grid grid-cols-4 gap-3">
-        {данные.stickers.map((н) => {
-          const выбрана = данные.selected === н.code;
-          return (
-            <button
-              key={н.code}
-              onClick={() => выбрать(н)}
-              disabled={!н.owned}
-              aria-label={
-                н.owned ? `${н.title}, ${н.rarity_title}` : `${н.title} — ещё не выпала`
-              }
-              aria-pressed={выбрана}
-              className={`relative aspect-square rounded-full transition-transform
-                          ${н.owned ? "active:scale-95" : "cursor-default"}
-                          ${выбрана ? "ring-2 ring-accent ring-offset-2 ring-offset-bg" : ""}`}
-            >
-              <img
-                src={н.image}
-                alt=""
-                loading="lazy"
-                className={`w-full h-full ${
-                  // Не выпавшие показываем силуэтом: полностью скрыть их
-                  // значило бы не показать, что собирать
-                  н.owned ? "" : "opacity-25 grayscale"
-                }`}
-              />
-              {н.owned > 1 && (
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 min-w-[18px] h-[18px] px-1
-                             rounded-full bg-surface-3 border border-hairline
-                             text-[10px] font-bold flex items-center justify-center"
+      {группы.map((г) => (
+        <section key={г.code || "all"} className="mb-5 last:mb-0">
+          {г.title && (
+            <div className="flex items-baseline justify-between mb-2 px-0.5">
+              <p className="text-[13px] font-bold">{г.title}</p>
+              <p className="text-[12px] text-text-muted tabular-nums">
+                {г.owned} из {г.total}
+              </p>
+            </div>
+          )}
+          <div className="grid grid-cols-4 gap-3">
+            {г.stickers.map((н) => {
+              const выбрана = данные.selected === н.code;
+              return (
+                <button
+                  key={н.code}
+                  onClick={() => выбрать(н)}
+                  disabled={!н.owned}
+                  aria-label={
+                    н.owned
+                      ? `${н.title}, ${н.rarity_title}`
+                      : `${н.title} — ещё не выпала`
+                  }
+                  aria-pressed={выбрана}
+                  className={`relative aspect-square rounded-full transition-transform
+                              ${н.owned ? "active:scale-95" : "cursor-default"}
+                              ${выбрана ? "ring-2 ring-accent ring-offset-2 ring-offset-bg" : ""}`}
                 >
-                  ×{н.owned}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+                  <img
+                    src={н.image}
+                    alt=""
+                    loading="lazy"
+                    className={`w-full h-full object-contain ${
+                      // Не выпавшие показываем силуэтом: полностью скрыть их
+                      // значило бы не показать, что собирать
+                      н.owned ? "" : "opacity-25 grayscale"
+                    }`}
+                  />
+                  {н.owned > 1 && (
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 min-w-[18px] h-[18px] px-1
+                                 rounded-full bg-surface-3 border border-hairline
+                                 text-[10px] font-bold flex items-center justify-center"
+                    >
+                      ×{н.owned}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
 
       {данные.selected && (
         <motion.p

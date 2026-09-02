@@ -351,10 +351,31 @@ async def test_бесплатному_кейс_не_открыть(app, monkeypa
     session = _Session([_Result(scalar=0)])
 
     async with await _client(app, session, _user()) as client:
-        r = await client.post("/api/cases/open")
+        r = await client.post("/api/cases/open", json={"case": "keropi"})
 
     assert r.status_code == 403
     assert "Plus" in r.json()["detail"]
+
+
+async def test_кейс_открывается_только_по_коду_набора(app, monkeypatch):
+    """Кейсов три, и наборы у них разные — «открой какой-нибудь» нет. Чужой
+    код — 400 до блокировки и до подсчёта попыток: попытка не тратится."""
+    from routers import cases
+
+    monkeypatch.setattr(cases, "current_tier", _async_return("plus"))
+
+    session = _SessionСЖурналом([_Result(scalar=None), _Result(scalar=0)])
+
+    async with await _client(app, session, _user()) as client:
+        без_тела = await client.post("/api/cases/open")
+        чужой = await client.post("/api/cases/open", json={"case": "nope"})
+        пустой = await client.post("/api/cases/open", json={"case": "   "})
+
+    assert без_тела.status_code == 422
+    assert чужой.status_code == 400
+    assert "кейса нет" in чужой.json()["detail"]
+    assert пустой.status_code == 400
+    assert not session.запросы, "к базе сходили ради несуществующего кейса"
 
 
 # ── Оценка фото: нельзя оценить себя ────────────────────────────
@@ -1316,7 +1337,7 @@ async def test_кейс_берёт_блокировку_до_подсчёта_п
     ])
 
     async with await _client(app, session, _user()) as client:
-        await client.post("/api/cases/open")
+        await client.post("/api/cases/open", json={"case": "starrail"})
 
     блокировки = [i for i, q in enumerate(session.запросы) if "advisory" in q]
     подсчёты = [i for i, q in enumerate(session.запросы) if "count" in q.lower()]
@@ -1871,26 +1892,32 @@ async def test_свою_наклейку_поставить_можно(app):
     анкета = _profile("u-me", sticker=None)
     session = _Session([
         _Result(scalar=анкета),
-        _Result(scalar=NS(code="dawn", count=1)),   # эта у меня есть
-        _Result(rows=[NS(code="dawn", count=1)]),   # коллекция для ответа
+        _Result(scalar=NS(code="keropi-yes", count=1)),   # эта у меня есть
+        _Result(rows=[NS(code="keropi-yes", count=1)]),   # коллекция для ответа
         _Result(scalar=анкета),
     ])
 
     async with await _client(app, session, _user()) as client:
-        r = await client.post("/api/cases/stickers/select", json={"code": "dawn"})
+        r = await client.post("/api/cases/stickers/select", json={"code": "keropi-yes"})
 
     assert r.status_code == 200, r.text
-    assert анкета.sticker == "dawn"
+    assert анкета.sticker == "keropi-yes"
+    данные = r.json()
+    assert данные["selected"] == "keropi-yes"
+    # Коллекция сгруппирована по наборам — по одному на кейс
+    assert [н["code"] for н in данные["sets"]] == ["keropi", "starrail", "halloween"]
+    керопи = данные["sets"][0]
+    assert керопи["owned"] == 1 and керопи["total"] >= 5
 
 
 async def test_пустой_код_снимает_наклейку(app):
     """От наклейки должно быть можно отказаться, не выбирая другую."""
     from types import SimpleNamespace as NS
 
-    анкета = _profile("u-me", sticker="dawn")
+    анкета = _profile("u-me", sticker="keropi-yes")
     session = _Session([
         _Result(scalar=анкета),
-        _Result(rows=[NS(code="dawn", count=1)]),
+        _Result(rows=[NS(code="keropi-yes", count=1)]),
         _Result(scalar=анкета),
     ])
 
@@ -1908,7 +1935,7 @@ async def test_коллекция_показывает_и_ненайденные
 
     анкета = _profile("u-me", sticker=None)
     session = _Session([
-        _Result(rows=[NS(code="sun", count=3)]),   # есть только одна, трижды
+        _Result(rows=[NS(code="march-cry", count=3)]),   # есть только одна, трижды
         _Result(scalar=анкета),
     ])
 
@@ -1918,12 +1945,13 @@ async def test_коллекция_показывает_и_ненайденные
     данные = r.json()
     assert данные["owned"] == 1
     assert данные["total"] > 10, "в ответе только свои — собирать нечего"
-    моя = next(с for с in данные["stickers"] if с["code"] == "sun")
+    моя = next(с for с in данные["stickers"] if с["code"] == "march-cry")
     assert моя["owned"] == 3, "счётчик повторов потерян"
-    чужая = next(с for с in данные["stickers"] if с["code"] != "sun")
+    assert моя["set"] == "starrail"
+    чужая = next(с for с in данные["stickers"] if с["code"] != "march-cry")
     assert чужая["owned"] == 0
     # Путь к картинке собирает сервер: на фронте он разъехался бы с папкой
-    assert моя["image"].endswith("/sun.svg")
+    assert моя["image"] == "/stickers/starrail/march-cry.webp"
 
 
 async def test_наклейка_видна_везде_где_видно_чужую_анкету(app, monkeypatch):
@@ -1941,14 +1969,16 @@ async def test_наклейка_видна_везде_где_видно_чужу
     session = _Session([
         _Result(rows=[]),
         _Result(rows=[_входящий_лайк(лайк)]),
-        _Result(scalar=_profile("u-fan", sticker="dawn")),
+        _Result(scalar=_profile("u-fan", sticker="keropi-yes")),
     ])
 
     async with await _client(app, session, _user()) as client:
         r = await client.get("/api/likes/received")
 
     (карточка,) = r.json()
-    assert карточка["sticker"] == "/stickers/dawn.svg", "наклейки нет в списке лайков"
+    assert карточка["sticker"] == "/stickers/keropi/keropi-yes.webp", (
+        "наклейки нет в списке лайков"
+    )
 
 
 async def test_наклейка_не_утекает_мимо_платного_гейта(app, monkeypatch):

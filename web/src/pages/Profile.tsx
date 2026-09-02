@@ -316,6 +316,17 @@ export default function Profile() {
               </div>
             )}
           </div>
+          {/* Своя наклейка из кейсов — на аватаре, там же, где её видят
+              другие. Иначе надетое оформление нигде не видно самому себе */}
+          {profile?.sticker && (
+            <img
+              src={profile.sticker}
+              alt=""
+              draggable={false}
+              className="absolute -top-2 -right-3 w-11 h-11 rotate-6 select-none
+                         drop-shadow-[0_2px_6px_rgba(0,0,0,.5)]"
+            />
+          )}
           {profile?.is_premium && (
             <span
               className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-2.5 py-0.5
@@ -430,7 +441,7 @@ export default function Profile() {
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-[15px]">Кейсы</p>
           <p className="text-caption text-text-muted">
-            Суперлайки и буст по подписке
+            Наклейки и обложки для анкеты
           </p>
         </div>
         <ChevronRight size={18} className="text-text-faint shrink-0" />

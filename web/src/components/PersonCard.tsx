@@ -77,6 +77,20 @@ export default function PersonCard({
 
       {badge && <div className="absolute top-2 right-2 z-20">{badge}</div>}
 
+      {/* Наклейка — средний значок в верхнем углу фото, как в деке. В строке
+          имени она сжималась до пятна и толкала имя в многоточие */}
+      {profile.sticker && (
+        <img
+          src={profile.sticker}
+          alt=""
+          draggable={false}
+          className={`absolute z-20 -rotate-6 select-none
+                      drop-shadow-[0_2px_6px_rgba(0,0,0,.55)] ${
+                        mini ? "top-1.5 left-1.5 w-7 h-7" : "top-2 left-2 w-9 h-9"
+                      }`}
+        />
+      )}
+
       <div className={`absolute inset-x-0 bottom-0 z-20 ${mini ? "p-2" : "p-3"}`}>
         <div className={`flex items-center min-w-0 ${mini ? "gap-1" : "gap-1.5"}`}>
           <span
@@ -98,15 +112,6 @@ export default function PersonCard({
             </span>
           )}
           {profile.is_verified && <VerifiedBadge size={mini ? 12 : 14} />}
-          {profile.sticker && (
-            <img
-              src={profile.sticker}
-              alt=""
-              className={`shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,.5)] ${
-                mini ? "w-4 h-4" : "w-5 h-5"
-              }`}
-            />
-          )}
           {online && (
             <span
               role="img"
