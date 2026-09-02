@@ -63,6 +63,8 @@ class UserProfile(BaseModel):
     hide_age: bool = False
     hide_distance: bool = False
     hide_from_visitors: bool = False
+    #: Не участвовать в оценке фото — ни оценивать, ни быть оценённым.
+    hide_from_ratings: bool = False
     is_premium: bool = False
     age_min: int = 18
     age_max: int = 99
@@ -148,6 +150,7 @@ class ProfileUpdate(BaseModel):
     hide_age: Optional[bool] = None
     hide_distance: Optional[bool] = None
     hide_from_visitors: Optional[bool] = None
+    hide_from_ratings: Optional[bool] = None
     #: Пустая строка — «вернуть базовую схему», поэтому min_length не ставим.
     app_theme: Optional[str] = Field(None, max_length=24)
     #: Язык интерфейса. Строго из списка: неизвестный код — 422, а не тихая
@@ -678,12 +681,35 @@ class PhotoRatingRequest(BaseModel):
     score: int = Field(ge=1, le=5)
 
 
+class RatingFeedItem(BaseModel):
+    """Одна видимая оценка: оценщик и балл.
+
+    Оценки по умолчанию открыты; скрыться можно только целиком
+    (hide_from_ratings) — тогда человека нет ни в чьей очереди и ни в чьей
+    ленте. Половинчатой анонимности («сам сужу, а меня не судят») нет.
+    """
+
+    user_id: str
+    display_name: str = ""
+    photo: str = ""
+    age: Optional[int] = None
+    city: str = ""
+    score: int
+    updated_at: Optional[str] = None
+
+
 class MyPhotoRating(BaseModel):
-    """Своя средняя оценка. `average=None` — оценок ещё нет."""
+    """Своя средняя оценка и лента оценщиков. `average=None` — оценок ещё нет.
+
+    feed — видимые оценки: кто и сколько поставил (у конкурента только
+    средняя без имён). Карточка оценщика живёт по тем же правилам
+    приватности, что в деке: hide_age уважается, аватар — только публичный.
+    """
 
     photo: str = ""
     average: Optional[float] = None
     total: int = 0
+    feed: list[RatingFeedItem] = Field(default_factory=list)
 
 
 class LeaderboardEntry(BaseModel):

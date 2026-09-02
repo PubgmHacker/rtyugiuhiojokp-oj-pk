@@ -83,6 +83,7 @@ def _profile():
         hide_age=False,
         hide_distance=False,
         hide_from_visitors=False,
+        hide_from_ratings=False,
         boost_until=None,
         bonus_superlikes=0,
         sticker=None,

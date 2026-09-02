@@ -7,6 +7,11 @@
 Оценка не влияет на подбор и никак не связана с лайками: превращать её в
 скрытый рейтинг привлекательности, по которому выдаётся дека, значит делать
 сервис, где «некрасивых» никто не видит.
+
+Открытость симметрична: оценки видимы (кто и сколько поставил), а
+неучастие — целиком (hide_from_ratings): скрылся — не оцениваешь и тебя
+не оценивают. Асимметрия («сам сужу, а меня не судят») не опция: она
+превращает очередь в одностороннее окошко.
 """
 
 from __future__ import annotations
@@ -27,7 +32,9 @@ from models.schemas import (
     PhotoRatingRequest,
     PhotoRatingTarget,
     PhotoRatingTargets,
+    RatingFeedItem,
 )
+from services.public_profile import публичный_возраст
 from utils import as_list, public_photos
 
 logger = logging.getLogger(__name__)
@@ -62,6 +69,7 @@ async def get_rating_queue(
         User.is_banned == False,  # noqa: E712 — SQL-выражение
         not_(Profile.is_incognito),
         not_(Profile.is_paused),
+        not_(Profile.hide_from_ratings),
         Profile.display_name != "",
     ]
     if exclude:
@@ -111,6 +119,14 @@ async def rate_photo(
     if data.target_id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя оценивать себя")
 
+    mine = await session.execute(select(Profile).where(Profile.user_id == user.id))
+    if (я := mine.scalar_one_or_none()) is not None and я.hide_from_ratings:
+        # Симметрия открытости: неучастие цельное — сужен и сам не судим
+        raise HTTPException(
+            status_code=403,
+            detail="Вы скрыли себя из оценки фото — включите участие в настройках приватности",
+        )
+
     result = await session.execute(select(User).where(User.id == data.target_id))
     target = result.scalar_one_or_none()
     if not target or target.is_banned:
@@ -133,10 +149,13 @@ async def get_my_rating(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Средняя оценка своего фото и сколько человек оценили.
+    """Средняя оценка, сколько человек и КТО именно — лента видимых оценок.
 
-    Кто именно поставил — не показываем: оценка анонимна, иначе за тройку
-    прилетит обида конкретному человеку, а честных оценок не станет.
+    Оценки открыты: владелец видит анкету оценщика и балл. Обида за тройку
+    лечится не анонимностью всех, а правом выйти целиком (hide_from_ratings):
+    кто судить не готов — не судит и не судим. Блокировки уважаются: чей
+    блок в любую сторону стоит, того в ленте нет — блок и есть «не хочу
+    видеть этого человека нигде».
     """
     result = await session.execute(
         select(func.avg(PhotoRating.score), func.count(PhotoRating.id)).where(
@@ -149,9 +168,46 @@ async def get_my_rating(
     profile = result.scalar_one_or_none()
     photos = as_list(profile.photos) if profile else []
 
+    # Блок в любую сторону прячет карточку из моей ленты: и «я его заблокировал»,
+    # и «он меня заблокировал» — блок и значит «не видеть этого человека».
+    мой_блок = await session.execute(
+        select(Block.blocked_id).where(Block.blocker_id == user.id)
+    )
+    скрытые = {row[0] for row in мой_блок.all()}
+    мой_блокер = await session.execute(
+        select(Block.blocker_id).where(Block.blocked_id == user.id)
+    )
+    скрытые |= {row[0] for row in мой_блокер.all()}
+
+    result = await session.execute(
+        select(PhotoRating, Profile)
+        .join(Profile, Profile.user_id == PhotoRating.rater_id)
+        .where(
+            PhotoRating.target_id == user.id,
+            not_(Profile.user_id.in_(скрытые)) if скрытые else True,
+        )
+        .order_by(PhotoRating.updated_at.desc())
+        .limit(30)
+    )
+    feed = [
+        RatingFeedItem(
+            user_id=оценка.rater_id,
+            display_name=анкета.display_name or "",
+            photo=public_photos(анкета.photos)[0] if public_photos(анкета.photos) else "",
+            age=публичный_возраст(анкета),
+            city=анкета.city or "",
+            score=оценка.score,
+            updated_at=(
+                оценка.updated_at.isoformat() if оценка.updated_at else None
+            ),
+        )
+        for оценка, анкета in result.all()
+    ]
+
     return MyPhotoRating(
         photo=photos[0] if photos else "",
         # Округляем до десятых: «4.3» понятно, «4.28571» — шум
         average=round(float(average), 1) if average is not None else None,
         total=total or 0,
+        feed=feed,
     )

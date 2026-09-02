@@ -69,6 +69,7 @@ def _profile(uid: str, **over):
         hide_age=False,
         hide_distance=False,
         hide_from_visitors=False,
+        hide_from_ratings=False,
         boost_until=None,
         bonus_superlikes=0,
         bonus_boosts=0,

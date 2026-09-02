@@ -1,9 +1,10 @@
 /**
  * Оценка фото: показываем чужое фото, человек ставит от 1 до 5.
  *
- * Второй таб — свои оценки. Кто именно поставил, не показываем нигде: оценка
- * анонимна, иначе за тройку прилетит обида конкретному человеку, а честных
- * оценок не станет.
+ * Второй таб — свои оценки: средняя плюс лента «кто и сколько». Оценки
+ * видимы (у конкурента — только средняя без имён), а неучастие цельное:
+ * «Не участвовать в оценке фото» в приватности прячет и оценщика, и
+ * оцениваемого — асимметрия «сам сужу, а меня не судят» не опция.
  *
  * На подбор оценки не влияют. Скрытый рейтинг привлекательности, по которому
  * выдаётся дека, сделал бы сервис, где «некрасивых» никто не видит.
@@ -185,7 +186,7 @@ function RateQueue() {
       </div>
 
       <p className="text-caption text-text-muted text-center mt-3">
-        Оценка анонимна и не влияет на подбор
+        Ваша оценка видна человеку — как и его вам. На подбор не влияет
       </p>
     </div>
   );
@@ -252,10 +253,55 @@ function MyRating() {
       </div>
 
       <p className="text-caption text-text-muted text-center mt-3">
-        {data.total === 0
-          ? "Ваше фото ещё никто не оценил"
-          : "Кто поставил оценку, не показываем — так они честнее"}
+        {data.total === 0 ? "Ваше фото ещё никто не оценил" : "Свежие оценки — вверху"}
       </p>
+
+      {data.feed.length > 0 && (
+        <ul className="mt-4 flex flex-col gap-2" aria-label="Кто и сколько поставил">
+          {data.feed.map((item) => (
+            <li
+              key={item.user_id}
+              className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
+                         bg-surface border border-hairline"
+            >
+              {item.photo ? (
+                <img
+                  src={item.photo}
+                  alt=""
+                  className="w-11 h-11 rounded-full object-cover shrink-0 bg-surface-2"
+                />
+              ) : (
+                <div
+                  aria-hidden
+                  className="w-11 h-11 rounded-full shrink-0 bg-surface-2
+                             flex items-center justify-center text-[15px] text-text-faint"
+                >
+                  {(item.display_name || "?").slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold text-text truncate">
+                  {item.display_name || "Без имени"}
+                  {item.age != null && (
+                    <span className="font-normal text-text-secondary">, {item.age}</span>
+                  )}
+                </p>
+                {item.city && (
+                  <p className="text-[12.5px] text-text-muted truncate">{item.city}</p>
+                )}
+              </div>
+              <span
+                aria-label={`Оценка ${item.score} из 5`}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full
+                           bg-surface-2 border border-hairline shrink-0"
+              >
+                <Star size={13} className="text-accent" fill="currentColor" />
+                <span className="text-[14px] font-bold text-text">{item.score}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

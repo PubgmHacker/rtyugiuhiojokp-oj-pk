@@ -101,7 +101,10 @@ export default function Profile() {
   }, [mainScreen]);
 
   const togglePrivacy = useCallback(
-    async (field: "hide_age" | "hide_distance" | "hide_from_visitors", value: boolean) => {
+    async (
+      field: "hide_age" | "hide_distance" | "hide_from_visitors" | "hide_from_ratings",
+      value: boolean,
+    ) => {
       haptic("light");
       setPrivacyBusy(field);
       try {
@@ -619,6 +622,15 @@ export default function Profile() {
             busy={privacyBusy === "hide_from_visitors"}
             onToggle={() =>
               togglePrivacy("hide_from_visitors", !profile?.hide_from_visitors)
+            }
+          />
+          <PrivacyToggle
+            label="Не участвовать в оценке фото"
+            hint="Вас не будут оценивать — и вы не сможете оценить других"
+            on={!!profile?.hide_from_ratings}
+            busy={privacyBusy === "hide_from_ratings"}
+            onToggle={() =>
+              togglePrivacy("hide_from_ratings", !profile?.hide_from_ratings)
             }
           />
         </div>

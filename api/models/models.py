@@ -190,6 +190,13 @@ class Profile(Base):
     hide_distance: Mapped[bool] = mapped_column(Boolean, default=False)
     #: Не попадать в чужой раздел «Гости» при просмотре анкет.
     hide_from_visitors: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Не участвовать в оценке фото — ни оценивать, ни быть оценённым.
+    #:
+    #: Оценки по умолчанию видимы: владелец фото видит, кто и сколько
+    #: поставил. Открытость симметрична: скрылся — не оцениваешь и тебя
+    #: не оценивают, иначе очередь превращается в способ судить чужие
+    #: фото, спрятавшись от суждения о своём.
+    hide_from_ratings: Mapped[bool] = mapped_column(Boolean, default=False)
     #: До какого момента анкета поднята в выдаче (платный буст). Прошедшая
     #: дата равнозначна отсутствию буста, поэтому чистить поле не нужно.
     boost_until: Mapped[Optional[datetime]] = mapped_column(

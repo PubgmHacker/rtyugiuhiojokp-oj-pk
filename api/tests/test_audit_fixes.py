@@ -2286,19 +2286,24 @@ def test_одна_оценка_на_пару_с_возможностью_пер�
     assert "uq_photo_rating" in исходник
 
 
-def test_оценка_анонимна():
-    """За тройку прилетела бы обида конкретному человеку, и честных оценок
-    не стало бы вовсе."""
+def test_оценка_открыта_но_цельно_отключаема():
+    """Оценки видимы (кто и сколько), а неучастие — только целиком: скрылся —
+    не оцениваешь и тебя не оценивают. Половинчатой анонимности нет: она
+    превращает очередь в одностороннее окошко."""
     import inspect
 
-    from models.schemas import MyPhotoRating
+    from models.schemas import MyPhotoRating, RatingFeedItem
     from routers import photo_ratings
 
-    # В ответе только среднее и количество — ни одного идентификатора
-    поля = set(MyPhotoRating.model_fields)
-    assert поля == {"photo", "average", "total"}
+    # Лента оценщиков — часть ответа, карточка несёт анкету и балл
+    assert {"feed"} <= set(MyPhotoRating.model_fields)
+    assert {"user_id", "display_name", "score"} <= set(RatingFeedItem.model_fields)
 
-    assert "rater_id" not in inspect.getsource(photo_ratings.get_my_rating)
+    # Очередь не пускает скрывшихся, приём оценки — тоже (симметрия)
+    очередь = inspect.getsource(photo_ratings.get_rating_queue)
+    ставка = inspect.getsource(photo_ratings.rate_photo)
+    assert "hide_from_ratings" in очередь
+    assert "hide_from_ratings" in ставка
 
 
 def test_оценка_не_влияет_на_подбор():

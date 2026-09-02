@@ -116,6 +116,8 @@ class Profile(Base):
     hide_age: Mapped[bool] = mapped_column(Boolean, default=False)
     hide_distance: Mapped[bool] = mapped_column(Boolean, default=False)
     hide_from_visitors: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Не участвовать в оценке фото: ни оценивать, ни быть оценённым.
+    hide_from_ratings: Mapped[bool] = mapped_column(Boolean, default=False)
     # Платный буст показов — см. api/models/models.py
     boost_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

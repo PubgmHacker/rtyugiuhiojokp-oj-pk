@@ -88,6 +88,8 @@ export interface UserProfile {
   hide_age?: boolean;
   hide_distance?: boolean;
   hide_from_visitors?: boolean;
+  /** Не участвовать в оценке фото — ни оценивать, ни быть оценённым. */
+  hide_from_ratings?: boolean;
   is_premium?: boolean;
   age_min?: number;
   age_max?: number;
@@ -962,6 +964,18 @@ export interface MyPhotoRating {
   /** null — оценок ещё нет. */
   average?: number | null;
   total: number;
+  /** Видимые оценки: кто и сколько поставил (свежие первыми). */
+  feed: RatingFeedItem[];
+}
+
+export interface RatingFeedItem {
+  user_id: string;
+  display_name: string;
+  photo: string;
+  age?: number | null;
+  city: string;
+  score: number;
+  updated_at?: string | null;
 }
 
 export async function getRatingQueue(): Promise<PhotoRatingTarget[]> {
