@@ -24,6 +24,7 @@ import {
   toggleReelLike,
   type Reel,
 } from "../lib/api";
+import { assertList } from "../lib/payload";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, EmptyState, LoadError, ScreenHeader, Spinner } from "../components/ui";
@@ -55,13 +56,14 @@ export default function Reels() {
       loadingRef.current = true;
       try {
         const page = await getReels(cursor);
-        setReels((cur) => (cursor && cur ? [...cur, ...page.reels] : page.reels));
+        const items = assertList<Reel>(page.reels, "reels");
+        setReels((cur) => (cursor && cur ? [...cur, ...items] : items));
         const nextBefore = page.next_before ?? null;
         setBefore(nextBefore);
         // Последняя непустая страница тоже заканчивается без курсора. Иначе
         // следующий scroll вызывает load(null) и заменяет ленту первой
         // страницей вместо завершения пагинации.
-        if (!page.reels.length || !nextBefore) setExhausted(true);
+        if (!items.length || !nextBefore) setExhausted(true);
       } catch {
         if (cursor) {
           // Догрузка следующей страницы: лента на месте, хватит плашки

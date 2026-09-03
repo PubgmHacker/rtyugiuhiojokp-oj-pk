@@ -356,11 +356,7 @@ export default function Login() {
               autoFocus={false}
               placeholder="000000"
               aria-label="Код входа из бота"
-              className="w-full h-[56px] rounded-[var(--radius-control)]
-                         bg-surface-2 border border-hairline text-center
-                         text-[26px] tracking-[0.4em] font-semibold
-                         text-text placeholder:text-text-faint
-                         focus:outline-none focus:border-accent"
+              className="field w-full h-[56px] rounded-[var(--radius-control)] text-center text-[26px] tracking-[0.4em] font-semibold"
             />
             <Button
               size="lg"
@@ -427,10 +423,7 @@ export default function Login() {
               placeholder="Почта, привязанная к аккаунту"
               disabled={письмоУшло || loading}
               aria-label="Почта для восстановления доступа"
-              className="w-full h-[52px] px-4 rounded-[var(--radius-control)]
-                         bg-surface-2 border border-border text-[15px]
-                         text-text placeholder:text-text-faint
-                         focus:outline-none focus:border-primary disabled:opacity-60"
+              className="field w-full h-[52px] px-4 rounded-[var(--radius-control)] text-[15px] focus:border-primary disabled:opacity-60"
             />
             {письмоУшло && (
               <>
@@ -446,11 +439,7 @@ export default function Login() {
                   }
                   placeholder="000000"
                   aria-label="Код из письма"
-                  className="w-full h-[52px] rounded-[var(--radius-control)]
-                             bg-surface-2 border border-border text-center
-                             text-[22px] tracking-[0.35em] font-semibold
-                             text-text placeholder:text-text-faint
-                             focus:outline-none focus:border-primary"
+                  className="field w-full h-[52px] rounded-[var(--radius-control)] text-center text-[22px] tracking-[0.35em] font-semibold focus:border-primary"
                 />
               </>
             )}

@@ -142,10 +142,7 @@ export default function DirectMessageSheet({
                   autoFocus
                   placeholder="Первое сообщение — от него зависит, ответят ли"
                   aria-label="Текст письма"
-                  className="w-full px-3.5 py-3 mb-1.5 rounded-[var(--radius-tile)]
-                             bg-surface-2 border border-hairline text-[15px] resize-none
-                             placeholder:text-text-muted focus:outline-none
-                             focus:border-accent/60"
+                  className="field w-full px-3.5 py-3 mb-1.5 rounded-[var(--radius-tile)] text-[15px] resize-none"
                 />
                 <p className="text-[12px] text-text-muted text-right mb-1">
                   {text.length} / {MAX_DIRECT_TEXT}

@@ -556,10 +556,7 @@ function FilterSheet({
                 onChange={(e) => setCity(e.target.value)}
                 placeholder="Любой"
                 aria-label="Город"
-                className="w-full px-3.5 py-3 rounded-[var(--radius-tile)]
-                           bg-surface-2 border border-hairline text-[15px]
-                           placeholder:text-text-muted focus:outline-none
-                           focus:border-accent/60"
+                className="field w-full px-3.5 py-3 rounded-[var(--radius-tile)] text-[15px]"
               />
             </div>
 

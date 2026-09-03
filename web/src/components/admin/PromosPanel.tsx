@@ -34,8 +34,7 @@ const дата = (iso: string) => new Date(iso).toLocaleString("ru");
 
 /** Поля ввода в форме — одинаковая рамка, как textarea в рассылке. */
 const ПОЛЕ =
-  "p-2.5 rounded-[var(--radius-control)] bg-surface-2 border border-hairline " +
-  "text-[14px] outline-none focus:border-accent/50 placeholder:text-text-faint";
+  "field p-2.5 rounded-[var(--radius-control)] text-[14px]";
 
 export default function PromosPanel() {
   // Форма выпуска. Тариф/дни/лимит после выпуска не сбрасываются:

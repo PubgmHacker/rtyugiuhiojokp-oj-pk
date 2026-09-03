@@ -835,10 +835,7 @@ export default function Chat() {
             }}
             placeholder="Сообщение…"
             rows={1}
-            className="flex-1 max-h-[120px] px-4 py-2.5 rounded-[22px] resize-none
-                       bg-surface border border-hairline text-[15px]
-                       outline-none focus:border-accent transition-colors
-                       placeholder:text-text-faint no-scrollbar"
+            className="field flex-1 max-h-[120px] px-4 py-2.5 rounded-[22px] resize-none text-[15px] no-scrollbar"
           />
           <button
             aria-label="Отправить"

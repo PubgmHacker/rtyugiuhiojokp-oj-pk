@@ -26,6 +26,7 @@ import {
   type TarotSpread,
   type TarotSpreadType,
 } from "../lib/api";
+import { assertList } from "../lib/payload";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { Button, Card, LoadError, ScreenHeader, Skeleton } from "../components/ui";
@@ -88,6 +89,7 @@ export default function Tarot() {
       else if (type === "three") result = await getTarotThree();
       else if (type === "relationship") result = await getTarotRelationship();
       else result = await getTarotPair(nameA, nameB);
+      assertList(result.cards, "tarot.cards");
       setSpread(result);
       // Карта дня бесплатна и приходит всем — из неё же узнаём, открыты ли
       // развороты. У остальных раскладов ответ вообще не придёт, если заперто.
@@ -192,18 +194,14 @@ export default function Tarot() {
                 onChange={(e) => setNameA(e.target.value)}
                 placeholder="Ваше имя"
                 maxLength={60}
-                className="px-3.5 py-2.5 rounded-[var(--radius-tile)] bg-surface-2
-                           border border-hairline text-[15px] outline-none
-                           focus:border-accent/60"
+                className="field px-3.5 py-2.5 rounded-[var(--radius-tile)] text-[15px]"
               />
               <input
                 value={nameB}
                 onChange={(e) => setNameB(e.target.value)}
                 placeholder="Имя партнёра"
                 maxLength={60}
-                className="px-3.5 py-2.5 rounded-[var(--radius-tile)] bg-surface-2
-                           border border-hairline text-[15px] outline-none
-                           focus:border-accent/60"
+                className="field px-3.5 py-2.5 rounded-[var(--radius-tile)] text-[15px]"
               />
             </div>
             <Button
@@ -248,12 +246,12 @@ export default function Tarot() {
             <h2 className="text-caption text-text-muted mb-2 px-1">
               {spread.title}
             </h2>
-            <div className="flex flex-col gap-2 mb-3">
+            <div className="glass rounded-[20px] overflow-hidden mb-3">
               {spread.cards.map((card, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
-                             bg-surface-2 border border-hairline"
+                  className="flex items-center gap-3 px-4 py-3
+                             border-t border-[color:var(--glass-divider)] first:border-t-0"
                 >
                   <Sparkles size={17} className="text-accent shrink-0" />
                   <div className="flex-1 min-w-0">
@@ -266,8 +264,11 @@ export default function Tarot() {
               ))}
             </div>
 
-            <Card className="p-4 border-accent/25 bg-accent/8 mb-2">
-              <p className="text-[13.5px] leading-relaxed">
+            <Card className="p-4 mb-2">
+              <p className="text-caption font-semibold text-accent mb-1.5">
+                Толкование
+              </p>
+              <p className="text-[14.5px] leading-relaxed">
                 {spread.interpretation}
               </p>
             </Card>

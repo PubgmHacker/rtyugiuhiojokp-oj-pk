@@ -101,9 +101,7 @@ export default function EmailRecovery({
             onChange={(e) => setАдрес(e.target.value)}
             placeholder="почта@例.ru"
             disabled={ждёмКод}
-            className="w-full px-3.5 py-2.5 rounded-[var(--radius-control)] bg-surface-2
-                       border border-hairline text-[14px] outline-none
-                       focus:border-accent disabled:opacity-60"
+            className="field w-full px-3.5 py-2.5 rounded-[var(--radius-control)] text-[14px] disabled:opacity-60"
           />
 
           {ждёмКод && (
@@ -117,9 +115,7 @@ export default function EmailRecovery({
                 value={код}
                 onChange={(e) => setКод(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="000000"
-                className="w-full px-3.5 py-2.5 rounded-[var(--radius-control)] bg-surface-2
-                           border border-hairline text-[18px] tracking-[0.3em] text-center
-                           outline-none focus:border-accent"
+                className="field w-full px-3.5 py-2.5 rounded-[var(--radius-control)] text-[18px] tracking-[0.3em] text-center"
               />
             </>
           )}

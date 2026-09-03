@@ -634,10 +634,7 @@ export default function Onboarding() {
                   inputMode="numeric"
                   placeholder="Не указывать"
                   aria-label="Рост в сантиметрах"
-                  className="w-full px-3.5 py-3 rounded-[var(--radius-tile)]
-                             bg-surface-2 border border-hairline text-[15px]
-                             placeholder:text-text-muted focus:outline-none
-                             focus:border-accent/60"
+                  className="field w-full px-3.5 py-3 rounded-[var(--radius-tile)] text-[15px]"
                 />
                 {!!height && (Number(height) < HEIGHT_MIN || Number(height) > HEIGHT_MAX) && (
                   <p className="mt-2 text-[12px] text-danger">
@@ -657,10 +654,7 @@ export default function Onboarding() {
                   onChange={(e) => setBio(e.target.value.slice(0, MAX_BIO))}
                   placeholder="Чем занимаетесь, что любите, кого ищете…"
                   rows={5}
-                  className="w-full px-4 py-3.5 rounded-[var(--radius-tile)]
-                             bg-surface border border-hairline resize-none
-                             outline-none focus:border-accent transition-colors
-                             placeholder:text-text-faint"
+                  className="field w-full px-4 py-3.5 rounded-[var(--radius-tile)] resize-none"
                 />
                 <p className="mt-2 text-caption text-text-muted text-right">
                   {bio.length} / {MAX_BIO}
@@ -823,10 +817,7 @@ function TextField({
       aria-label={placeholder}
       spellCheck={inputMode !== "numeric"}
       autoFocus={autoFocus}
-      className="w-full h-14 px-4 rounded-[var(--radius-tile)]
-                 bg-surface border border-hairline text-[17px]
-                 outline-none focus:border-accent transition-colors
-                 placeholder:text-text-faint"
+      className="field w-full h-14 px-4 rounded-[var(--radius-tile)] text-[17px]"
     />
   );
 }
@@ -886,7 +877,7 @@ function Summary({
   bio: string;
 }) {
   return (
-    <div className="rounded-[var(--radius-tile)] bg-surface border border-hairline p-5">
+    <div className="glass rounded-[20px] p-5">
       <p className="text-[19px] font-bold mb-0.5">
         {name}
         {Number.isFinite(age) && age > 0 ? `, ${age}` : ""}

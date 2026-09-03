@@ -145,7 +145,7 @@ export function StoryComposer({ open, onClose, onPublished }: Props) {
         onChange={(e) => setCaption(e.target.value)}
         maxLength={200}
         placeholder="Подпись — необязательно"
-        className="mt-3 w-full rounded-[10px] border border-hairline bg-surface-2 px-3 py-2.5 text-[15px] text-text outline-none placeholder:text-text-faint focus:border-accent"
+        className="field mt-3 w-full rounded-[10px] px-3 py-2.5 text-[15px]"
       />
 
       <div className="mt-3 grid grid-cols-2 gap-2">

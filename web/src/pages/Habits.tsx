@@ -41,7 +41,7 @@ export default function Habits() {
       <div className="px-4 pt-3">
         <HabitList />
 
-        <div className="mt-6 flex items-start gap-3 rounded-[14px] border border-hairline bg-surface px-4 py-3.5">
+        <div className="mt-6 flex items-start gap-3 glass-soft rounded-[16px] px-4 py-3.5">
           <Flame size={18} className="mt-0.5 shrink-0 text-accent" />
           <p className="text-[13px] leading-relaxed text-text-muted">
             План открывается прямо из переписки — значок со списком в шапке

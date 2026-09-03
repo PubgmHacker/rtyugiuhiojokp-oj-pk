@@ -171,10 +171,7 @@ export default function ReelUploader({
               rows={2}
               placeholder="Подпись — необязательно"
               aria-label="Подпись к ролику"
-              className="w-full px-3.5 py-3 mb-1.5 rounded-[var(--radius-tile)]
-                         bg-surface-2 border border-hairline text-[15px] resize-none
-                         placeholder:text-text-muted focus:outline-none
-                         focus:border-accent/60"
+              className="field w-full px-3.5 py-3 mb-1.5 rounded-[var(--radius-tile)] text-[15px] resize-none"
             />
             <p className="text-[12px] text-text-muted text-right mb-4">
               {caption.length} / {MAX_CAPTION}

@@ -122,7 +122,7 @@ export default function MatchModal({ data, onClose }: MatchModalProps) {
             </p>
 
             {data.score != null && (
-              <div className="mb-6 p-4 rounded-[var(--radius-tile)] bg-surface border border-hairline">
+              <div className="mb-6 p-4 glass rounded-[20px]">
                 <div className="flex items-center justify-center gap-2 mb-1.5">
                   <Sparkles size={16} className="text-accent" />
                   <span className="font-bold text-[15px]">

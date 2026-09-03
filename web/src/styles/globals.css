@@ -151,6 +151,7 @@
   --glass-bg-soft: rgb(255 255 255 / 0.05);
   --glass-border: rgb(255 255 255 / 0.14);
   --glass-divider: rgb(255 255 255 / 0.08);
+  --field-bg: rgb(255 255 255 / 0.06);
   --glass-highlight: rgb(255 255 255 / 0.3);
   --glass-rim: rgb(255 255 255 / 0.22);
   --glass-blur: 20px;
@@ -443,6 +444,26 @@
     0 8px 16px -6px color-mix(in srgb, var(--tint-fallback) 34%, transparent);
 }
 
+/* Поле ввода: углублённая ячейка на стекле. Заливка и обводка — токены
+   темы, фокус — акцентная обводка и мягкое кольцо. Без блюра намеренно:
+   backdrop-filter на полях в WKWebView перерисовывает каретку при вводе.
+   Размер, скругление и кегль остаются у места использования. */
+@utility field {
+  background: var(--field-bg);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  &::placeholder {
+    color: var(--color-text-faint);
+  }
+  &:focus,
+  &:focus-within {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 11%, transparent);
+  }
+}
+
 /* Панель поверх контента (навбар, хедер) */
 @utility chrome {
   background: color-mix(in srgb, var(--color-bg) 86%, transparent);
@@ -726,6 +747,7 @@
   --glass-bg-soft: rgb(0 0 0 / 0.025);
   --glass-border: rgb(0 0 0 / 0.09);
   --glass-divider: rgb(0 0 0 / 0.08);
+  --field-bg: rgb(0 0 0 / 0.04);
   --glass-highlight: rgb(255 255 255 / 0.6);
   --glass-rim: rgb(255 255 255 / 0.7);
   --shadow-glass-nav: 0 10px 22px rgb(15 20 32 / 0.14);
@@ -759,6 +781,7 @@
   --glass-bg-soft: rgb(60 40 20 / 0.03);
   --glass-border: rgb(60 40 20 / 0.1);
   --glass-divider: rgb(60 40 20 / 0.1);
+  --field-bg: rgb(60 40 20 / 0.06);
   --glass-highlight: rgb(255 250 240 / 0.6);
   --glass-rim: rgb(255 250 240 / 0.7);
   --shadow-glass-nav: 0 10px 22px rgb(60 40 20 / 0.14);

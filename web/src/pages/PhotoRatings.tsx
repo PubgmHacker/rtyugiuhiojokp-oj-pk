@@ -10,7 +10,7 @@
  * выдаётся дека, сделал бы сервис, где «некрасивых» никто не видит.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Star } from "lucide-react";
 import {
@@ -20,9 +20,10 @@ import {
   type MyPhotoRating,
   type PhotoRatingTarget,
 } from "../lib/api";
+import { assertList } from "../lib/payload";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
-import { EmptyState, LoadError, ScreenHeader, Skeleton } from "../components/ui";
+import { Button, EmptyState, LoadError, ScreenHeader, Skeleton } from "../components/ui";
 
 const SCORES = [1, 2, 3, 4, 5];
 
@@ -72,11 +73,14 @@ export default function PhotoRatings() {
 function RateQueue() {
   const [queue, setQueue] = useState<PhotoRatingTarget[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // Взводится, когда очередь опустела нашей же оценкой — тогда и только
+  // тогда просим следующую порцию
+  const пополнить = useRef(false);
   const [сбой, setСбой] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const next = await getRatingQueue();
+      const next = assertList<PhotoRatingTarget>(await getRatingQueue(), "photo-ratings/queue");
       setСбой(false);
       setQueue(next);
     } catch {
@@ -97,7 +101,11 @@ function RateQueue() {
       setBusy(true);
       haptic("light");
       // Карточку убираем сразу: ждать сеть ради следующего фото незачем
-      setQueue((cur) => (cur ?? []).slice(1));
+      setQueue((cur) => {
+        const rest = (cur ?? []).slice(1);
+        if (!rest.length) пополнить.current = true;
+        return rest;
+      });
       try {
         await ratePhoto(current.user_id, score);
       } catch {
@@ -110,11 +118,13 @@ function RateQueue() {
   );
 
   // Кончилась пачка — подтягиваем следующую
+  // Пустой ответ сервера новую порцию НЕ просит: раньше экран «Все оценены»
+  // дёргал /photo-ratings/queue каждые 400 мс, пока был открыт
   useEffect(() => {
-    if (!сбой && queue && queue.length === 0) {
-      const timer = window.setTimeout(load, 400);
-      return () => window.clearTimeout(timer);
-    }
+    if (сбой || !queue || queue.length > 0 || !пополнить.current) return;
+    пополнить.current = false;
+    const timer = window.setTimeout(load, 400);
+    return () => window.clearTimeout(timer);
   }, [queue, load, сбой]);
 
   if (сбой) {
@@ -144,6 +154,11 @@ function RateQueue() {
         emoji="🎯"
         title="Все оценены"
         description="Вы оценили всех, кого нашли. Загляните позже — появятся новые анкеты."
+        action={
+          <Button variant="glass" onClick={() => void load()}>
+            Проверить ещё
+          </Button>
+        }
       />
     );
   }
@@ -257,12 +272,11 @@ function MyRating() {
       </p>
 
       {data.feed.length > 0 && (
-        <ul className="mt-4 flex flex-col gap-2" aria-label="Кто и сколько поставил">
+        <ul className="mt-4 glass rounded-[20px] overflow-hidden" aria-label="Кто и сколько поставил">
           {data.feed.map((item) => (
             <li
               key={item.user_id}
-              className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
-                         bg-surface border border-hairline"
+              className="flex items-center gap-3 px-4 py-3 border-t border-[color:var(--glass-divider)] first:border-t-0"
             >
               {item.photo ? (
                 <img

@@ -18,6 +18,7 @@ import {
   type Room,
   type RoomMessage,
 } from "../lib/api";
+import { assertList } from "../lib/payload";
 import { haptic } from "../lib/haptics";
 import { letterAvatarStyle } from "../lib/aura";
 import { useSectionOpen } from "../lib/useSectionOpen";
@@ -45,7 +46,7 @@ export default function Rooms() {
     setСбой(false);
     setRooms(null);
     getRooms()
-      .then(setRooms)
+      .then((r) => setRooms(assertList<Room>(r, "rooms")))
       .catch(() => {
         setRooms([]);
         setСбой(true);
@@ -111,8 +112,7 @@ export default function Rooms() {
               haptic("light");
               setActive(room);
             }}
-            className="w-full text-left px-4 py-3.5 rounded-[var(--radius-tile)]
-                       bg-surface-2 border border-hairline
+            className="w-full text-left px-4 py-3.5 glass rounded-[20px]
                        active:scale-[0.99] transition-transform"
           >
             <div className="flex items-center gap-2 mb-1">
@@ -379,10 +379,7 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
             rows={1}
             placeholder="Сообщение"
             aria-label="Сообщение в комнату"
-            className="flex-1 px-3.5 py-2.5 rounded-[var(--radius-tile)] resize-none
-                       bg-surface-2 border border-hairline text-[15px] max-h-24
-                       placeholder:text-text-muted focus:outline-none
-                       focus:border-accent/60"
+            className="field flex-1 px-3.5 py-2.5 rounded-[var(--radius-tile)] resize-none text-[15px] max-h-24"
           />
           <button
             aria-label="Отправить"

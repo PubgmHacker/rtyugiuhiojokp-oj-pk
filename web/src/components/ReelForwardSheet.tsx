@@ -240,10 +240,7 @@ export default function ReelForwardSheet({
                     rows={1}
                     placeholder="Добавить сообщение (необязательно)"
                     aria-label="Сообщение к видео"
-                    className="flex-1 px-3.5 py-2.5 rounded-[var(--radius-tile)] resize-none
-                               bg-surface-2 border border-hairline text-[15px] max-h-24
-                               placeholder:text-text-muted focus:outline-none
-                               focus:border-accent/60"
+                    className="field flex-1 px-3.5 py-2.5 rounded-[var(--radius-tile)] resize-none text-[15px] max-h-24"
                   />
                   <Button
                     size="lg"

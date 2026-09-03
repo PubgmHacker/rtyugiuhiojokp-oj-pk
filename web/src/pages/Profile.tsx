@@ -959,9 +959,7 @@ function DeleteAccountDialog({
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               autoCapitalize="characters"
-              className="w-full px-4 h-12 mb-4 rounded-full bg-surface border border-hairline
-                         text-center tracking-wider outline-none
-                         focus:border-danger transition-colors"
+              className="field w-full px-4 h-12 mb-4 rounded-full text-center tracking-wider focus:border-danger"
               placeholder="УДАЛИТЬ"
             />
 
@@ -1046,8 +1044,7 @@ function TgChannelCard({
           onChange={(e) => setValue(e.target.value)}
           placeholder="username"
           maxLength={100}
-          className="flex-1 px-4 h-11 rounded-full bg-surface border border-hairline
-                     outline-none focus:border-accent transition-colors text-[14.5px]"
+          className="field flex-1 px-4 h-11 rounded-full text-[14.5px]"
         />
         <Button
           variant="primary"
@@ -1094,7 +1091,9 @@ function VisitorsCard() {
       <div className="flex items-center gap-2.5 mb-3">
         <Eye size={18} className="text-accent" />
         <span className="font-semibold text-[15px] flex-1">Гости</span>
-        {data && (
+        {/* Только загруженное число: до ответа старое значение периода
+            мигало бы, а без total выводилось голое «человек» */}
+        {loaded && typeof data?.total === "number" && (
           <span className="text-caption text-text-muted">
             {data.total} {plural(data.total, "человек", "человека", "человек")}
           </span>

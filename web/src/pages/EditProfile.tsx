@@ -302,10 +302,7 @@ function EditForm({ base }: { base: UserProfile }) {
             placeholder="Ваше имя"
             maxLength={50}
             aria-label="Имя"
-            className="w-full h-12 px-4 rounded-[var(--radius-tile)]
-                       bg-surface border border-hairline text-[16px]
-                       outline-none focus:border-accent transition-colors
-                       placeholder:text-text-faint"
+            className="field w-full h-12 px-4 rounded-[var(--radius-tile)] text-[16px]"
           />
         </Section>
 
@@ -316,10 +313,7 @@ function EditForm({ base }: { base: UserProfile }) {
             inputMode="numeric"
             placeholder="18"
             aria-label="Возраст"
-            className="w-full h-12 px-4 rounded-[var(--radius-tile)]
-                       bg-surface border border-hairline text-[16px]
-                       outline-none focus:border-accent transition-colors
-                       placeholder:text-text-faint"
+            className="field w-full h-12 px-4 rounded-[var(--radius-tile)] text-[16px]"
           />
         </Section>
 
@@ -370,10 +364,7 @@ function EditForm({ base }: { base: UserProfile }) {
             placeholder="Москва"
             maxLength={100}
             aria-label="Город"
-            className="w-full h-12 px-4 rounded-[var(--radius-tile)]
-                       bg-surface border border-hairline text-[16px]
-                       outline-none focus:border-accent transition-colors
-                       placeholder:text-text-faint"
+            className="field w-full h-12 px-4 rounded-[var(--radius-tile)] text-[16px]"
           />
           <Button
             variant="secondary"
@@ -489,10 +480,7 @@ function EditForm({ base }: { base: UserProfile }) {
             inputMode="numeric"
             placeholder="Не указывать"
             aria-label="Рост в сантиметрах"
-            className="w-full h-12 px-4 rounded-[var(--radius-tile)]
-                       bg-surface border border-hairline text-[16px]
-                       outline-none focus:border-accent transition-colors
-                       placeholder:text-text-faint"
+            className="field w-full h-12 px-4 rounded-[var(--radius-tile)] text-[16px]"
           />
         </Section>
 
@@ -516,10 +504,7 @@ function EditForm({ base }: { base: UserProfile }) {
             placeholder="Чем занимаетесь, что любите, кого ищете…"
             rows={5}
             aria-label="О себе"
-            className="w-full px-4 py-3.5 rounded-[var(--radius-tile)]
-                       bg-surface border border-hairline resize-none
-                       outline-none focus:border-accent transition-colors
-                       placeholder:text-text-faint"
+            className="field w-full px-4 py-3.5 rounded-[var(--radius-tile)] resize-none"
           />
           <p className="mt-1.5 text-caption text-text-muted text-right">
             {bio.length} / {MAX_BIO}

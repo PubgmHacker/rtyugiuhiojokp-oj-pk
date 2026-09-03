@@ -19,6 +19,7 @@ import {
   type PlanOut,
   type PlansOut,
 } from "../lib/api";
+import { assertList } from "../lib/payload";
 import { haptic } from "../lib/haptics";
 import { isNative, openExternal } from "../lib/native";
 import {
@@ -69,6 +70,7 @@ export default function Plans() {
       try {
         const plans = await getPlans();
         if (cancelled) return;
+        assertList(plans.tiers, "iap/plans.tiers");
         setData(plans);
         // Уже подписанному показываем его уровень, а не младший. Проверяем по
         // списку, а не сравнением с "ultra": пока здесь стояло одно имя, Aurora
@@ -254,7 +256,9 @@ export default function Plans() {
               </ul>
             </Card>
 
-            <div className="flex flex-col gap-2.5 mb-4">
+            {/* Варианты срока — одна стеклянная карта со строками, как стек
+                настроек: разделители только между строками, без своих рамок */}
+            <div className="glass rounded-[20px] overflow-hidden mb-4">
               {shown.plans.map((plan) => (
                 <PlanRow
                   key={plan.code}
@@ -421,10 +425,7 @@ function PromoField({ onActivated }: { onActivated: () => Promise<void> }) {
           autoCorrect="off"
           spellCheck={false}
           enterKeyHint="go"
-          className="flex-1 min-w-0 px-3.5 py-2.5 rounded-[var(--radius-tile)]
-                     bg-surface-2 border border-hairline font-mono tracking-wider
-                     text-[15px] placeholder:text-text-faint outline-none
-                     focus:border-accent"
+          className="field flex-1 min-w-0 px-3.5 py-2.5 rounded-[var(--radius-tile)] font-mono tracking-wider text-[15px]"
         />
         <Button size="md" disabled={!code.trim() || busy} onClick={submit}>
           {busy ? <Spinner size={16} /> : "Активировать"}
@@ -489,8 +490,9 @@ function PlanRow({
       onClick={onBuy}
       disabled={disabled}
       className="w-full flex items-center gap-3 px-4 py-3.5 text-left
-                 rounded-[var(--radius-tile)] bg-surface-2 border border-hairline
-                 disabled:opacity-50 active:scale-[0.99] transition-transform"
+                 border-t border-[color:var(--glass-divider)] first:border-t-0
+                 disabled:opacity-50 active:bg-[color:var(--glass-divider)]
+                 transition-colors"
     >
       <div className="flex-1 min-w-0">
         <p className="font-bold text-[15px]">{plan.title}</p>

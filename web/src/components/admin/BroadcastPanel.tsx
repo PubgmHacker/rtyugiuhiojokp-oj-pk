@@ -106,9 +106,7 @@ export default function BroadcastPanel() {
           onChange={(e) => setText(e.target.value)}
           rows={5}
           placeholder="Текст сообщения. Уйдёт как написан, без разметки."
-          className="w-full p-3 rounded-[var(--radius-control)] bg-surface-2 border border-hairline
-                     text-[14.5px] resize-y outline-none focus:border-accent/50
-                     placeholder:text-text-faint"
+          className="field w-full p-3 rounded-[var(--radius-control)] text-[14.5px] resize-y"
         />
         <div className="flex flex-wrap items-center gap-3">
           <span

@@ -17,6 +17,7 @@ import {
   uncheckHabit,
   type Habit,
 } from "../lib/api";
+import { assertList } from "../lib/payload";
 
 //: Что предлагаем на пустом экране. Своя формулировка работает лучше
 //: нашей, но с чистого листа человек не пишет ничего — а с примера пишет.
@@ -46,7 +47,7 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
     setСбойЗагрузки(false);
     try {
       const r = await getHabits();
-      setHabits(r.habits);
+      setHabits(assertList<Habit>(r.habits, "habits"));
       setLimit(r.limit);
       setError(null);
     } catch {
@@ -261,7 +262,7 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
             onBlur={() => !name.trim() && setAdding(false)}
             maxLength={100}
             placeholder="Что сделать сегодня?"
-            className="min-w-0 flex-1 rounded-[10px] border border-hairline bg-surface-2 px-3 py-2.5 text-[15px] text-text outline-none placeholder:text-text-faint focus:border-accent"
+            className="field min-w-0 flex-1 rounded-[10px] px-3 py-2.5 text-[15px]"
           />
           <Button type="submit" loading={saving} disabled={!name.trim()}>
             Добавить
