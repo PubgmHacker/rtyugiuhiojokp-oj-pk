@@ -14,8 +14,7 @@ type ButtonSize = "sm" | "md" | "lg";
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   // Главный CTA: перелив факела. Мелкие accent-элементы (пилюли, иконки)
   // остаются на плоском --color-accent.
-  primary:
-    "btn-torch text-on-accent shadow-[var(--shadow-control)]",
+  primary: "btn-torch text-on-accent",
   secondary: "bg-surface-2 text-text border border-hairline",
   ghost: "bg-transparent text-text-secondary",
   danger: "bg-danger/15 text-danger border border-danger/30",
@@ -23,9 +22,10 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
 };
 
 const SIZE_CLASS: Record<ButtonSize, string> = {
-  sm: "h-10 px-4 text-sm rounded-[var(--radius-control)]",
-  md: "h-12 px-6 text-[15px] rounded-[var(--radius-control)]",
-  lg: "h-[52px] px-8 text-[15px] rounded-[var(--radius-control)]",
+  // Радиусы — как у кнопок Plink: 12 / 14 / 18 у выступающей h52
+  sm: "h-10 px-4 text-sm rounded-[12px]",
+  md: "h-12 px-6 text-[15px] rounded-[14px]",
+  lg: "h-[52px] px-8 text-[15px] rounded-[18px]",
 };
 
 interface ButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
@@ -59,7 +59,7 @@ export function Button({
 
   return (
     <motion.button
-      whileTap={isDisabled ? undefined : { scale: 0.96 }}
+      whileTap={isDisabled ? undefined : { scale: 0.97 }}
       transition={{ type: "spring", stiffness: 520, damping: 30 }}
       disabled={isDisabled}
       aria-busy={loading || undefined}
