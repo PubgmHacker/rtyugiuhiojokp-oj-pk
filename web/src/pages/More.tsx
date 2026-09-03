@@ -97,13 +97,6 @@ const FUN: Item[] = [
     hint: "Карта дня и расклады — повод начать разговор",
     premium: true,
   },
-  {
-    path: "/voice",
-    icon: Mic,
-    title: "Голосовая рулетка",
-    hint: "Случайный голосовой звонок",
-    premium: true,
-  },
 ];
 
 export default function More() {

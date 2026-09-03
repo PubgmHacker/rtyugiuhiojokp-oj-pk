@@ -52,8 +52,10 @@ function подготовить(photos = ФОТО) {
   const patch = vi
     .spyOn(api, "updateMyProfile")
     .mockResolvedValue(анкета(photos));
-  vi.spyOn(api, "getMyProfile").mockResolvedValue(анкета(photos));
-  return { patch };
+  const перечитать = vi
+    .spyOn(api, "getMyProfile")
+    .mockResolvedValue(анкета(photos));
+  return { patch, перечитать };
 }
 
 function показать() {
@@ -64,15 +66,29 @@ function показать() {
   );
 }
 
-/** Перейти на шаг фото: он третий с конца в STEPS, идём точками прогресса. */
+/** Заголовки шагов до фото — по ним видно, что шаг действительно сменился. */
+const ЗАГОЛОВКИ = [
+  "Как вас зовут?",
+  "Сколько вам лет?",
+  "Ваш пол?",
+  "Кого показывать?",
+  "Из какого вы города?",
+  "Добавьте фото",
+];
+
+/** Перейти на шаг фото: он шестой в STEPS (name, age, gender, lookingFor,
+ *  city, photos). Кнопка «Далее» — один и тот же узел на всех шагах, а сами
+ *  шаги живут в AnimatePresence mode="wait": следующий появляется только после
+ *  ухода предыдущего. Поэтому после каждого нажатия ждём заголовок следующего
+ *  шага — иначе под нагрузкой клики уходили в ещё не сменившийся экран. */
 async function на_шаг_фото() {
-  // Шаги листаются кнопкой «Далее»; фото — шестой шаг (name, age, gender,
-  // lookingFor, city, photos). Нажимаем ровно столько раз.
-  for (let i = 0; i < 5; i++) {
-    const далее = await screen.findByRole("button", { name: /Далее|Продолжить/ });
+  await screen.findByText(ЗАГОЛОВКИ[0]);
+  for (let i = 0; i < ЗАГОЛОВКИ.length - 1; i++) {
+    const далее = screen.getByRole("button", { name: "Далее" });
+    await waitFor(() => expect(далее).toBeEnabled());
     fireEvent.click(далее);
+    await screen.findByText(ЗАГОЛОВКИ[i + 1], {}, { timeout: 4000 });
   }
-  await screen.findByText("Добавьте фото");
 }
 
 beforeEach(() => {
@@ -112,7 +128,7 @@ describe("главное фото", () => {
   });
 
   it("на сервер уходит новый порядок фото", async () => {
-    const { patch } = подготовить();
+    const { patch, перечитать } = подготовить();
     показать();
     await на_шаг_фото();
 
@@ -135,6 +151,12 @@ describe("главное фото", () => {
     await waitFor(() => expect(patch).toHaveBeenCalled());
     const отправлено = patch.mock.calls[0][0] as { photos: string[] };
     expect(отправлено.photos).toEqual([ФОТО[2], ФОТО[0], ФОТО[1]]);
+
+    // finish() после PATCH ещё перечитывает профиль и пишет его в стор. Если
+    // выйти из теста раньше, этот хвост дорабатывает уже на фоне следующего
+    // теста и подменяет ему пользователя — ждём, пока стор получит ответ
+    await waitFor(() => expect(перечитать).toHaveBeenCalled());
+    await waitFor(() => expect(useStore.getState().user?.photos).toEqual(ФОТО));
   });
 
   it("у единственного фото повышать нечего", async () => {
