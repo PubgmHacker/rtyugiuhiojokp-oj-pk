@@ -327,6 +327,20 @@
     var(--shadow-glass-overlay);
 }
 
+/* Пилюля активной вкладки жидкого таб-бара: заливка акцентом 20%, обводка
+   30%; при ведении пальцем — 28%/44%. Без blur: она лежит на стекле бара */
+@utility nav-pill {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+.nav-pill[data-drag] {
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 44%, transparent);
+}
+
 /* Тонированное стекло: заливка цветом --tint на 22%, обводка на 35%,
    тень того же цвета — кнопка «Редактировать» на лице анкеты и пилюля
    активной вкладки. --tint задаётся инлайном, по умолчанию — акцент. */
@@ -412,10 +426,10 @@
 }
 
 /* Отступ под фиксированный таббар. Его высота — содержимое плюс safe-area,
-   поэтому плоских 68px не хватало: на телефонах с «чёлкой» последний блок
+   поэтому плоских 82px (плавающая капсула 64 + 2 + воздух) не хватало: на телефонах с «чёлкой» последний блок
    страницы уезжал под навигацию и читался наполовину. */
 @utility pb-nav {
-  padding-bottom: calc(68px + max(env(safe-area-inset-bottom), 0.5rem));
+  padding-bottom: calc(82px + max(env(safe-area-inset-bottom), 0.5rem));
 }
 
 @utility safe-x {

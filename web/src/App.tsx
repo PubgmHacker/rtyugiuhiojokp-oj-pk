@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -66,83 +66,200 @@ const NAV_ITEMS: { path: string; icon: typeof Flame; label: Ключ }[] = [
   { path: "/profile", icon: User, label: "nav.profile" },
 ];
 
+/** Геометрия жидкого таб-бара — как в iOS-клиенте Plink */
+const БАР = { высота: 64, отступ: 6, пилюля: 50 } as const;
+const КРИВАЯ_ПИЛЮЛИ = [0.16, 1, 0.3, 1] as const;
+
 function BottomNav() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const unreadLikes = useStore((s) => s.unreadLikes);
   const unreadMessages = useStore((s) => s.unreadMessages);
   const t = useT();
 
+  const полоса = useRef<HTMLDivElement>(null);
+  const [ширина, setШирина] = useState(0);
+  const [тянем, setТянем] = useState<number | null>(null);
+  const жест = useRef<{ startX: number; moved: boolean; pointerId: number } | null>(null);
+  const перетянули = useRef(false);
+
+  const активная = Math.max(
+    0,
+    NAV_ITEMS.findIndex((i) => pathname.startsWith(i.path)),
+  );
+  const ячейка = ширина > 0 ? (ширина - БАР.отступ * 2) / NAV_ITEMS.length : 0;
+  const левый = БАР.отступ;
+  const правый = ширина - БАР.отступ - ячейка;
+
+  // Ширина полосы нужна для пилюли в пикселях: transform анимируется без
+  // перерасчёта раскладки, а проценты в calc() framer-motion не смешивает
+  useEffect(() => {
+    const el = полоса.current;
+    if (!el) return;
+    const мерить = () => setШирина(el.getBoundingClientRect().width);
+    мерить();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", мерить);
+      return () => window.removeEventListener("resize", мерить);
+    }
+    const ro = new ResizeObserver(мерить);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Ведение как в Telegram: пилюля идёт за пальцем по полосе, на отпускании
+  // прилипает к ближайшей вкладке. Тап без движения остаётся обычным тапом
+  // по ссылке — захват указателя не ставим, иначе click уйдёт полосе
+  const ближайшая = (clientX: number) => {
+    const rect = полоса.current?.getBoundingClientRect();
+    if (!rect || ячейка <= 0) return активная;
+    const x = clientX - rect.left - БАР.отступ;
+    return Math.min(NAV_ITEMS.length - 1, Math.max(0, Math.floor(x / ячейка)));
+  };
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    жест.current = { startX: e.clientX, moved: false, pointerId: e.pointerId };
+    перетянули.current = false;
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const g = жест.current;
+    if (!g || g.pointerId !== e.pointerId || ячейка <= 0) return;
+    if (!g.moved && Math.abs(e.clientX - g.startX) < 6) return;
+    if (!g.moved) {
+      g.moved = true;
+      haptic("select");
+    }
+    const rect = полоса.current!.getBoundingClientRect();
+    const x = e.clientX - rect.left - ячейка / 2;
+    setТянем(Math.min(правый, Math.max(левый, x)));
+  };
+  const onPointerEnd = (e: React.PointerEvent) => {
+    const g = жест.current;
+    if (!g || g.pointerId !== e.pointerId) return;
+    жест.current = null;
+    if (!g.moved) return;
+    перетянули.current = true;
+    setТянем(null);
+    const idx = ближайшая(e.clientX);
+    if (idx !== активная) {
+      haptic("select");
+      navigate(NAV_ITEMS[idx].path);
+    }
+  };
+
+  const покойX = левый + активная * ячейка;
+  // Пока пилюлю ведут, белой подсвечивается вкладка под ней, а не текущая:
+  // палец видит, куда отпустит. aria-current остаётся у настоящей вкладки
+  const подсветка =
+    тянем !== null && ячейка > 0
+      ? Math.min(NAV_ITEMS.length - 1, Math.max(0, Math.round((тянем - левый) / ячейка)))
+      : активная;
+
   return (
     <nav
       aria-label={t("nav.aria")}
-      className="fixed bottom-0 left-0 right-0 z-40 chrome
-                 border-t border-hairline/70 safe-bottom safe-x"
+      className="fixed bottom-0 left-0 right-0 z-40 safe-x pointer-events-none"
+      style={{ paddingBottom: "calc(max(env(safe-area-inset-bottom), 0.5rem) + 2px)" }}
     >
-      <div className="flex items-stretch justify-around max-w-[520px] mx-auto">
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname.startsWith(item.path);
-          const badge =
-            item.path === "/likes"
-              ? unreadLikes
-              : item.path === "/matches"
-                ? unreadMessages
-                : 0;
+      <div
+        ref={полоса}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        className="relative mx-[14px] max-w-[520px] md:mx-auto rounded-full
+                   glass-strong pointer-events-auto select-none"
+        style={{
+          height: БАР.высота,
+          padding: `0 ${БАР.отступ}px`,
+          touchAction: "none",
+        }}
+      >
+        {/* Пилюля активной вкладки: одна на весь бар, переезжает между
+            вкладками по кривой Plink; при ведении — плотнее и чуть крупнее */}
+        {ячейка > 0 && (
+          <motion.span
+            aria-hidden
+            className="nav-pill absolute rounded-full"
+            data-drag={тянем !== null ? "" : undefined}
+            style={{
+              top: (БАР.высота - БАР.пилюля) / 2,
+              height: БАР.пилюля,
+              width: ячейка,
+              left: 0,
+            }}
+            initial={false}
+            animate={{ x: тянем ?? покойX, scale: тянем !== null ? 1.07 : 1 }}
+            transition={
+              тянем !== null
+                ? { duration: 0 }
+                : { duration: 0.26, ease: [...КРИВАЯ_ПИЛЮЛИ] }
+            }
+          />
+        )}
 
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={() => haptic("select")}
-              aria-current={isActive ? "page" : undefined}
-              className="relative flex-1 flex flex-col items-center justify-center
-                         gap-1 pt-2.5 pb-1.5 tap-target"
-            >
-              <div className="relative">
-                {/* Залитая капсула под активной иконкой: смена цвета того же
-                    глифа почти не читается на маленьком экране, а капсула
-                    видна мгновенно и переезжает между вкладками одним
-                    движением (layoutId) */}
-                {isActive && (
-                  <motion.span
-                    layoutId="nav-indicator"
-                    className="absolute -inset-x-3 -inset-y-1.5 rounded-full bg-accent"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
-                <motion.div
-                  className="relative"
-                  animate={{ scale: isActive ? 1.06 : 1, y: isActive ? -1 : 0 }}
-                  transition={{ type: "spring", stiffness: 480, damping: 26 }}
-                >
-                  <item.icon
-                    size={23}
-                    strokeWidth={isActive ? 2.4 : 1.9}
-                    className={isActive ? "text-white" : "text-text-faint"}
-                    fill={isActive && item.path === "/discover" ? "currentColor" : "none"}
-                  />
-                </motion.div>
+        <div className="relative flex items-stretch h-full">
+          {NAV_ITEMS.map((item, idx) => {
+            const isActive = idx === подсветка;
+            const badge =
+              item.path === "/likes"
+                ? unreadLikes
+                : item.path === "/matches"
+                  ? unreadMessages
+                  : 0;
 
-                {badge > 0 && (
-                  <span
-                    className="absolute -top-1 -right-2 min-w-[17px] h-[17px] px-1
-                               rounded-full bg-accent text-white text-[10px] font-bold
-                               flex items-center justify-center"
-                  >
-                    {badge > 99 ? "99+" : badge}
-                  </span>
-                )}
-              </div>
-
-              <span
-                className={`text-[10.5px] font-medium tracking-[-0.01em] ${
-                  isActive ? "text-accent" : "text-text-faint"
-                }`}
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                draggable={false}
+                onClick={(e) => {
+                  if (перетянули.current) {
+                    e.preventDefault();
+                    return;
+                  }
+                  haptic("select");
+                }}
+                aria-current={idx === активная ? "page" : undefined}
+                className="relative flex-1 flex flex-col items-center justify-center
+                           gap-[3px] py-[7px] tap-target"
               >
-                {t(item.label)}
-              </span>
-            </Link>
-          );
-        })}
+                <div className="relative">
+                  <motion.div
+                    className="relative"
+                    animate={{ scale: isActive ? 1.04 : 1 }}
+                    transition={{ type: "spring", stiffness: 480, damping: 26 }}
+                  >
+                    <item.icon
+                      size={20}
+                      strokeWidth={isActive ? 2.3 : 1.9}
+                      className={isActive ? "text-white" : "text-text-faint"}
+                      fill={isActive && item.path === "/discover" ? "currentColor" : "none"}
+                    />
+                  </motion.div>
+
+                  {badge > 0 && (
+                    <span
+                      className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1
+                                 rounded-full bg-accent text-white text-[10px] font-bold
+                                 flex items-center justify-center shadow-[0_1px_4px_rgb(0_0_0/.35)]"
+                    >
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  )}
+                </div>
+
+                <span
+                  className={`text-[10px] font-semibold tracking-[0.01em] leading-none ${
+                    isActive ? "text-white" : "text-text-faint"
+                  }`}
+                >
+                  {t(item.label)}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );
