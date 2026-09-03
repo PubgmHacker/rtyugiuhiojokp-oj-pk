@@ -109,52 +109,59 @@ export default function More() {
 
       {/* Подписка внизу: покупка — редкое действие, наверху она выглядела бы
           навязчиво, но и прятать её незачем */}
-      <div className="px-4 pt-2">
+      <section className="px-4 pt-5">
         <Link
           to="/plans"
           onClick={() => haptic("light")}
-          className="flex items-center gap-3 px-4 py-3.5 rounded-[var(--radius-tile)]
-                     border border-accent/25 bg-accent/8"
+          className="glass-tint flex items-center gap-3 px-[14px] py-3 rounded-[20px]
+                     active:scale-[0.99] transition-transform"
         >
-          <Crown size={19} className="text-accent shrink-0" />
+          <span className="settings-badge">
+            <Crown size={15} />
+          </span>
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-[15px]">Plus и Ultra</p>
-            <p className="text-caption text-text-muted">
+            <p className="font-semibold text-[15px]">Plus и Ultra</p>
+            <p className="text-[12px] text-text-muted">
               Кто вас лайкнул, инкогнито, буст
             </p>
           </div>
-          <ChevronRight size={18} className="text-text-faint shrink-0" />
+          <ChevronRight size={14} className="text-text-faint shrink-0" />
         </Link>
-      </div>
+      </section>
     </div>
   );
 }
 
+/** Секция по Plink: подпись капсом над стеклянной картой, строки внутри
+ *  разделены волосяными линиями от значка, а не карточка на каждую. */
 function Section({ title, items }: { title: string; items: Item[] }) {
   return (
-    <section className="px-4 pt-4">
-      <h2 className="text-caption text-text-muted mb-2.5 px-1">{title}</h2>
-      <div className="flex flex-col gap-2">
-        {items.map((item) => (
+    <section className="px-4 pt-5">
+      <h2 className="settings-label mb-2 px-[14px]">{title}</h2>
+      <div className="glass rounded-[20px] py-1">
+        {items.map((item, i) => (
           <Link
             key={item.path}
             to={item.path}
             onClick={() => haptic("light")}
-            className="flex items-center gap-3 px-4 py-3.5 rounded-[var(--radius-tile)]
-                       bg-surface-2 border border-hairline
-                       active:scale-[0.99] transition-transform"
+            className="relative flex items-center gap-3 px-[14px] py-3
+                       active:bg-white/5 transition-colors first:rounded-t-[18px] last:rounded-b-[18px]"
           >
-            <item.icon size={19} className="text-accent shrink-0" />
+            {i > 0 && (
+              <span aria-hidden className="absolute left-[60px] right-0 top-0 h-px bg-white/8" />
+            )}
+            <span className="settings-badge">
+              <item.icon size={15} />
+            </span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="font-semibold text-[15px]">{item.title}</p>
-                {item.premium && (
-                  <Sparkles size={12} className="text-warn shrink-0" />
-                )}
+                <p className="font-semibold text-[15px] leading-tight">{item.title}</p>
+                {item.premium && <Sparkles size={12} className="text-warn shrink-0" />}
+                {item.paid && <Lock size={11} className="text-text-faint shrink-0" />}
               </div>
-              <p className="text-caption text-text-muted">{item.hint}</p>
+              <p className="text-[12px] text-text-muted mt-0.5 leading-snug">{item.hint}</p>
             </div>
-            <ChevronRight size={17} className="text-text-faint shrink-0" />
+            <ChevronRight size={14} className="text-text-faint shrink-0" />
           </Link>
         ))}
       </div>

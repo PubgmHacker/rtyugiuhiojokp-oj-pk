@@ -79,7 +79,7 @@ export default function DecorPicker() {
   }
 
   return (
-    <section aria-labelledby="decor-title">
+    <section id="decor" aria-labelledby="decor-title">
       <div className="flex items-baseline justify-between mb-2.5 px-1">
         <h3 id="decor-title" className="text-[15px] font-bold">
           Рамка карточки

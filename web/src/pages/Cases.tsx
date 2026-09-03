@@ -49,6 +49,15 @@ interface Выигрыш {
 }
 
 export default function Cases() {
+  // Кисточка на лице анкеты ведёт сюда с #decor: докручиваем до обложек,
+  // когда витрина уже смонтирована
+  useEffect(() => {
+    if (window.location.hash !== "#decor") return;
+    const t = window.setTimeout(() => {
+      document.getElementById("decor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, []);
   useSectionOpen("cases");
   const [state, setState] = useState<CaseState | null>(null);
   //: Код открываемого кейса. Один за раз: попытки общие, и две плитки

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { askConfirm } from "../lib/telegram";
+import ProfileFace, { ПУЗЫРЬ_МАКС } from "../components/ProfileFace";
 import { letterAvatarStyle } from "../lib/aura";
 import {
   BadgeCheck,
@@ -297,77 +298,26 @@ export default function Profile() {
 
   return (
     <div className="max-w-[440px] mx-auto px-4 safe-top pb-8">
-      {/* ── Шапка профиля ─────────────────────────────────────── */}
-      <div className="flex flex-col items-center pt-5 pb-7">
-        <div className="relative mb-4">
-          <div className="w-[104px] h-[104px] rounded-full avatar-ring overflow-hidden">
-            {photo ? (
-              <img
-                src={photo}
-                alt={profile?.display_name ?? ""}
-                className="w-full h-full object-cover rounded-full"
-              />
-            ) : (
-              <div
-                className="w-full h-full rounded-full flex items-center justify-center
-                           text-3xl font-bold text-white/60"
-                style={letterAvatarStyle(profile?.id)}
-              >
-                {profile?.display_name?.[0]?.toUpperCase() ?? "?"}
-              </div>
-            )}
-          </div>
-          {/* Своя наклейка из кейсов — на аватаре, там же, где её видят
-              другие. Иначе надетое оформление нигде не видно самому себе */}
-          {profile?.sticker && (
-            <img
-              src={profile.sticker}
-              alt=""
-              draggable={false}
-              className="absolute -top-2 -right-3 w-11 h-11 rotate-6 select-none
-                         drop-shadow-[0_2px_6px_rgba(0,0,0,.5)]"
-            />
-          )}
-          {profile?.is_premium && (
-            <span
-              className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-2.5 py-0.5
-                         rounded-full bg-accent text-[10px] font-bold text-white
-                         flex items-center gap-1 whitespace-nowrap"
-            >
-              <Crown size={10} fill="currentColor" />
-              PREMIUM
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 mb-1">
-          <h1 className="text-title font-extrabold">
-            {profile?.display_name || "Без имени"}
-          </h1>
-          {profile?.is_verified && <VerifiedBadge size={20} />}
-        </div>
-
-        <p className="text-text-muted text-[14px]">
-          {profile?.age ? `${profile.age} · ` : ""}
-          {profile?.city || "Город не указан"}
-        </p>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          className="mt-4"
-          onClick={() => navigate("/edit")}
-        >
-          <Pencil size={15} />
-          Редактировать анкету
-        </Button>
-      </div>
-
-      {/* ── Статистика ────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-2.5 mb-5">
-        <Stat label="Фото" value={profile?.photos?.length ?? 0} />
-        <Stat label="Интересы" value={profile?.interests?.length ?? 0} />
-        <Stat label="Приглашено" value={profile?.invited_count ?? 0} />
+      {/* ── Лицо анкеты (обложка, аватар в вырезе, пузырь, счётчики) ── */}
+      <div className="-mx-4 mb-5">
+        {profile && (
+        <ProfileFace
+          profile={profile}
+          own
+          onEdit={() => {
+            haptic("light");
+            navigate("/edit");
+          }}
+          onDecor={() => {
+            haptic("light");
+            navigate("/cases#decor");
+          }}
+          onBio={() => {
+            haptic("light");
+            navigate("/edit?focus=bio");
+          }}
+        />
+        )}
       </div>
 
       {/* ── Заполненность анкеты ──────────────────────────────── */}
@@ -418,7 +368,9 @@ export default function Profile() {
       />
 
       {/* ── О себе ────────────────────────────────────────────── */}
-      {profile?.bio && (
+      {/* Короткое «о себе» целиком живёт в пузыре на лице; карточка — для
+          длинного текста, который в пузырь не влез */}
+      {profile?.bio && profile.bio.trim().length > ПУЗЫРЬ_МАКС && (
         <Card className="p-4 mb-4">
           <h2 className="text-caption text-text-muted mb-1.5">О себе</h2>
           <p className="text-[15px] leading-relaxed selectable">{profile.bio}</p>
@@ -963,15 +915,6 @@ export default function Profile() {
 }
 
 /* ── Вспомогательные компоненты ─────────────────────────────── */
-
-function Stat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="text-center py-3.5 rounded-[var(--radius-tile)] bg-surface border border-hairline">
-      <p className="text-[22px] font-extrabold leading-none mb-1">{value}</p>
-      <p className="text-[11.5px] text-text-muted">{label}</p>
-    </div>
-  );
-}
 
 /** Строка настройки приватности: подпись, пояснение и тумблер. */
 function PrivacyToggle({
