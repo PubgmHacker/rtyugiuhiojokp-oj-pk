@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { askConfirm } from "../lib/telegram";
+import { letterAvatarStyle } from "../lib/aura";
 import {
   ArrowLeft,
   Send,
@@ -466,8 +467,8 @@ export default function Chat() {
               <img src={partnerPhoto} alt="" className="w-full h-full object-cover" />
             ) : (
               <span
-                className="w-full h-full flex items-center justify-center text-[14px] font-bold text-white/70"
-                style={{ background: "var(--gradient-placeholder)" }}
+                className="w-full h-full flex items-center justify-center text-[14px] font-bold"
+                style={letterAvatarStyle(match?.partner.id)}
               >
                 {partnerName[0]?.toUpperCase()}
               </span>

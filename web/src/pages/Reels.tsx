@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { askConfirm } from "../lib/telegram";
+import { letterAvatarStyle } from "../lib/aura";
 import {
   Heart, MessageCircle, Flag, Plus, Trash2, Volume2, VolumeX, EyeOff, Eye,
   Share2,
@@ -535,8 +536,8 @@ function ReelItem({
           ) : (
             <span
               className="w-9 h-9 rounded-full flex items-center justify-center
-                         text-[13px] font-bold text-white/50"
-              style={{ background: "var(--gradient-placeholder)" }}
+                         text-[13px] font-bold"
+              style={letterAvatarStyle(reel.author_id)}
             >
               {reel.author_name?.[0]?.toUpperCase() ?? "?"}
             </span>

@@ -21,6 +21,7 @@ import {
   type ReelComment,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { letterAvatarStyle } from "../lib/aura";
 import ReportReasonSheet from "./ReportReasonSheet";
 import { LoadError, Skeleton, Spinner } from "./ui";
 
@@ -193,8 +194,8 @@ export default function ReelComments({
                       ) : (
                         <span
                           className="w-8 h-8 rounded-full shrink-0 flex items-center
-                                     justify-center text-[12px] font-bold text-white/50"
-                          style={{ background: "var(--gradient-placeholder)" }}
+                                     justify-center text-[12px] font-bold"
+                          style={letterAvatarStyle(c.author_id)}
                         >
                           {c.author_name?.[0]?.toUpperCase() ?? "?"}
                         </span>

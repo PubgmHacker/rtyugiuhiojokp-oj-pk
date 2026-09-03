@@ -9,6 +9,7 @@ import {
 } from "framer-motion";
 import { Flag, MapPin, Sparkles } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
+import { letterAvatarStyle } from "../lib/aura";
 import { haptic } from "../lib/haptics";
 import { VerifiedBadge } from "./ui";
 import { GOALS, RELATION_TYPES, SUBCULTURES, optionLabel } from "../lib/profileOptions";
@@ -205,9 +206,9 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
       ) : (
         <div
           className="w-full h-full flex items-center justify-center"
-          style={{ background: "var(--gradient-placeholder)" }}
+          style={letterAvatarStyle(profile.id)}
         >
-          <span className="text-[64px] font-extrabold text-white/25">
+          <span className="text-[64px] font-extrabold opacity-90">
             {profile.display_name?.[0]?.toUpperCase() ?? "?"}
           </span>
         </div>

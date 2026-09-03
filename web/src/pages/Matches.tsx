@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Users, ChevronRight, Mic, Lock } from "lucide-react";
 import type { DailyLimits, MatchResponse } from "../lib/api";
+import { letterAvatarStyle } from "../lib/aura";
 import { getMatches, getDailyLimits } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
@@ -191,6 +192,7 @@ export default function Matches() {
                 <Avatar
                   src={m.locked ? undefined : m.partner.photos?.[0]}
                   name={m.partner.display_name}
+                  seed={m.partner.id}
                   size={64}
                   ring={!m.locked}
                   locked={m.locked}
@@ -224,6 +226,7 @@ export default function Matches() {
                   <Avatar
                     src={m.locked ? undefined : m.partner.photos?.[0]}
                     name={m.partner.display_name}
+                    seed={m.partner.id}
                     size={56}
                     locked={m.locked}
                   />
@@ -325,12 +328,15 @@ export default function Matches() {
 function Avatar({
   src,
   name,
+  seed,
   size,
   ring,
   locked,
 }: {
   src?: string;
   name?: string;
+  /** Семя цвета заглушки — id человека, чтобы плашка была везде одна. */
+  seed?: string;
   size: number;
   ring?: boolean;
   /** Мэтч за суточным лимитом: ни фото, ни первой буквы имени. */
@@ -366,8 +372,8 @@ function Avatar({
       ) : (
         <div
           className="w-full h-full rounded-full flex items-center justify-center
-                     font-bold text-white/70"
-          style={{ background: "var(--gradient-placeholder)", fontSize: size / 2.6 }}
+                     font-bold"
+          style={{ ...letterAvatarStyle(seed), fontSize: size / 2.6 }}
         >
           {name?.[0]?.toUpperCase() ?? "?"}
         </div>

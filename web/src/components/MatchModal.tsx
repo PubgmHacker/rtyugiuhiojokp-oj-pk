@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Heart, Sparkles, MessageCircle } from "lucide-react";
 import { haptic } from "../lib/haptics";
+import { letterAvatarStyle } from "../lib/aura";
 import { Button } from "./ui";
 import { useStore } from "../lib/store";
 
@@ -98,7 +99,7 @@ export default function MatchModal({ data, onClose }: MatchModalProps) {
           >
             {/* Две аватарки внахлёст */}
             <div className="flex items-center justify-center mb-6">
-              <Avatar src={myPhoto} fallback={me?.display_name} className="-mr-5" />
+              <Avatar src={myPhoto} fallback={me?.display_name} seed={me?.id} className="-mr-5" />
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
@@ -108,7 +109,7 @@ export default function MatchModal({ data, onClose }: MatchModalProps) {
               >
                 <Heart size={22} fill="#fff" className="text-white heart-beat" />
               </motion.div>
-              <Avatar src={data.partnerPhoto} fallback={data.partnerName} className="-ml-5" />
+              <Avatar src={data.partnerPhoto} fallback={data.partnerName} seed={data.partnerName} className="-ml-5" />
             </div>
 
             <h2 className="text-[30px] font-extrabold tracking-[-0.03em] text-gradient mb-2">
@@ -171,10 +172,13 @@ export default function MatchModal({ data, onClose }: MatchModalProps) {
 function Avatar({
   src,
   fallback,
+  seed,
   className = "",
 }: {
   src?: string;
   fallback?: string;
+  /** Семя цвета заглушки — тот же id, что красит букву в списках. */
+  seed?: string;
   className?: string;
 }) {
   return (
@@ -191,8 +195,8 @@ function Avatar({
         />
       ) : (
         <div
-          className="w-full h-full rounded-full flex items-center justify-center text-2xl font-bold text-white/70"
-          style={{ background: "var(--gradient-placeholder)" }}
+          className="w-full h-full rounded-full flex items-center justify-center text-2xl font-bold"
+          style={letterAvatarStyle(seed ?? fallback)}
         >
           {fallback?.[0]?.toUpperCase() ?? "?"}
         </div>

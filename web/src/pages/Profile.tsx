@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { askConfirm } from "../lib/telegram";
+import { letterAvatarStyle } from "../lib/aura";
 import {
   BadgeCheck,
   LogOut,
@@ -310,7 +311,7 @@ export default function Profile() {
               <div
                 className="w-full h-full rounded-full flex items-center justify-center
                            text-3xl font-bold text-white/60"
-                style={{ background: "var(--gradient-placeholder)" }}
+                style={letterAvatarStyle(profile?.id)}
               >
                 {profile?.display_name?.[0]?.toUpperCase() ?? "?"}
               </div>
@@ -1259,7 +1260,7 @@ function VisitorsCard() {
                 <span
                   className="w-7 h-7 rounded-full flex items-center justify-center
                              text-[12px] font-bold text-white/50"
-                  style={{ background: "var(--gradient-placeholder)" }}
+                  style={letterAvatarStyle(v.profile.id)}
                 >
                   {v.profile.display_name?.[0]?.toUpperCase() ?? "?"}
                 </span>

@@ -19,6 +19,7 @@ import {
   type RoomMessage,
 } from "../lib/api";
 import { haptic } from "../lib/haptics";
+import { letterAvatarStyle } from "../lib/aura";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { useIsMounted } from "../hooks/useSafeAsync";
 import {
@@ -302,8 +303,8 @@ function RoomChat({ room, onBack }: { room: Room; onBack: () => void }) {
                   ) : (
                     <span
                       className="w-8 h-8 rounded-full shrink-0 flex items-center
-                                 justify-center text-[12px] font-bold text-white/50"
-                      style={{ background: "var(--gradient-placeholder)" }}
+                                 justify-center text-[12px] font-bold"
+                      style={letterAvatarStyle(m.sender_id)}
                     >
                       {m.sender_name?.[0]?.toUpperCase() ?? "?"}
                     </span>

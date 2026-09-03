@@ -16,6 +16,7 @@
 import type { ReactNode } from "react";
 import { MapPin } from "lucide-react";
 import type { UserProfile } from "../lib/api";
+import { letterAvatarStyle } from "../lib/aura";
 import { decorStyle } from "../lib/decor";
 import { VerifiedBadge } from "./ui";
 
@@ -57,8 +58,8 @@ export default function PersonCard({
       ) : (
         <div
           className={`absolute inset-0 flex items-center justify-center
-                      font-bold text-white/25 ${mini ? "text-3xl" : "text-4xl"}`}
-          style={{ background: "var(--gradient-placeholder)" }}
+                      font-bold opacity-90 ${mini ? "text-3xl" : "text-4xl"}`}
+          style={letterAvatarStyle(profile.id)}
         >
           {profile.display_name?.[0]?.toUpperCase() ?? "?"}
         </div>

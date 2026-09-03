@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Crown, Trophy } from "lucide-react";
 import { getLeaderboard, type LeaderboardOut } from "../lib/api";
+import { letterAvatarStyle } from "../lib/aura";
 import { Chip, EmptyState, LoadError, Skeleton } from "./ui";
 import { useSectionOpen } from "../lib/useSectionOpen";
 
@@ -147,8 +148,8 @@ export default function Leaderboard() {
             ) : (
               <span
                 className="w-11 h-11 rounded-full flex items-center justify-center
-                           text-[15px] font-bold text-white/50 shrink-0"
-                style={{ background: "var(--gradient-placeholder)" }}
+                           text-[15px] font-bold shrink-0"
+                style={letterAvatarStyle(entry.user_id)}
               >
                 {entry.display_name?.[0]?.toUpperCase() ?? "?"}
               </span>
