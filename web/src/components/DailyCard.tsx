@@ -36,7 +36,8 @@ export default function DailyCardBanner() {
     setCard(null);
   }, []);
 
-  if (!card) return null;
+  // Без имени карты нечего показывать: пустой объект давал плашку «Карта дня: —»
+  if (!card?.name) return null;
 
   return (
     <div className="px-3 pb-2">

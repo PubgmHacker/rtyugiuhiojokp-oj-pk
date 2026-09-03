@@ -172,7 +172,7 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement> & { children: ReactNode }) {
   return (
     <div
-      className={`bg-surface border border-hairline rounded-[var(--radius-tile)] ${className}`}
+      className={`glass rounded-[20px] ${className}`}
       {...rest}
     >
       {children}

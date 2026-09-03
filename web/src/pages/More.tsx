@@ -18,14 +18,13 @@ import {
   ListChecks,
   Mic,
   Moon,
-  Sparkles,
   Star,
   Trophy,
   Users,
-  Lock,
 } from "lucide-react";
 import { haptic } from "../lib/haptics";
 import { ScreenHeader } from "../components/ui";
+import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 
 interface Item {
   path: string;
@@ -136,35 +135,18 @@ export default function More() {
  *  разделены волосяными линиями от значка, а не карточка на каждую. */
 function Section({ title, items }: { title: string; items: Item[] }) {
   return (
-    <section className="px-4 pt-5">
-      <h2 className="settings-label mb-2 px-[14px]">{title}</h2>
-      <div className="glass rounded-[20px] py-1">
-        {items.map((item, i) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            onClick={() => haptic("light")}
-            className="relative flex items-center gap-3 px-[14px] py-3
-                       active:bg-white/5 transition-colors first:rounded-t-[18px] last:rounded-b-[18px]"
-          >
-            {i > 0 && (
-              <span aria-hidden className="absolute left-[60px] right-0 top-0 h-px bg-white/8" />
-            )}
-            <span className="settings-badge">
-              <item.icon size={15} />
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className="font-semibold text-[15px] leading-tight">{item.title}</p>
-                {item.premium && <Sparkles size={12} className="text-warn shrink-0" />}
-                {item.paid && <Lock size={11} className="text-text-faint shrink-0" />}
-              </div>
-              <p className="text-[12px] text-text-muted mt-0.5 leading-snug">{item.hint}</p>
-            </div>
-            <ChevronRight size={14} className="text-text-faint shrink-0" />
-          </Link>
-        ))}
-      </div>
-    </section>
+    <SettingsGroup title={title} className="px-4 pt-5">
+      {items.map((item) => (
+        <SettingsRow
+          key={item.path}
+          to={item.path}
+          icon={item.icon}
+          title={item.title}
+          hint={item.hint}
+          premium={item.premium}
+          locked={item.paid}
+        />
+      ))}
+    </SettingsGroup>
   );
 }

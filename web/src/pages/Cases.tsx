@@ -77,7 +77,9 @@ export default function Cases() {
     setСбой(false);
     setState(null);
     getCaseState()
-      .then(setState)
+      // Кривой ответ (прокси отдала HTML с кодом 200, поле потерялось) — тот же
+      // экран сбоя с повтором, а не падение рендера на `cases.map`
+      .then((s) => (Array.isArray(s?.cases) && Array.isArray(s?.rewards) ? setState(s) : setСбой(true)))
       // Ошибка первой загрузки раньше писалась в error, который рендерится
       // только внутри загруженного экрана — скелетоны висели вечно
       .catch(() => setСбой(true));

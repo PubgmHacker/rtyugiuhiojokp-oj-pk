@@ -3,8 +3,10 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { askConfirm } from "../lib/telegram";
 import ProfileFace, { ПУЗЫРЬ_МАКС } from "../components/ProfileFace";
+import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { letterAvatarStyle } from "../lib/aura";
 import {
+  LifeBuoy,
   BadgeCheck,
   LogOut,
   Pencil,
@@ -333,27 +335,15 @@ export default function Profile() {
       {/* Только пока галочки нет: подтверждённому этот вход не нужен,
           его галочка уже стоит рядом с именем */}
       {profile && !profile.is_verified && (
-        <button
-          onClick={() => {
-            haptic("light");
-            setVerifyOpen(true);
-          }}
-          className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
-                     bg-surface border border-hairline flex items-center gap-3"
-        >
-          <BadgeCheck
-            size={18}
-            className="shrink-0"
-            style={{ color: "var(--color-verified)" }}
+        <SettingsGroup className="mb-4">
+          <SettingsRow
+            icon={BadgeCheck}
+            iconColor="var(--color-verified)"
+            title="Подтвердите профиль"
+            hint="Галочка за живую проверку — займёт полминуты"
+            onClick={() => setVerifyOpen(true)}
           />
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-[15px]">Подтвердите профиль</p>
-            <p className="text-caption text-text-muted">
-              Галочка за живую проверку — займёт полминуты
-            </p>
-          </div>
-          <ChevronRight size={18} className="text-text-faint shrink-0" />
-        </button>
+        </SettingsGroup>
       )}
       <VerificationSheet
         open={verifyOpen}
@@ -371,99 +361,46 @@ export default function Profile() {
       {/* Короткое «о себе» целиком живёт в пузыре на лице; карточка — для
           длинного текста, который в пузырь не влез */}
       {profile?.bio && profile.bio.trim().length > ПУЗЫРЬ_МАКС && (
-        <Card className="p-4 mb-4">
-          <h2 className="text-caption text-text-muted mb-1.5">О себе</h2>
-          <p className="text-[15px] leading-relaxed selectable">{profile.bio}</p>
-        </Card>
+        <SettingsGroup title="О себе" className="mb-4">
+          <p className="text-[15px] leading-relaxed selectable px-[14px] py-3">{profile.bio}</p>
+        </SettingsGroup>
       )}
-
-      {/* ── Гости ─────────────────────────────────────────────── */}
-      <VisitorsCard />
-
-      {/* ── Мои ролики ────────────────────────────────────────── */}
-      <MyReelsCard />
-
-      {/* ── Кейсы ─────────────────────────────────────────────── */}
-      <Link
-        to="/cases"
-        onClick={() => haptic("light")}
-        className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
-                   bg-surface border border-hairline flex items-center gap-3"
-      >
-        <Gift size={18} className="text-accent shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-[15px]">Кейсы</p>
-          <p className="text-caption text-text-muted">
-            Наклейки и обложки для анкеты
-          </p>
-        </div>
-        <ChevronRight size={18} className="text-text-faint shrink-0" />
-      </Link>
-
-      {/* ── Оценка фото ───────────────────────────────────────── */}
-      {/* Вход в отдельный формат: и оценить чужие, и посмотреть свою оценку */}
-      <Link
-        to="/photo-ratings"
-        onClick={() => haptic("light")}
-        className="w-full text-left mb-4 p-4 rounded-[var(--radius-tile)]
-                   bg-surface border border-hairline flex items-center gap-3"
-      >
-        <Star size={18} className="text-accent shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-[15px]">Оценка фото</p>
-          <p className="text-caption text-text-muted">
-            Оцените чужие и узнайте оценку своего
-          </p>
-        </div>
-        <ChevronRight size={18} className="text-text-faint shrink-0" />
-      </Link>
 
       {/* ── Интересы ──────────────────────────────────────────── */}
       {!!profile?.interests?.length && (
-        <div className="mb-5">
-          <h2 className="text-caption text-text-muted mb-2.5 px-1">Интересы</h2>
-          <div className="flex flex-wrap gap-2">
+        <section className="mb-4">
+          <h2 className="settings-label mb-2 px-[14px]">Интересы</h2>
+          <div className="flex flex-wrap gap-2 px-0.5">
             {profile.interests.map((i) => (
               <Chip key={i}>{i}</Chip>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* ── Геолокация ────────────────────────────────────────── */}
-      <Card className="p-4 mb-4">
-        <div className="flex items-start gap-3">
-          <MapPin size={18} className="text-accent mt-0.5 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-[15px] mb-0.5">Поиск рядом</p>
-            <p className="text-caption text-text-muted">
-              {geoStatus === "ok"
-                ? "Местоположение обновлено"
-                : geoStatus === "fail"
-                  ? "Не удалось определить — проверьте доступ к геопозиции"
-                  : profile?.has_location
-                    ? "Включён — вы видите расстояние до людей"
-                    : "Включите, чтобы видеть людей поблизости"}
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          fullWidth
-          className="mt-3"
-          onClick={handleGeolocate}
-          disabled={geoStatus === "busy"}
-        >
-          {geoStatus === "busy" ? (
-            <Spinner size={16} />
-          ) : profile?.has_location ? (
-            "Обновить местоположение"
-          ) : (
-            "Определить местоположение"
-          )}
-        </Button>
-      </Card>
+      {/* ── Мои ролики ────────────────────────────────────────── */}
+      <MyReelsCard />
+
+      {/* ── Гости ─────────────────────────────────────────────── */}
+      <VisitorsCard />
+
+      {/* ── Кейсы и оценка фото ───────────────────────────────── */}
+      {/* Две двери в отдельные форматы — одной стеклянной картой, как стек
+          настроек Plink, а не плитка на каждую */}
+      <SettingsGroup title="Для анкеты" className="mb-4">
+        <SettingsRow
+          icon={Gift}
+          title="Кейсы"
+          hint="Наклейки и обложки для анкеты"
+          to="/cases"
+        />
+        <SettingsRow
+          icon={Star}
+          title="Оценка фото"
+          hint="Оцените чужие и узнайте оценку своего"
+          to="/photo-ratings"
+        />
+      </SettingsGroup>
 
       {/* ── Premium ───────────────────────────────────────────── */}
       {profile?.is_premium ? (
@@ -518,6 +455,141 @@ export default function Profile() {
           <ChevronRight size={18} className="text-text-faint shrink-0" />
         </Link>
       )}
+
+      {/* ── Реферальная программа ─────────────────────────────── */}
+      <Card className="p-4 mb-4">
+        <div className="flex items-center gap-2.5 mb-2">
+          <Gift size={18} className="text-accent" />
+          <span className="font-semibold text-[15px]">Приглашай друзей</span>
+        </div>
+
+        {profile?.referral_boost ? (
+          <p className="text-[14px] text-success mb-3.5">
+            Буст активен: анкета выше на {profile.referral_boost_percent ?? 12}%
+          </p>
+        ) : (
+          <>
+            <p className="text-[14px] text-text-secondary mb-3">
+              Пригласите {profile?.referral_target ?? 3} друзей и получите буст
+              анкеты на {profile?.referral_boost_percent ?? 12}%
+            </p>
+            <div className="flex gap-1.5 mb-1.5">
+              {Array.from({ length: profile?.referral_target ?? 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full ${
+                    i < (profile?.invited_count ?? 0) ? "bg-accent" : "bg-surface-3"
+                  }`}
+                />
+              ))}
+            </div>
+            <p className="text-caption text-text-muted mb-3.5">
+              {profile?.invited_count ?? 0} из {profile?.referral_target ?? 3}
+            </p>
+          </>
+        )}
+
+        <Button variant="secondary" size="sm" fullWidth onClick={copyReferralLink}>
+          {linkCopied ? <Check size={15} /> : <Copy size={15} />}
+          {linkCopied ? "Ссылка скопирована" : "Скопировать приглашение"}
+        </Button>
+      </Card>
+
+      {/* ── Telegram-канал ─────────────────────────────────────── */}
+      <TgChannelCard profile={profile} setProfile={setProfile} />
+
+      {/* ── Геолокация ────────────────────────────────────────── */}
+      <Card className="p-4 mb-4">
+        <div className="flex items-start gap-3">
+          <MapPin size={18} className="text-accent mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-[15px] mb-0.5">Поиск рядом</p>
+            <p className="text-caption text-text-muted">
+              {geoStatus === "ok"
+                ? "Местоположение обновлено"
+                : geoStatus === "fail"
+                  ? "Не удалось определить — проверьте доступ к геопозиции"
+                  : profile?.has_location
+                    ? "Включён — вы видите расстояние до людей"
+                    : "Включите, чтобы видеть людей поблизости"}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth
+          className="mt-3"
+          onClick={handleGeolocate}
+          disabled={geoStatus === "busy"}
+        >
+          {geoStatus === "busy" ? (
+            <Spinner size={16} />
+          ) : profile?.has_location ? (
+            "Обновить местоположение"
+          ) : (
+            "Определить местоположение"
+          )}
+        </Button>
+      </Card>
+
+      {/* ── Кастомизация: какой экран открывать после входа ───────
+          У Мимолёта это даётся, и сказывается на возврате: кто-то живёт в
+          ленте, кто-то — в видеороликах */}
+      <SettingsGroup title="Главный экран" className="mb-4">
+        <div className="flex gap-2.5 p-3">
+          <ScreenChoice
+            label="Лента"
+            hint="Свайп анкет"
+            active={mainScreen === "feed"}
+            onPick={() => setMainScreen("feed")}
+          />
+          <ScreenChoice
+            label="Видео"
+            hint="Reels-лента"
+            active={mainScreen === "reels"}
+            onPick={() => setMainScreen("reels")}
+          />
+        </div>
+      </SettingsGroup>
+
+      {/* ── Оформление и язык ─────────────────────────────────── */}
+      {/* Рядом с приватностью: обе строки про то, каким человек видит
+          приложение. Язык меняется только здесь — бот спрашивает его один
+          раз на первом /start и команды смены не имеет. */}
+      <SettingsGroup title="Вид" className="mb-4">
+        <SettingsRow
+          icon={Palette}
+          title="Оформление"
+          onClick={() => setAppearanceOpen(true)}
+          value={
+            <>
+              {/* Три точки палитры вместо названия: цвет узнаётся быстрее
+                  слова, а название всё равно стоит рядом. */}
+              <span className="flex gap-1">
+                {appearanceByKey(loadAppearance()).swatch.map((c, i) => (
+                  <span
+                    key={i}
+                    className="h-3.5 w-3.5 rounded-full border border-hairline"
+                    style={{ background: c }}
+                  />
+                ))}
+              </span>
+              <span>{appearanceByKey(loadAppearance()).name}</span>
+            </>
+          }
+        />
+        {/* Название на самом языке, как в списке: «Türkçe», а не «турецкий» —
+            так человек находит строку, даже не читая подпись слева. lang
+            нужен читалке, иначе она произнесёт его по правилам интерфейса. */}
+        <SettingsRow
+          icon={Languages}
+          title={t("lang.title")}
+          onClick={() => setLanguageOpen(true)}
+          value={НАЗВАНИЯ[язык]}
+          valueLang={язык}
+        />
+      </SettingsGroup>
 
       {/* ── Почта для восстановления ──────────────────────────── */}
       {/* Стоит перед приватностью и удалением: это то, что спасает аккаунт,
@@ -600,122 +672,27 @@ export default function Profile() {
         </div>
       </Card>
 
-      {/* ── Оформление ────────────────────────────────────────── */}
-      {/* Рядом с приватностью: это тоже «как меня видно», только глазами
-          хозяина анкеты. Плитка в идиоме соседних строк настроек. */}
-      <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
-        <button
-          onClick={() => {
-            haptic("light");
-            setAppearanceOpen(true);
-          }}
-          className="w-full flex items-center gap-3 px-4 py-3.5 bg-surface text-left
-                     active:bg-surface-2 transition-colors"
-        >
-          <Palette size={17} className="shrink-0 text-text-muted" />
-          <span className="flex-1 text-[15px] text-text">Оформление</span>
-          <span className="flex items-center gap-2">
-            {/* Три точки палитры вместо названия: цвет узнаётся быстрее слова,
-                а название всё равно стоит рядом. */}
-            <span className="flex gap-1">
-              {appearanceByKey(loadAppearance()).swatch.map((c, i) => (
-                <span
-                  key={i}
-                  className="h-3.5 w-3.5 rounded-full border border-hairline"
-                  style={{ background: c }}
-                />
-              ))}
-            </span>
-            <span className="text-[14px] text-text-muted">
-              {appearanceByKey(loadAppearance()).name}
-            </span>
-          </span>
-        </button>
-      </div>
-
-      {/* ── Язык ──────────────────────────────────────────────── */}
-      {/* Сразу под оформлением: обе строки про то, каким человек видит
-          приложение. И это единственное место, где язык можно сменить — бот
-          спрашивает его один раз на первом /start и команды смены не имеет. */}
-      <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
-        <button
-          onClick={() => {
-            haptic("light");
-            setLanguageOpen(true);
-          }}
-          className="w-full flex items-center gap-3 px-4 py-3.5 bg-surface text-left
-                     active:bg-surface-2 transition-colors"
-        >
-          <Languages size={17} className="shrink-0 text-text-muted" />
-          <span className="flex-1 text-[15px] text-text">{t("lang.title")}</span>
-          {/* Название на самом языке, как в списке: «Türkçe», а не «турецкий» —
-              так человек находит строку, даже не читая подпись слева. lang
-              нужен читалке, иначе она произнесёт его по правилам интерфейса. */}
-          <span className="text-[14px] text-text-muted" lang={язык}>
-            {НАЗВАНИЯ[язык]}
-          </span>
-        </button>
-      </div>
-
-      {/* ── Telegram-канал ─────────────────────────────────────── */}
-      <TgChannelCard profile={profile} setProfile={setProfile} />
-
-      {/* ── Реферальная программа ─────────────────────────────── */}
-      <Card className="p-4 mb-4">
-        <div className="flex items-center gap-2.5 mb-2">
-          <Gift size={18} className="text-accent" />
-          <span className="font-semibold text-[15px]">Приглашай друзей</span>
-        </div>
-
-        {profile?.referral_boost ? (
-          <p className="text-[14px] text-success mb-3.5">
-            Буст активен: анкета выше на {profile.referral_boost_percent ?? 12}%
-          </p>
-        ) : (
-          <>
-            <p className="text-[14px] text-text-secondary mb-3">
-              Пригласите {profile?.referral_target ?? 3} друзей и получите буст
-              анкеты на {profile?.referral_boost_percent ?? 12}%
-            </p>
-            <div className="flex gap-1.5 mb-1.5">
-              {Array.from({ length: profile?.referral_target ?? 3 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 flex-1 rounded-full ${
-                    i < (profile?.invited_count ?? 0) ? "bg-accent" : "bg-surface-3"
-                  }`}
-                />
-              ))}
-            </div>
-            <p className="text-caption text-text-muted mb-3.5">
-              {profile?.invited_count ?? 0} из {profile?.referral_target ?? 3}
-            </p>
-          </>
-        )}
-
-        <Button variant="secondary" size="sm" fullWidth onClick={copyReferralLink}>
-          {linkCopied ? <Check size={15} /> : <Copy size={15} />}
-          {linkCopied ? "Ссылка скопирована" : "Скопировать приглашение"}
-        </Button>
-      </Card>
-
       {/* ── Заблокированные ──────────────────────────────────── */}
-      <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
+      <div className="mb-4 glass rounded-[20px] py-1 overflow-hidden">
         <button
-          onClick={() => (blockedOpen ? setBlockedOpen(false) : openBlocked())}
-          className="w-full flex items-center gap-3 px-4 py-3.5 bg-surface
-                     active:bg-surface-2 transition-colors"
+          onClick={() => {
+            haptic("light");
+            blockedOpen ? setBlockedOpen(false) : openBlocked();
+          }}
+          className="settings-row"
+          aria-expanded={blockedOpen}
         >
-          <Ban size={17} className="text-text-muted shrink-0" />
-          <span className="flex-1 text-left text-[15px]">Заблокированные</span>
+          <span className="settings-badge">
+            <Ban size={15} />
+          </span>
+          <span className="flex-1 text-left text-[15px] font-semibold">Заблокированные</span>
           <ChevronRight
-            size={17}
+            size={14}
             className={`text-text-faint shrink-0 transition-transform ${
               blockedOpen ? "rotate-90" : ""
             }`}
           />
         </button>
-
         <AnimatePresence initial={false}>
           {blockedOpen && (
             <motion.div
@@ -723,7 +700,7 @@ export default function Profile() {
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="overflow-hidden border-t border-hairline bg-surface-2"
+              className="overflow-hidden border-t border-[var(--glass-divider)]"
             >
               {blockedСбой && blocked === null ? (
                 <div className="px-4 py-3.5">
@@ -772,80 +749,50 @@ export default function Profile() {
       </div>
 
       {/* ── Документы и правила ───────────────────────────────── */}
-      <div className="mb-4 rounded-[var(--radius-tile)] border border-hairline overflow-hidden">
+      {/* legalUrl, а не window.location.origin: в нативной сборке origin —
+          `capacitor://localhost`, и такую схему openExternal открыть не может
+          (Browser отбрасывает не-http, система про неё не знает). Кнопка
+          нажималась и не делала ничего. */}
+      <SettingsGroup title="Документы" className="mb-4">
         {(
           [
-            { label: "Правила сообщества", page: "guidelines" },
-            { label: "Политика конфиденциальности", page: "privacy" },
-            { label: "Условия использования", page: "terms" },
-            { label: "Поддержка", page: "support" },
+            { label: "Правила сообщества", page: "guidelines", icon: FileText },
+            { label: "Политика конфиденциальности", page: "privacy", icon: FileText },
+            { label: "Условия использования", page: "terms", icon: FileText },
+            { label: "Поддержка", page: "support", icon: LifeBuoy },
           ] as const
-        ).map((item, i) => (
-          <button
+        ).map((item) => (
+          <SettingsRow
             key={item.page}
-            onClick={() => {
-              haptic("light");
-              // legalUrl, а не window.location.origin: в нативной сборке origin —
-              // `capacitor://localhost`, и такую схему openExternal открыть не может
-              // (Browser отбрасывает не-http, система про неё не знает). Кнопка
-              // нажималась и не делала ничего.
-              openExternal(legalUrl(item.page));
-            }}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 bg-surface
-                        active:bg-surface-2 transition-colors
-                        ${i > 0 ? "border-t border-hairline" : ""}`}
-          >
-            <FileText size={17} className="text-text-muted shrink-0" />
-            <span className="flex-1 text-left text-[15px]">{item.label}</span>
-            <ChevronRight size={17} className="text-text-faint shrink-0" />
-          </button>
+            icon={item.icon}
+            title={item.label}
+            onClick={() => openExternal(legalUrl(item.page))}
+          />
         ))}
-      </div>
-
-      {/* ── Кастомизация: какой экран открывать после входа ───────
-          У Мимолёта это даётся, и сказывается на возврате: кто-то живёт в
-          ленте, кто-то — в видеороликах */}
-      <Card className="p-4 mb-4">
-        <h2 className="text-caption text-text-muted mb-3">Главный экран</h2>
-        <div className="flex gap-2.5">
-          <ScreenChoice
-            label="Лента"
-            hint="Свайп анкет"
-            active={mainScreen === "feed"}
-            onPick={() => setMainScreen("feed")}
-          />
-          <ScreenChoice
-            label="Видео"
-            hint="Reels-лента"
-            active={mainScreen === "reels"}
-            onPick={() => setMainScreen("reels")}
-          />
-        </div>
-      </Card>
+      </SettingsGroup>
 
       {/* ── Аккаунт ───────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2.5">
-
-        <Button
-          variant="secondary"
-          size="md"
-          fullWidth
+      {/* Четыре действия одной картой стека, как в настройках Plink: четыре
+          широкие кнопки подряд читались как четыре призыва к действию, хотя
+          это редкие служебные вещи. Удаление — последним и красным */}
+      <SettingsGroup title="Аккаунт">
+        <SettingsRow
+          icon={LogOut}
+          title="Выйти"
           onClick={() => {
             logout();
             navigate("/login", { replace: true });
           }}
-        >
-          <LogOut size={17} />
-          Выйти
-        </Button>
-
+        />
         {/* Обычный выход чужую сессию не трогает: украденный токен живёт до
             72 часов. Этот гасит все разом — включая текущий */}
-        <Button
-          variant="secondary"
-          size="md"
-          fullWidth
+        <SettingsRow
+          icon={LogOut}
+          title="Выйти на всех устройствах"
+          hint="Погасит и украденный токен, если такой есть"
           disabled={выходВезде}
+          value={выходВезде ? <Spinner size={16} /> : undefined}
+          chevron={!выходВезде}
           onClick={async () => {
             setВыходВезде(true);
             try {
@@ -856,40 +803,27 @@ export default function Profile() {
             logout();
             navigate("/login", { replace: true });
           }}
-        >
-          {выходВезде ? <Spinner size={16} /> : <LogOut size={17} />}
-          Выйти на всех устройствах
-        </Button>
-
-        <Button
-          variant="secondary"
-          size="md"
-          fullWidth
+        />
+        <SettingsRow
+          icon={Download}
+          title={exportState === "busy" ? "Готовим файл…" : "Скачать мои данные"}
+          hint={
+            exportState === "fail"
+              ? "Не удалось выгрузить данные. Попробуйте позже."
+              : "Архив анкеты, лайков и сообщений"
+          }
           disabled={exportState === "busy"}
+          value={exportState === "busy" ? <Spinner size={16} /> : undefined}
+          chevron={exportState !== "busy"}
           onClick={handleExport}
-        >
-          {exportState === "busy" ? <Spinner size={17} /> : <Download size={17} />}
-          {exportState === "busy" ? "Готовим файл…" : "Скачать мои данные"}
-        </Button>
-        {exportState === "fail" && (
-          <p className="text-xs text-rose-400">
-            Не удалось выгрузить данные. Попробуйте позже.
-          </p>
-        )}
-
-        <Button
-          variant="danger"
-          size="md"
-          fullWidth
-          onClick={() => {
-            haptic("warning");
-            setDeleteOpen(true);
-          }}
-        >
-          <Trash2 size={17} />
-          Удалить аккаунт
-        </Button>
-      </div>
+        />
+        <SettingsRow
+          icon={Trash2}
+          title="Удалить аккаунт"
+          tone="danger"
+          onClick={() => setDeleteOpen(true)}
+        />
+      </SettingsGroup>
 
       <AppearanceSheet
         open={appearanceOpen}

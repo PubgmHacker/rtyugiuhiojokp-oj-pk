@@ -348,10 +348,18 @@ function TelegramBack() {
 
 function Protected({ children, nav = true }: { children: React.ReactNode; nav?: boolean }) {
   const token = useStore((s) => s.token);
+  const { pathname } = useLocation();
   if (!token) return <Navigate to="/login" replace />;
   return (
     <div className={`min-h-screen-safe ${nav ? "pb-nav" : ""}`}>
-      <Suspense fallback={<ScreenFallback />}>{children}</Suspense>
+      {/* Своя граница на каждый экран, а не одна на всё приложение: упавший
+          экран не роняет оболочку — таб-бар живёт, и человек уходит на другую
+          вкладку. Ключ-маршрут перемонтирует границу при переходе, иначе React
+          переиспользует тот же экземпляр (все Route отдают <Protected> в одной
+          позиции дерева) и ошибка висела бы на следующем экране */}
+      <ErrorBoundary key={pathname} compact>
+        <Suspense fallback={<ScreenFallback />}>{children}</Suspense>
+      </ErrorBoundary>
       {/* Пауза скрывает анкету отовсюду, поэтому и предупреждение живёт
           в оболочке, а не на одном экране: с какого бы места человек ни
           начал, он узнаёт, что его не видно. Плавающий пузырь — чтобы не

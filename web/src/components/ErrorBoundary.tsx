@@ -11,7 +11,12 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
  * `componentDidCatch` — хуками это не делается.
  */
 export default class ErrorBoundary extends Component<
-  { children: ReactNode },
+  {
+    children: ReactNode;
+    /** Внутри оболочки с таб-баром: не во весь экран, чтобы навигация под
+     *  упавшим экраном оставалась на месте и человек мог уйти на другую вкладку. */
+    compact?: boolean;
+  },
   { сломалось: boolean }
 > {
   state = { сломалось: false };
@@ -29,7 +34,9 @@ export default class ErrorBoundary extends Component<
     if (!this.state.сломалось) return this.props.children;
 
     return (
-      <div className="h-screen-safe flex flex-col items-center justify-center px-8 text-center gap-4">
+      <div
+        className={`${this.props.compact ? "min-h-[70dvh]" : "h-screen-safe"} flex flex-col items-center justify-center px-8 text-center gap-4`}
+      >
         <div className="text-[52px] leading-none">🌅</div>
         <h1 className="text-[19px] font-bold">Что-то сломалось</h1>
         <p className="text-[14px] text-text-muted max-w-[34ch] leading-relaxed">
