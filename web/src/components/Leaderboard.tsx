@@ -73,7 +73,7 @@ export default function Leaderboard() {
       <div className="px-4 pt-3">
         {переключатель}
         <EmptyState
-          emoji="🏆"
+          icon={Trophy}
           title="Рейтинг пока пуст"
           description={
             period === "today"

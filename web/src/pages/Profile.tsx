@@ -705,7 +705,7 @@ export default function Profile() {
               {blockedСбой && blocked === null ? (
                 <div className="px-4 py-3.5">
                   <p className="text-[13.5px] text-text-muted mb-2.5">
-                    📡 Не удалось загрузить
+                    Не удалось загрузить
                   </p>
                   <Button variant="secondary" size="sm" onClick={openBlocked}>
                     Повторить

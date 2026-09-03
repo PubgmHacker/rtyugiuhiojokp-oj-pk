@@ -21,6 +21,7 @@ import {
 } from "../lib/onboardingDraft";
 import { Button, Chip, Spinner } from "../components/ui";
 import PhotoGrid, { usePhotoSlots } from "../components/PhotoGrid";
+import OnboardingIntro from "../components/OnboardingIntro";
 import InterestsPicker from "../components/InterestsPicker";
 import {
   GOALS,
@@ -73,6 +74,9 @@ export default function Onboarding() {
   // рендере затирало бы то, что человек набрал в этой сессии.
   const [draft] = useState(loadDraft);
   const [restored, setRestored] = useState(() => !!draft);
+  // Интро с живыми экранами — только новичку: тот, у кого есть черновик
+  // или имя в анкете, уже видел приложение и пришёл доделать
+  const [intro, setIntro] = useState(() => !draft && !user?.display_name);
 
   const [index, setIndex] = useState(() =>
     draft ? Math.min(draft.index, STEPS.length - 1) : 0
@@ -357,6 +361,10 @@ export default function Onboarding() {
     navigate,
     setUser,
   ]);
+
+  if (intro) {
+    return <OnboardingIntro onStart={() => setIntro(false)} />;
+  }
 
   return (
     <div className="flex flex-col h-screen-safe">

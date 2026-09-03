@@ -1,8 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  LayoutDashboard, Users, AlertTriangle, ShieldCheck, LayoutGrid, LogOut,
-  Clapperboard, ScrollText, BadgeCheck, Images, Megaphone, BarChart3,
+  LayoutDashboard,
+  Users,
+  AlertTriangle,
+  ShieldCheck,
+  LayoutGrid,
+  LogOut,
+  Clapperboard,
+  ScrollText,
+  BadgeCheck,
+  Images,
+  Megaphone,
+  BarChart3,
   TicketPercent,
+  Lock,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getAdminStats, type AdminStats } from "../lib/admin";
@@ -77,7 +88,7 @@ export default function AdminDashboard() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-2xl mb-2">🔒</p>
+          <Lock size={28} strokeWidth={1.6} className="mx-auto mb-3 text-text-muted" aria-hidden="true" />
           <p className="text-text-muted">Доступ только для администраторов</p>
         </div>
       </div>
@@ -153,7 +164,7 @@ export default function AdminDashboard() {
           <div className="space-y-6">
             {!stats && сбой ? (
               <div className="bg-surface rounded-2xl px-4 py-12 text-center text-text-muted">
-                <p className="mb-3">📡 Не удалось загрузить</p>
+                <p className="mb-3">Не удалось загрузить</p>
                 <button
                   onClick={() => { setСбой(false); setLoading(true); loadStats(); }}
                   className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"

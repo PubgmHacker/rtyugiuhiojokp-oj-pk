@@ -66,6 +66,29 @@ const NAV_ITEMS: { path: string; icon: typeof Flame; label: Ключ }[] = [
   { path: "/profile", icon: User, label: "nav.profile" },
 ];
 
+/** Экраны вне вкладок подсвечивают вкладку-родителя: редактирование — «Профиль»,
+    переписка — «Чаты», разделы каталога — «Ещё». Иначе пилюля прыгала на «Ленту». */
+const РОДИТЕЛЬ_ВКЛАДКИ: readonly [prefix: string, tab: string][] = [
+  ["/edit", "/profile"],
+  ["/chat", "/matches"],
+  ["/plans", "/more"],
+  ["/cases", "/more"],
+  ["/tarot", "/more"],
+  ["/rooms", "/more"],
+  ["/habits", "/more"],
+  ["/voice", "/more"],
+  ["/photo-ratings", "/more"],
+  ["/reels", "/more"],
+  ["/notifications", "/discover"],
+];
+
+function индексВкладки(pathname: string): number {
+  const прямой = NAV_ITEMS.findIndex((i) => pathname.startsWith(i.path));
+  if (прямой >= 0) return прямой;
+  const родитель = РОДИТЕЛЬ_ВКЛАДКИ.find(([prefix]) => pathname.startsWith(prefix));
+  return родитель ? NAV_ITEMS.findIndex((i) => i.path === родитель[1]) : -1;
+}
+
 /** Геометрия жидкого таб-бара — как в iOS-клиенте Plink */
 const БАР = { высота: 64, отступ: 6, пилюля: 50 } as const;
 const КРИВАЯ_ПИЛЮЛИ = [0.16, 1, 0.3, 1] as const;
@@ -83,10 +106,7 @@ function BottomNav() {
   const жест = useRef<{ startX: number; moved: boolean; pointerId: number } | null>(null);
   const перетянули = useRef(false);
 
-  const активная = Math.max(
-    0,
-    NAV_ITEMS.findIndex((i) => pathname.startsWith(i.path)),
-  );
+  const активная = Math.max(0, индексВкладки(pathname));
   const ячейка = ширина > 0 ? (ширина - БАР.отступ * 2) / NAV_ITEMS.length : 0;
   const левый = БАР.отступ;
   const правый = ширина - БАР.отступ - ячейка;

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Users, ChevronRight, Mic, Lock } from "lucide-react";
+import { Users, ChevronRight, Mic, Lock, WifiOff, MessageCircle, Flame } from "lucide-react";
 import type { DailyLimits, MatchResponse } from "../lib/api";
 import { letterAvatarStyle } from "../lib/aura";
 import { getMatches, getDailyLimits } from "../lib/api";
@@ -110,7 +110,7 @@ export default function Matches() {
       <div>
         <ScreenHeader title="Чаты" />
         <EmptyState
-          emoji="📡"
+          icon={WifiOff}
           title="Нет связи"
           description="Не удалось загрузить список. Проверьте подключение к интернету."
           action={<Button onClick={load}>Повторить</Button>}
@@ -124,7 +124,7 @@ export default function Matches() {
       <div>
         <ScreenHeader title="Чаты" />
         <EmptyState
-          emoji="💬"
+          icon={MessageCircle}
           title="Пока пусто"
           description="Когда вы понравитесь друг другу, здесь появится чат. Начните с поиска."
           action={
@@ -267,14 +267,16 @@ export default function Matches() {
                       )}
                       {/* Стрик: серия общения — эмбиент-индикатор. Рядом с
                            именем, а не на карточке: выбранный эмоджи изменяется
-                           от длины серии, и это читается лучше номера. */}
+                           от длины серии, и это читается лучше номера. Огонёк —
+                           иконка, а не эмодзи сервера: эмодзи в интерфейсе нет. */}
                       {!!m.streak_days && (
                         <span
                           className="flex items-center gap-1 text-[12px]
                                      text-warn font-semibold shrink-0"
                           aria-label={`Серия общения: ${m.streak_days} дн.`}
                         >
-                          {m.streak_emoji} {m.streak_days}
+                          <Flame size={13} fill="currentColor" aria-hidden="true" />
+                          {m.streak_days}
                         </span>
                       )}
                     </div>

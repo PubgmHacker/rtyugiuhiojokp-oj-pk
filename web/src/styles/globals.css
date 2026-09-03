@@ -299,6 +299,22 @@
 }
 
 /* Роль «контрол»: кнопки, карточки настроек, пилюли */
+/* Глиф пустого состояния: иконка в мягком акцентном диске вместо эмодзи */
+@utility empty-glyph {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 9999px;
+  color: var(--color-accent);
+  background:
+    radial-gradient(120% 120% at 30% 20%, color-mix(in oklab, var(--color-accent) 24%, transparent), transparent 62%),
+    var(--color-surface);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-accent) 26%, transparent),
+    0 12px 30px -18px color-mix(in oklab, var(--color-accent) 55%, transparent);
+}
+
 @utility glass {
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
@@ -322,6 +338,20 @@
   box-shadow:
     inset 0 1px 0 var(--glass-rim),
     var(--shadow-glass-nav);
+}
+
+/* Роль «карта списка»: группы настроек и хабов (SettingsGroup). То же стекло,
+   но без верхней подсветки-градиента: на карте в 3–5 строк она заканчивалась
+   как раз под первой строкой и читалась как «выделенный пункт». Свет здесь
+   даёт только волосяная кромка сверху. */
+@utility settings-card {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    var(--shadow-glass-control);
 }
 
 /* Роль «оверлей»: подложки поверх фото и обложек */
@@ -556,6 +586,68 @@
 /* Отступ под фиксированный таббар. Его высота — содержимое плюс safe-area,
    поэтому плоских 82px (плавающая капсула 64 + 2 + воздух) не хватало: на телефонах с «чёлкой» последний блок
    страницы уезжал под навигацию и читался наполовину. */
+/* ── Видео-лента: геометрия под плавающим таб-баром ─────────── */
+:root {
+  /* высота бара (64) + его нижний отступ (safe-area или 8px) + 2px зазор */
+  --nav-h: calc(64px + max(env(safe-area-inset-bottom), 0.5rem) + 2px);
+}
+
+/* Тень под белый текст и значки поверх видео любой яркости */
+@utility reel-shadow {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55), 0 0 12px rgb(0 0 0 / 0.35);
+}
+
+/* Кнопка столбика действий: значок и число под ним, плоско, с тенью */
+@utility reel-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 44px;
+  min-height: 44px;
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.55)) drop-shadow(0 0 10px rgb(0 0 0 / 0.3));
+  transition: transform 0.15s ease;
+  & > span {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    min-height: 12px;
+  }
+  &:active {
+    transform: scale(0.88);
+  }
+}
+
+/* Сердце двойного тапа: вспыхнуло и растаяло */
+@utility reel-burst {
+  animation: reel-burst 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes reel-burst {
+  0% { opacity: 0; transform: scale(0.4); }
+  25% { opacity: 1; transform: scale(1.08); }
+  70% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+
+/* Карта подписки на «Ещё»: стекло с мягким акцентным заревом слева */
+@utility plans-hero {
+  background:
+    radial-gradient(140% 160% at 0% 50%, color-mix(in oklab, var(--color-accent) 26%, transparent), transparent 55%),
+    color-mix(in oklab, var(--color-surface) 82%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-accent) 22%, var(--color-hairline));
+}
+@utility plans-hero-badge {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: var(--color-on-accent);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-deep));
+  box-shadow: 0 8px 20px -10px color-mix(in oklab, var(--color-accent) 80%, transparent);
+}
+
 @utility pb-nav {
   padding-bottom: calc(82px + max(env(safe-area-inset-bottom), 0.5rem));
 }
@@ -1208,4 +1300,69 @@
   background-size: 44px 44px;
   color: var(--chat-accent, var(--color-accent));
   opacity: 0.1;
+}
+
+/* ── Живые экраны: онбординг и стена входа ───────────────────
+   Настоящие скриншоты приложения в рамке телефона. Рамка — только радиус,
+   тонкое кольцо и тень: никакой «моковой» графики динамиков и кнопок,
+   она устаревает быстрее самих экранов. */
+.onb-phone {
+  position: relative;
+  aspect-ratio: 390 / 844;
+  border-radius: 38px;
+  overflow: hidden;
+  background: #000;
+  box-shadow:
+    0 30px 60px -22px rgb(0 0 0 / 0.7),
+    inset 0 0 0 1px rgb(255 255 255 / 0.14);
+}
+.onb-phone > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Стена входа: две наклонённые колонки экранов, которые медленно едут в
+   разные стороны. Список в колонке продублирован, поэтому сдвиг на −50%
+   бесшовно замыкается. Маска гасит края — стена не режется рамкой. */
+.wall {
+  position: absolute;
+  inset: -16% -12%;
+  display: flex;
+  gap: 12px;
+  transform: rotate(-9deg) scale(1.06);
+  pointer-events: none;
+  user-select: none;
+}
+/* Маска на контейнере, а не на самой стене: стена выезжает за контейнер
+   отрицательными отступами, и её собственная маска гасла бы за обрезом,
+   оставляя жёсткую кромку у шапки */
+.wall-mask {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 78%, transparent 100%);
+}
+.wall-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  will-change: transform;
+  animation: wall-scroll var(--wall-dur, 56s) linear infinite;
+}
+.wall-col[data-dir="up"] {
+  animation-direction: reverse;
+}
+.wall-col > .onb-phone {
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+}
+@keyframes wall-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wall-col { animation: none; }
 }

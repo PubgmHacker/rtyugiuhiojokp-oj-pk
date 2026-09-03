@@ -44,7 +44,7 @@ export default function ModerationLogsTable() {
               filter === s ? "bg-accent text-white" : "bg-bg text-text-muted hover:text-text"
             }`}
           >
-            {s === "all" ? "Все" : s === "blocked" ? "🚫 Заблокировано" : s === "warning" ? "⚠️ Предупреждения" : "✅ Безопасно"}
+            {s === "all" ? "Все" : s === "blocked" ? "Заблокировано" : s === "warning" ? "Предупреждения" : "Безопасно"}
           </button>
         ))}
       </div>
@@ -75,7 +75,7 @@ export default function ModerationLogsTable() {
             ) : сбой ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-text-muted">
-                  <p className="mb-3">📡 Не удалось загрузить</p>
+                  <p className="mb-3">Не удалось загрузить</p>
                   <button
                     onClick={load}
                     className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"
@@ -103,7 +103,7 @@ export default function ModerationLogsTable() {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
                         log.content_type === "photo" ? "bg-accent/20 text-accent" : "bg-white/5 text-text-muted"
                       }`}>
-                        {log.content_type === "photo" ? "📸 Фото" : "✍️ Текст"}
+                        {log.content_type === "photo" ? "Фото" : "Текст"}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -122,7 +122,7 @@ export default function ModerationLogsTable() {
                         log.action === "ban" ? "text-danger font-medium" :
                         log.action === "warn" ? "text-warn" : "text-text-muted"
                       }`}>
-                        {log.action === "ban" ? "🚫 Бан" : log.action === "warn" ? "⚠️ Предупреждение" : "—"}
+                        {log.action === "ban" ? "Бан" : log.action === "warn" ? "Предупреждение" : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell text-text-muted text-xs">

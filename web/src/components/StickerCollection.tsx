@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { WifiOff } from "lucide-react";
 import { motion } from "framer-motion";
 import { getStickers, selectSticker, type Sticker, type StickerCollection } from "../lib/api";
 import { haptic } from "../lib/haptics";
@@ -116,7 +117,7 @@ export default function StickerCollection_({
   if (сбой) {
     return (
       <EmptyState
-        emoji="📡"
+        icon={WifiOff}
         title="Не удалось загрузить"
         description="Проверьте соединение и попробуйте снова."
         action={

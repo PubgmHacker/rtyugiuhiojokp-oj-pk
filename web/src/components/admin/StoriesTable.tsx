@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { EyeOff, Eye } from "lucide-react";
+import { EyeOff, Eye, WifiOff, Camera } from "lucide-react";
 import { getAdminStories, moderateStory, type AdminStory } from "../../lib/admin";
 import { Button, EmptyState, Skeleton } from "../ui";
 
@@ -56,7 +56,7 @@ export default function StoriesTable() {
   if (сбой) {
     return (
       <EmptyState
-        emoji="📡"
+        icon={WifiOff}
         title="Не удалось загрузить"
         description="Проверьте соединение и попробуйте снова."
         action={
@@ -91,7 +91,7 @@ export default function StoriesTable() {
       </label>
 
       {stories.length === 0 ? (
-        <EmptyState emoji="📸" title="Историй нет" />
+        <EmptyState icon={Camera} title="Историй нет" />
       ) : (
         <div className="flex flex-col gap-2">
           {stories.map((s) => {
@@ -119,7 +119,7 @@ export default function StoriesTable() {
                     {s.caption || "без подписи"}
                   </p>
                   <p className="text-[12px] text-text-faint">
-                    {АУДИТОРИЯ[s.audience] ?? s.audience} · 👁 {s.views_count}
+                    {АУДИТОРИЯ[s.audience] ?? s.audience} · {s.views_count} просм.
                     {s.is_hidden && " · снята с показа"}
                     {истекла && " · истекла"}
                   </p>

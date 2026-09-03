@@ -1,7 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import {
-  TicketPercent, Copy, Check, ChevronLeft, ChevronRight,
-} from "lucide-react";
+import { TicketPercent, Copy, Check, ChevronLeft, ChevronRight, WifiOff, Gift } from "lucide-react";
 import {
   createPromo, getPromos, setPromoActive, type AdminPromo,
 } from "../../lib/admin";
@@ -245,7 +243,7 @@ export default function PromosPanel() {
       {/* Список выпущенных */}
       {сбойСписка ? (
         <EmptyState
-          emoji="📡"
+          icon={WifiOff}
           title="Не удалось загрузить"
           description="Проверьте соединение и попробуйте снова."
           action={
@@ -262,7 +260,7 @@ export default function PromosPanel() {
         </div>
       ) : список.length === 0 && page === 1 ? (
         <EmptyState
-          emoji="🎁"
+          icon={Gift}
           title="Промокодов ещё нет"
           description="Выпустите первый в форме выше — код можно раздать в посте или рекламе."
         />

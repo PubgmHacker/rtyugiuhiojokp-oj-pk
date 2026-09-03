@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Calendar, Flame, UserCheck, Users } from "lucide-react";
+import { Calendar, Flame, UserCheck, Users, TrendingDown } from "lucide-react";
 import { getAdminMetrics, type AdminMetrics } from "../../lib/admin";
 import { Button, EmptyState, Skeleton } from "../ui";
 
@@ -19,7 +19,7 @@ const ВАЛЮТЫ: Record<string, string> = {
 };
 
 const сумма = (currency: string, amount: number): string => {
-  if (currency === "XTR") return `${amount.toLocaleString("ru")} ⭐`;
+  if (currency === "XTR") return `${amount.toLocaleString("ru")} Stars`;
   if (currency === "RUB") return `${(amount / 100).toLocaleString("ru")} ₽`;
   if (currency === "USDT") return `${(amount / 100).toLocaleString("ru")} USDT`;
   return `${amount.toLocaleString("ru")} ${currency}`;
@@ -55,7 +55,7 @@ export default function MetricsPanel() {
   if (сбой) {
     return (
       <EmptyState
-        emoji="📉"
+        icon={TrendingDown}
         title="Не удалось загрузить"
         description="Проверьте соединение и попробуйте снова."
         action={

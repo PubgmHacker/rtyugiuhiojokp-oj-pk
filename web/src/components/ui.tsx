@@ -3,7 +3,8 @@
  * Все экраны собираются из них, чтобы вид и поведение были едиными.
  */
 import { motion, type HTMLMotionProps } from "framer-motion";
-import type { ReactNode } from "react";
+import { WifiOff } from "lucide-react";
+import type { ComponentType, ReactNode } from "react";
 import { haptic, type HapticKind } from "../lib/haptics";
 
 /* ── Кнопка ─────────────────────────────────────────────────── */
@@ -291,13 +292,20 @@ export function Skeleton({
 
 /* ── Пустое состояние ───────────────────────────────────────── */
 
+/** Иконка lucide: компонент, а не строка — эмодзи в интерфейсе не используются. */
+export type ИконкаСостояния = ComponentType<{
+  size?: number | string;
+  className?: string;
+  strokeWidth?: number | string;
+}>;
+
 export function EmptyState({
-  emoji,
+  icon: Icon,
   title,
   description,
   action,
 }: {
-  emoji: string;
+  icon: ИконкаСостояния;
   title: string;
   description?: string;
   action?: ReactNode;
@@ -309,9 +317,9 @@ export function EmptyState({
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: "spring", stiffness: 260, damping: 20 }}
-        className="text-[56px] mb-5 leading-none"
+        className="empty-glyph mb-5"
       >
-        {emoji}
+        <Icon size={34} strokeWidth={1.6} />
       </motion.div>
       <h2 className="text-heading font-bold mb-2">{title}</h2>
       {description && (
@@ -340,7 +348,7 @@ export function LoadError({
 }) {
   return (
     <EmptyState
-      emoji="📡"
+      icon={WifiOff}
       title={title}
       description={description}
       action={

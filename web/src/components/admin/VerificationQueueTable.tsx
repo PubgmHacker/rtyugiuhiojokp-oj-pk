@@ -121,7 +121,7 @@ export default function VerificationQueueTable() {
             ) : сбой ? (
               <tr>
                 <td colSpan={5} className="px-4 py-12 text-center text-text-muted">
-                  <p className="mb-3">📡 Не удалось загрузить</p>
+                  <p className="mb-3">Не удалось загрузить</p>
                   <button
                     onClick={load}
                     className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"

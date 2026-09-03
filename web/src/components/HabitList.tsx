@@ -6,7 +6,7 @@
  * — получая двойной зачёт.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Plus, Trash2, Undo2 } from "lucide-react";
+import { Check, Plus, Trash2, Undo2, Sprout } from "lucide-react";
 import { Button, EmptyState, LoadError, Skeleton } from "./ui";
 import { haptic } from "../lib/haptics";
 import {
@@ -170,7 +170,7 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
       {habits.length === 0 ? (
         <div className={compact ? "py-2" : "py-6"}>
           <EmptyState
-            emoji="🌱"
+            icon={Sprout}
             title="План дня пуст"
             description="Отметки сбрасываются в полночь. Начни с чего-нибудь простого."
           />

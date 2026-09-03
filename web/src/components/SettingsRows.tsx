@@ -6,7 +6,9 @@
  * Разделители рисует сама строка (CSS `settings-row`, от отметки 60 под
  * значком) и только между соседями: у первой строки линии нет. Своих
  * подложек у строк нет — стекло даёт карта, иначе получится «карточка в
- * карточке», от чего Plink как раз ушёл.
+ * карточке», от чего Plink как раз ушёл. Карта — `settings-card`, а не
+ * `glass`: без верхней подсветки, которая на длинном списке выглядела как
+ * выделенная первая строка.
  *
  * Строка бывает ссылкой (`to`) или кнопкой (`onClick`). Ничего другого
  * компонент не знает: содержимое подэкранов — забота маршрутов.
@@ -28,7 +30,7 @@ export function SettingsGroup({
   return (
     <section className={className}>
       {title && <h2 className="settings-label mb-2 px-[14px]">{title}</h2>}
-      <div className="glass rounded-[20px] py-1">{children}</div>
+      <div className="settings-card rounded-[20px] py-1">{children}</div>
     </section>
   );
 }

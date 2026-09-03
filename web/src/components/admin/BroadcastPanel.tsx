@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Send, FlaskConical, ChevronLeft, ChevronRight } from "lucide-react";
+import { Send, FlaskConical, ChevronLeft, ChevronRight, WifiOff, Megaphone } from "lucide-react";
 import { createBroadcast, getBroadcasts, type AdminBroadcast } from "../../lib/admin";
 import { Button, EmptyState, Skeleton } from "../ui";
 
@@ -148,7 +148,7 @@ export default function BroadcastPanel() {
       {/* История рассылок */}
       {сбойСписка ? (
         <EmptyState
-          emoji="📡"
+          icon={WifiOff}
           title="Не удалось загрузить"
           description="Проверьте соединение и попробуйте снова."
           action={
@@ -165,7 +165,7 @@ export default function BroadcastPanel() {
         </div>
       ) : список.length === 0 && page === 1 ? (
         <EmptyState
-          emoji="📣"
+          icon={Megaphone}
           title="Рассылок ещё не было"
           description="Первое сообщение стоит отправить себе — кнопка «Себе (тест)»."
         />

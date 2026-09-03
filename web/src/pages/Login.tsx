@@ -17,6 +17,7 @@ import { openExternal, isNative } from "../lib/native";
 import { appleSignInAvailable, signInWithApple, ВходОтменён } from "../lib/appleSignIn";
 import { Button, Spinner } from "../components/ui";
 import BrandMark from "../components/BrandMark";
+import ScreenWall from "../components/ScreenWall";
 
 // Дефолт — рабочий юзернейм: с неверным весь канал привлечения обрывался на
 // первом клике, и это уже ловил аудит на лендинге
@@ -278,7 +279,12 @@ export default function Login() {
         </motion.div>
       </div>
 
-      <div className="relative flex-1 min-h-0" aria-hidden />
+      {/* Между шапкой и кнопками — не пустота, а само приложение: стена
+          живых экранов. Контейнер relative с min-h-0, стена внутри absolute,
+          поэтому на низких экранах она сжимается, а не выталкивает кнопки */}
+      <div className="relative flex-1 min-h-0" aria-hidden="true">
+        <ScreenWall />
+      </div>
 
       <motion.div
         initial={{ opacity: 0, y: 16 }}

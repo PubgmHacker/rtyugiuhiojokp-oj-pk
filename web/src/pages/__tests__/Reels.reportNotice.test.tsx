@@ -64,7 +64,10 @@ async function открытьЛентуИПожаловаться() {
     </MemoryRouter>
   );
 
-  fireEvent.click(await screen.findByLabelText("Пожаловаться на ролик"));
+  // Жалоба живёт в шторке «Ещё действия», как в TikTok и Instagram: на самом
+  // ролике остались только лайк, комментарии и отправка
+  fireEvent.click(await screen.findByLabelText("Ещё действия"));
+  fireEvent.click(await screen.findByText("Пожаловаться"));
   fireEvent.click(await screen.findByText("Спам или реклама"));
 }
 
@@ -75,9 +78,10 @@ describe("Reels — исход жалобы в правильном канале
     await открытьЛентуИПожаловаться();
 
     const плашка = await screen.findByText(/Жалоба отправлена/);
-    // Каналы различаются рамкой: success — зелёная, danger — красная
-    expect(плашка.className).toContain("text-success");
-    expect(плашка.className).not.toContain("text-danger");
+    // Каналы различаются рамкой и фоном: success — зелёная, danger — красная;
+    // текст в обоих белый, чтобы читаться поверх видео
+    expect(плашка.className).toContain("border-success");
+    expect(плашка.className).not.toContain("border-danger");
   });
 
   it("сбой — красная error с текстом", async () => {
@@ -88,7 +92,8 @@ describe("Reels — исход жалобы в правильном канале
     await открытьЛентуИПожаловаться();
 
     const плашка = await screen.findByText(/Не удалось отправить жалобу/);
-    expect(плашка.className).toContain("text-danger");
+    expect(плашка.className).toContain("border-danger");
+    expect(плашка.className).not.toContain("border-success");
   });
 
   it("показывает понятный retry, если CDN не отдал видео", async () => {

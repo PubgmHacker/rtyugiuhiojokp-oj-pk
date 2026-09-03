@@ -59,7 +59,7 @@ export default function SectionsTable() {
       {/* Кнопки периода живут и при сбое: смена периода — это тоже повтор */}
       {failed ? (
         <div className="py-6 text-center">
-          <p className="text-[14px] text-text-muted mb-3">📡 Не удалось загрузить</p>
+          <p className="text-[14px] text-text-muted mb-3">Не удалось загрузить</p>
           <button
             onClick={() => setПопытка((x) => x + 1)}
             className="px-4 py-2 rounded-xl bg-surface-2 border border-hairline

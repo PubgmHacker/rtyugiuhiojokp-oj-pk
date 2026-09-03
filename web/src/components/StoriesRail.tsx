@@ -32,7 +32,13 @@ export function StoriesRail() {
 
   const загрузить = useCallback(async () => {
     try {
-      setFeed(await getStoriesFeed());
+      // Ответ нормализуем: полоса висит над списком чатов, и один битый
+      // ответ сервера (без mine или authors) не должен валить весь экран
+      const свежая = await getStoriesFeed();
+      setFeed({
+        authors: Array.isArray(свежая?.authors) ? свежая.authors : [],
+        mine: Array.isArray(свежая?.mine) ? свежая.mine : [],
+      });
     } catch {
       // Молча: полоса историй не имеет права ломать экран, на котором
       // висит. Пусто — значит пусто.

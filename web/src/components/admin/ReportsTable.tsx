@@ -11,14 +11,14 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: typeof Al
 // Набор обязан совпадать с REPORT_REASONS в api/models/schemas.py, иначе
 // жалоба придёт без подписи и модератор не поймёт, на что смотрит
 const REASON_MAP: Record<string, string> = {
-  spam: "📧 Спам",
-  harassment: "⚡ Харассмент",
-  nudity: "🔞 Контент 18+",
-  scam: "🤥 Мошенничество",
-  fake: "🎭 Чужие фото",
-  underage: "🚸 Несовершеннолетний",
-  drugs: "💊 Наркотики",
-  other: "❓ Другое",
+  spam: "Спам",
+  harassment: "Харассмент",
+  nudity: "Контент 18+",
+  scam: "Мошенничество",
+  fake: "Чужие фото",
+  underage: "Несовершеннолетний",
+  drugs: "Наркотики",
+  other: "Другое",
 };
 
 export default function ReportsTable() {
@@ -103,7 +103,7 @@ export default function ReportsTable() {
             ) : сбой ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-text-muted">
-                  <p className="mb-3">📡 Не удалось загрузить</p>
+                  <p className="mb-3">Не удалось загрузить</p>
                   <button
                     onClick={load}
                     className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"
@@ -115,7 +115,7 @@ export default function ReportsTable() {
             ) : reports.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-text-muted">
-                  {filter === "pending" ? "Нет новых жалоб ✅" : "Нет жалоб"}
+                  {filter === "pending" ? "Нет новых жалоб" : "Нет жалоб"}
                 </td>
               </tr>
             ) : (

@@ -1,6 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart, Star, SlidersHorizontal, MessageCircleHeart, RotateCcw } from "lucide-react";
+import {
+  X,
+  Heart,
+  Star,
+  SlidersHorizontal,
+  MessageCircleHeart,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
 import type { DeckProfile, MatchResponse, DailyLimits } from "../lib/api";
 import {
   likeProfile,
@@ -334,7 +342,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
 
   /* ── Анкеты закончились ────────────────────────────────────── */
   if (deck.length === 0) {
-    // Сбой — не «Анкеты закончились»: приветливое ✨ при упавшей сети врёт,
+    // Сбой — не «Анкеты закончились»: приветливое «анкеты закончились» при упавшей сети врёт,
     // и человек уходит, решив, что смотреть некого
     if (error) {
       return (
@@ -351,7 +359,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         // Разбитое сердце тут читалось как отказ, хотя ничего плохого не
         // произошло: анкеты просто кончились. И везде в продукте «вы» —
         // «ты» осталось только здесь
-        emoji="✨"
+        icon={Sparkles}
         title={isExhausted ? "На сегодня всё" : "Анкеты закончились"}
         description={
           isExhausted

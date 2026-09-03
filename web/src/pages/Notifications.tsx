@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BadgeCheck, ShieldCheck } from "lucide-react";
+import { BadgeCheck, ShieldCheck, Bell } from "lucide-react";
 import {
   getNotifications,
   markNotificationsRead,
@@ -112,7 +112,7 @@ export default function Notifications() {
         </div>
       ) : видимые.length === 0 ? (
         <EmptyState
-          emoji="🔔"
+          icon={Bell}
           title="Пока тихо"
           description="Здесь появятся итоги ваших жалоб и другие события — всё важное, у чего нет своей вкладки."
         />

@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { RefreshCw } from "lucide-react";
 /**
  * Последний рубеж: исключение при рендере не должно оставлять белый экран.
  *
@@ -37,7 +38,9 @@ export default class ErrorBoundary extends Component<
       <div
         className={`${this.props.compact ? "min-h-[70dvh]" : "h-screen-safe"} flex flex-col items-center justify-center px-8 text-center gap-4`}
       >
-        <div className="text-[52px] leading-none">🌅</div>
+        <div className="empty-glyph" aria-hidden="true">
+          <RefreshCw size={34} strokeWidth={1.6} />
+        </div>
         <h1 className="text-[19px] font-bold">Что-то сломалось</h1>
         <p className="text-[14px] text-text-muted max-w-[34ch] leading-relaxed">
           Это на нашей стороне, а не у вас. Обновите приложение — обычно этого

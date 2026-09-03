@@ -1,7 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, X, Lock, Crown, ChevronRight, MessageCircleHeart } from "lucide-react";
+import {
+  Heart,
+  X,
+  Lock,
+  Crown,
+  ChevronRight,
+  MessageCircleHeart,
+  Sparkles,
+  WifiOff,
+} from "lucide-react";
 import {
   getLikesReceived,
   likeProfile,
@@ -174,7 +183,7 @@ function IncomingLikes() {
     return (
       <div>
         <EmptyState
-          emoji="📡"
+          icon={WifiOff}
           title="Нет связи"
           description="Не удалось загрузить. Проверьте подключение к интернету."
           action={<Button onClick={load}>Повторить</Button>}
@@ -187,7 +196,7 @@ function IncomingLikes() {
     return (
       <div>
         <EmptyState
-          emoji="✨"
+          icon={Sparkles}
           title="Пока никто"
           description="Здесь появятся те, кому вы понравились. Заполненная анкета с хорошим фото заметно ускоряет дело."
           action={

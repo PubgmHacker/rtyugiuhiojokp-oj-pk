@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Eye, Flag, MessageCircle, Trash2, X } from "lucide-react";
+import { Eye, Flag, MessageCircle, Trash2, X, WifiOff } from "lucide-react";
 import { AuraRing } from "./Aura";
 import ReportReasonSheet from "./ReportReasonSheet";
 import { Sheet } from "./Sheet";
@@ -233,7 +233,7 @@ export function StoryViewer({
       ) : сбой ? (
         <div className="grid h-full place-items-center px-8">
           <div className="text-center">
-            <p className="mb-1 text-[28px]">📡</p>
+            <WifiOff size={28} strokeWidth={1.6} className="mx-auto mb-2 text-white/70" aria-hidden="true" />
             <p className="mb-4 text-[15px] text-white/70">Не удалось загрузить</p>
             <div className="flex items-center justify-center gap-2">
               <button

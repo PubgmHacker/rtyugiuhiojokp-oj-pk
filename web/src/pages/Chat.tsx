@@ -16,6 +16,8 @@ import {
   Check,
   CheckCheck,
   Lock,
+  WifiOff,
+  Heart,
 } from "lucide-react";
 import {
   getMessages,
@@ -635,7 +637,9 @@ export default function Chat() {
           </div>
         ) : messages.length === 0 && историяНеЗагрузилась ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
-            <div className="text-[44px] mb-3">📡</div>
+            <div className="empty-glyph mb-4" aria-hidden="true">
+              <WifiOff size={30} strokeWidth={1.6} />
+            </div>
             <p className="text-[15px] font-semibold mb-1">Не удалось загрузить переписку</p>
             <p className="text-[13.5px] text-text-muted mb-6 max-w-[32ch]">
               Сообщения на месте — не хватило связи. Проверьте соединение.
@@ -646,7 +650,9 @@ export default function Chat() {
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
-            <div className="text-[44px] mb-3">👋</div>
+            <div className="empty-glyph mb-4" aria-hidden="true">
+              <Heart size={30} strokeWidth={1.6} />
+            </div>
             <p className="text-[15px] font-semibold mb-1">Вы понравились друг другу</p>
             <p className="text-[13.5px] text-text-muted mb-6 max-w-[32ch]">
               Первое сообщение решает многое. Можно начать с подсказки.

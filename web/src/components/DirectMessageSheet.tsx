@@ -108,7 +108,7 @@ export default function DirectMessageSheet({
                            rounded-[var(--radius-tile)] bg-surface-2 border border-hairline"
               >
                 <p className="text-[13.5px] text-text-muted mb-2.5">
-                  📡 Не удалось проверить лимит писем
+                  Не удалось проверить лимит писем
                 </p>
                 <button
                   onClick={() => setПопытка((x) => x + 1)}

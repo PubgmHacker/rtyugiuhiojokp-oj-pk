@@ -95,7 +95,7 @@ export default function UsersTable() {
               : "bg-bg text-text-muted hover:text-text"
           }`}
         >
-          {bannedOnly ? "🔒 Только забаненные" : "Все пользователи"}
+          {bannedOnly ? "Только забаненные" : "Все пользователи"}
         </button>
       </div>
 
@@ -127,7 +127,7 @@ export default function UsersTable() {
             ) : сбой ? (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-text-muted">
-                  <p className="mb-3">📡 Не удалось загрузить</p>
+                  <p className="mb-3">Не удалось загрузить</p>
                   <button
                     onClick={load}
                     className="px-4 py-2 bg-bg rounded-xl text-sm font-medium hover:text-text transition"
@@ -158,7 +158,7 @@ export default function UsersTable() {
                     </div>
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell text-text-muted">
-                    {u.gender === "male" ? "👨" : u.gender === "female" ? "👩" : "🧑"}
+                    {u.gender === "male" ? "М" : u.gender === "female" ? "Ж" : "—"}
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell text-text-muted">{u.city || "—"}</td>
                   <td className="px-4 py-3">

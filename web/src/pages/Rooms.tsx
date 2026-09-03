@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, Flag, Send, Users } from "lucide-react";
+import { ChevronLeft, Flag, Send, Users, WifiOff, MessageCircle } from "lucide-react";
 import {
   getRoomMessages,
   getRooms,
@@ -77,7 +77,7 @@ export default function Rooms() {
       <div>
         <ScreenHeader title="Чаты по интересам" />
         <EmptyState
-          emoji={сбой ? "📡" : "💬"}
+          icon={сбой ? WifiOff : MessageCircle}
           title={сбой ? "Не удалось загрузить" : "Комнат пока нет"}
           description={
             сбой

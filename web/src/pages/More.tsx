@@ -103,30 +103,31 @@ export default function More() {
     <div className="pb-6">
       <ScreenHeader title="Ещё" />
 
-      <Section title="Знакомства" items={DATING} />
-      <Section title="Развлечения" items={FUN} />
-
-      {/* Подписка внизу: покупка — редкое действие, наверху она выглядела бы
-          навязчиво, но и прятать её незачем */}
-      <section className="px-4 pt-5">
+      {/* Подписка первой строкой, как Telegram Premium в настройках: одна
+          компактная карта под шапкой. Внизу списка она уезжала под таб-бар,
+          и человек видел половину кнопки. */}
+      <section className="px-4 pt-4">
         <Link
           to="/plans"
           onClick={() => haptic("light")}
-          className="glass-tint flex items-center gap-3 px-[14px] py-3 rounded-[20px]
-                     active:scale-[0.99] transition-transform"
+          className="plans-hero relative flex items-center gap-3.5 px-4 py-3.5 rounded-[22px]
+                     overflow-hidden active:scale-[0.99] transition-transform"
         >
-          <span className="settings-badge">
-            <Crown size={15} />
+          <span className="plans-hero-badge">
+            <Crown size={18} strokeWidth={2} />
           </span>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-[15px]">Plus и Ultra</p>
-            <p className="text-[12px] text-text-muted">
-              Кто вас лайкнул, инкогнито, буст
+            <p className="font-bold text-[16px] tracking-[-0.01em]">Plus и Ultra</p>
+            <p className="text-[13px] text-text-secondary leading-snug">
+              Кто вас лайкнул, инкогнито и буст анкеты
             </p>
           </div>
-          <ChevronRight size={14} className="text-text-faint shrink-0" />
+          <ChevronRight size={16} className="text-text-faint shrink-0" />
         </Link>
       </section>
+
+      <Section title="Знакомства" items={DATING} />
+      <Section title="Развлечения" items={FUN} />
     </div>
   );
 }

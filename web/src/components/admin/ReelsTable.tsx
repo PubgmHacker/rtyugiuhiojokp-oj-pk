@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { EyeOff, Eye } from "lucide-react";
+import { EyeOff, Eye, WifiOff, Clapperboard, Heart } from "lucide-react";
 import { getAdminReels, moderateReel, type AdminReel } from "../../lib/admin";
 import { Button, EmptyState, Skeleton } from "../ui";
 
@@ -51,7 +51,7 @@ export default function ReelsTable() {
   if (сбой) {
     return (
       <EmptyState
-        emoji="📡"
+        icon={WifiOff}
         title="Не удалось загрузить"
         description="Проверьте соединение и попробуйте снова."
         action={
@@ -86,7 +86,7 @@ export default function ReelsTable() {
       </label>
 
       {reels.length === 0 ? (
-        <EmptyState emoji="🎬" title="Роликов нет" />
+        <EmptyState icon={Clapperboard} title="Роликов нет" />
       ) : (
         <div className="flex flex-col gap-2">
           {reels.map((r) => (
@@ -113,7 +113,8 @@ export default function ReelsTable() {
                   {r.caption || "без подписи"}
                 </p>
                 <p className="text-[12px] text-text-faint">
-                  ♥ {r.likes_count}
+                  <Heart size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
+                  {r.likes_count}
                   {r.is_hidden && " · снят с показа"}
                 </p>
                 {/* Ссылка на само видео: по обложке нарушение не увидеть, а

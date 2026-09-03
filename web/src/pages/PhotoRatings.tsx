@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Star } from "lucide-react";
+import { Star, Target, Camera } from "lucide-react";
 import {
   getMyPhotoRating,
   getRatingQueue,
@@ -151,7 +151,7 @@ function RateQueue() {
   if (!current) {
     return (
       <EmptyState
-        emoji="🎯"
+        icon={Target}
         title="Все оценены"
         description="Вы оценили всех, кого нашли. Загляните позже — появятся новые анкеты."
         action={
@@ -240,7 +240,7 @@ function MyRating() {
   if (!data.photo) {
     return (
       <EmptyState
-        emoji="📷"
+        icon={Camera}
         title="Нет фото"
         description="Добавьте фото в анкету — тогда его смогут оценить."
       />

@@ -47,13 +47,13 @@ export const ФОЛБЭК_ПЕРЕВОДА: Язык = "en";
  * «турецкий» на незнакомом языке не читается вообще.
  */
 export const НАЗВАНИЯ: Record<Язык, string> = {
-  ru: "🇷🇺 Русский",
-  en: "🇬🇧 English",
-  uz: "🇺🇿 O'zbekcha",
-  es: "🇪🇸 Español",
-  tr: "🇹🇷 Türkçe",
-  id: "🇮🇩 Bahasa Indonesia",
-  zh: "🇨🇳 中文",
+  ru: "Русский",
+  en: "English",
+  uz: "O'zbekcha",
+  es: "Español",
+  tr: "Türkçe",
+  id: "Bahasa Indonesia",
+  zh: "中文",
 };
 
 /**
