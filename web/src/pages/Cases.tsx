@@ -381,14 +381,15 @@ function ПлиткаКейса({
   const собрано = кейс.total > 0 && кейс.owned >= кейс.total;
   //: Цвет свечения приходит с сервера. Новый кейс не должен требовать
   //: выкладки клиента, а неверный цвет — ломать плитку: CSS просто
-  //: проигнорирует невалидный градиент, и останется ровная поверхность.
+  //: проигнорирует невалидный градиент, и останется ровное стекло.
+  //: Инлайновый backgroundImage замещает блик стекла свечением кейса,
+  //: заливка, блюр и обводка остаются от glass.
   const акцент = /^#[0-9a-f]{6}$/i.test(кейс.accent) ? кейс.accent : "";
 
   return (
     <section
       aria-label={`Кейс «${кейс.title}»`}
-      className="relative overflow-hidden rounded-[var(--radius-card)]
-                 bg-surface border border-hairline p-4"
+      className="relative overflow-hidden rounded-[var(--radius-card)] glass p-4"
       style={
         акцент
           ? {
@@ -431,7 +432,7 @@ function ПлиткаКейса({
         {ПОРЯДОК_РЕДКОСТЕЙ.filter((r) => кейс.rarity_chances[r] != null).map((r) => (
           <span
             key={r}
-            className="px-2 py-0.5 rounded-full bg-surface-2 border border-hairline
+            className="px-2 py-0.5 chip
                        text-[11px] font-semibold tabular-nums"
           >
             <РедкостьПодпись rarity={r} title={ИМЯ_РЕДКОСТИ[r] ?? r} /> ·{" "}

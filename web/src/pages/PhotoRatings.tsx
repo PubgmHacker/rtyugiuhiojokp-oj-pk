@@ -38,7 +38,7 @@ export default function PhotoRatings() {
       <ScreenHeader title="Оценка фото" />
 
       <div className="px-4 pt-1">
-        <div className="flex p-1 rounded-full bg-surface-2 border border-hairline">
+        <div className="flex p-1 chip">
           {(
             [
               ["rate", "Оценить"],
@@ -306,8 +306,7 @@ function MyRating() {
               </div>
               <span
                 aria-label={`Оценка ${item.score} из 5`}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full
-                           bg-surface-2 border border-hairline shrink-0"
+                className="flex items-center gap-1 px-2.5 py-1 chip shrink-0"
               >
                 <Star size={13} className="text-accent" fill="currentColor" />
                 <span className="text-[14px] font-bold text-text">{item.score}</span>

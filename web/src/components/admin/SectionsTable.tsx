@@ -48,7 +48,7 @@ export default function SectionsTable() {
                         transition-colors ${
                           days === p
                             ? "bg-accent text-white"
-                            : "bg-surface-2 border border-hairline text-text-secondary"
+                            : "chip text-text-secondary"
                         }`}
           >
             {p} дней

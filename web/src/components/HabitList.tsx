@@ -180,7 +180,7 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
                 key={п}
                 disabled={saving}
                 onClick={() => добавить(п)}
-                className="rounded-full border border-hairline bg-surface-2 px-3 py-1.5 text-[13px] text-text-secondary transition-transform active:scale-95 disabled:opacity-50"
+                className="chip px-3 py-1.5 text-[13px] text-text-secondary transition-transform active:scale-95 disabled:opacity-50"
               >
                 {п}
               </button>

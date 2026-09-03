@@ -52,7 +52,7 @@ export default function Likes() {
       <ScreenHeader title="Лайки" />
 
       <div className="px-4 pt-1">
-        <div className="flex p-1 rounded-full bg-surface-2 border border-hairline">
+        <div className="flex p-1 chip">
           {(
             [
               ["likes", "Кто лайкнул"],
@@ -201,8 +201,8 @@ function IncomingLikes() {
   return (
     <div>
       <p className="px-4 pt-3 text-[13.5px] text-text-muted">
-        {likes.length} {plural(likes.length, "человек", "человека", "человек")} ждут
-        ответа.{" "}
+        {likes.length} {plural(likes.length, "человек", "человека", "человек")}{" "}
+        {plural(likes.length, "ждёт", "ждут", "ждут")} ответа.{" "}
         Ответная симпатия сразу открывает чат.
       </p>
 
@@ -220,7 +220,8 @@ function IncomingLikes() {
             <span className="font-bold">
               {likes.length} {plural(likes.length, "человек", "человека", "человек")}
             </span>{" "}
-            уже лайкнули вас. Узнайте, кто именно — в Plus
+            уже {plural(likes.length, "лайкнул", "лайкнули", "лайкнули")} вас.
+            Узнайте, кто именно — в Plus
           </span>
           <ChevronRight size={18} className="text-text-faint shrink-0" />
         </Link>
@@ -287,7 +288,7 @@ function IncomingLikes() {
                     </p>
                   )}
 
-                  <div className="flex gap-2 mt-2.5">
+                  <div className="flex gap-2 mt-2.5 pointer-events-auto">
                     <button
                       aria-label={`Пропустить ${p.display_name}`}
                       disabled={busyId === p.id}
@@ -349,7 +350,7 @@ function IncomingLikes() {
                   setViewed(null);
                   respond(p, "pass");
                 }}
-                className="flex-1 h-12 rounded-full bg-surface-2 border border-hairline
+                className="flex-1 h-12 chip
                            text-danger flex items-center justify-center gap-2
                            text-[15px] font-semibold
                            disabled:opacity-40 active:scale-95 transition-transform"
@@ -381,7 +382,7 @@ function IncomingLikes() {
                   setViewed(null);
                   setDirectFor(p);
                 }}
-                className="w-12 h-12 rounded-full bg-surface-2 border border-hairline
+                className="w-12 h-12 chip
                            text-accent flex items-center justify-center shrink-0
                            disabled:opacity-40 active:scale-95 transition-transform"
               >

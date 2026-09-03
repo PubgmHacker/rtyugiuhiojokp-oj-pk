@@ -108,7 +108,10 @@ export function coverBackground(spec: CoverSpec): string {
   const glow = `radial-gradient(circle at ${Math.round(cx * 100)}% ${Math.round(
     cy * 100
   )}%, rgb(${rgb} / ${spec.glowStrength}) 0%, rgb(${rgb} / 0) 62%)`;
-  const sky = `linear-gradient(180deg, ${spec.sky[0]} 0%, ${spec.sky[1]} 58%, ${spec.sky[2]} 100%)`;
+  // Пол обложки: на тёмных темах — плотный тёмный низ (--cover-floor-mix: 100%),
+  // на светлых тема снижает долю пола, чтобы обложка не уходила в чёрную полосу
+  const floor = `color-mix(in srgb, ${spec.sky[2]} var(--cover-floor-mix, 100%), ${spec.sky[1]})`;
+  const sky = `linear-gradient(180deg, ${spec.sky[0]} 0%, ${spec.sky[1]} 58%, ${floor} 100%)`;
   return `${glow}, ${sky}`;
 }
 

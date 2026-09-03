@@ -76,7 +76,7 @@ export default function PersonCard({
         />
       )}
 
-      {badge && <div className="absolute top-2 right-2 z-20">{badge}</div>}
+      {badge && <div className="absolute top-2 right-2 z-20 pointer-events-none">{badge}</div>}
 
       {/* Наклейка — средний значок в верхнем углу фото, как в деке. В строке
           имени она сжималась до пятна и толкала имя в многоточие */}
@@ -92,7 +92,14 @@ export default function PersonCard({
         />
       )}
 
-      <div className={`absolute inset-x-0 bottom-0 z-20 ${mini ? "p-2" : "p-3"}`}>
+      {/* Нижний блок лежит выше «невидимой кнопки» карточки-ссылки, которую
+          экран кладёт под z-20, поэтому сам он тап не ловит: имя и письмо
+          пропускают его к ссылке, а интерактивные children включают
+          pointer-events обратно у себя. Иначе тап по самому заманчивому
+          месту карточки — тексту лайка — был мёртв. */}
+      <div
+        className={`absolute inset-x-0 bottom-0 z-20 pointer-events-none ${mini ? "p-2" : "p-3"}`}
+      >
         <div className={`flex items-center min-w-0 ${mini ? "gap-1" : "gap-1.5"}`}>
           <span
             className={`text-white truncate ${

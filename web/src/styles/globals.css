@@ -155,6 +155,14 @@
   --glass-highlight: rgb(255 255 255 / 0.3);
   --glass-rim: rgb(255 255 255 / 0.22);
   --glass-blur: 20px;
+  /* Чернила на тинтованном стекле: на тёмном — белый, на светлом — тинт, замешанный с цветом текста */
+  --tint-ink-mix: 0%;
+  --tint-ink-base: #ffffff;
+  /* Пузырь-мысль на лице анкеты: плотная заливка и ободок под тему */
+  --bubble-bg: rgb(26 30 39 / 0.97);
+  --bubble-rim: rgb(255 255 255 / 0.1);
+  /* Доля тёмного пола в градиенте обложки (см. lib/cover.ts) */
+  --cover-floor-mix: 100%;
   --shadow-glass-nav: 0 10px 22px rgb(0 0 0 / 0.34);
   --shadow-glass-control: 0 4px 10px rgb(0 0 0 / 0.22);
   --shadow-glass-overlay: 0 8px 16px rgb(0 0 0 / 0.3);
@@ -295,8 +303,8 @@
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
     var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 var(--glass-rim),
@@ -308,8 +316,8 @@
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
     var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 var(--glass-rim),
@@ -321,8 +329,8 @@
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
     var(--glass-bg-soft);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 var(--glass-rim),
@@ -349,17 +357,18 @@
   position: relative;
   padding: 10px 13px;
   border-radius: 16px;
-  background: rgb(26 30 39 / 0.97);
+  color: var(--color-text);
+  background: var(--bubble-bg);
   box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.1),
+    inset 0 0 0 1px var(--bubble-rim),
     0 6px 18px -8px rgb(0 0 0 / 0.6);
   &::before,
   &::after {
     content: "";
     position: absolute;
     border-radius: 9999px;
-    background: rgb(26 30 39 / 0.97);
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+    background: var(--bubble-bg);
+    box-shadow: inset 0 0 0 1px var(--bubble-rim);
   }
   &::before {
     width: 9px;
@@ -436,12 +445,13 @@
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
     color-mix(in srgb, var(--tint-fallback) 22%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid color-mix(in srgb, var(--tint-fallback) 35%, transparent);
   box-shadow:
     inset 0 1px 0 var(--glass-rim),
     0 8px 16px -6px color-mix(in srgb, var(--tint-fallback) 34%, transparent);
+  color: color-mix(in srgb, var(--tint-fallback) var(--tint-ink-mix), var(--tint-ink-base));
 }
 
 /* Поле ввода: углублённая ячейка на стекле. Заливка и обводка — токены
@@ -464,11 +474,22 @@
   }
 }
 
+/* Пилюля-чип: интересы, теги, вторичные кнопки-пилюли, дорожка
+   сегментов. Заливка и обводка — токены стекла, чтобы чип читался
+   частью того же материала, что карты. Без блюра намеренно: чипов в
+   списке десятки, слой backdrop-filter на каждом — лишняя работа
+   компоновщика, а на плоском фоне вид тот же. */
+@utility chip {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 9999px;
+}
+
 /* Панель поверх контента (навбар, хедер) */
 @utility chrome {
   background: color-mix(in srgb, var(--color-bg) 86%, transparent);
-  backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
 }
 
 @utility card-shadow {
@@ -733,6 +754,11 @@
   --color-surface-3: #e2e5ec;
   --color-hairline: #dcdfe6;
   --color-text: #0d1017;
+  --tint-ink-mix: 74%;
+  --tint-ink-base: #0d1017;
+  --bubble-bg: rgb(255 255 255 / 0.97);
+  --bubble-rim: rgb(13 16 23 / 0.08);
+  --cover-floor-mix: 22%;
   --color-text-secondary: #333a47;
   --color-text-muted: #5b6473;
   /* 4.08:1 было недостаточно для мелких таймстемпов и подсказок. */
@@ -767,6 +793,11 @@
   --color-surface-3: #e3d7c2;
   --color-hairline: #ddd0ba;
   --color-text: #221b12;
+  --tint-ink-mix: 74%;
+  --tint-ink-base: #221b12;
+  --bubble-bg: rgb(255 250 240 / 0.97);
+  --bubble-rim: rgb(34 27 18 / 0.08);
+  --cover-floor-mix: 22%;
   --color-text-secondary: #453927;
   --color-text-muted: #6b5c45;
   /* На фоне #f6f1e7 это держит AA для служебного текста. */

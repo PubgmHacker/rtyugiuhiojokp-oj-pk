@@ -1122,8 +1122,7 @@ function VisitorsCard() {
           {data.visitors.map((v) => (
             <div
               key={v.profile.id}
-              className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full
-                         bg-surface-2 border border-hairline"
+              className="flex items-center gap-2 pl-1 pr-3 py-1 chip"
             >
               {v.profile.photos?.[0] ? (
                 <img

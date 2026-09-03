@@ -95,6 +95,9 @@ describe("обложка анкеты", () => {
   it("фон обложки — свечение поверх трёхстопного неба", () => {
     const css = coverBackground(COVER_PRESETS.nebula);
     expect(css).toMatch(/^radial-gradient\(circle at 85% 10%, rgb\(255 178 196 \/ 0\.55\)/);
-    expect(css).toContain("linear-gradient(180deg, #5D4BD4 0%, #9A55C4 58%, #3A1E52 100%)");
+    // пол — через color-mix с долей из темы: тёмные 100%, светлые снижают, чтобы низ не чернел
+    expect(css).toContain(
+      "linear-gradient(180deg, #5D4BD4 0%, #9A55C4 58%, color-mix(in srgb, #3A1E52 var(--cover-floor-mix, 100%), #9A55C4) 100%)"
+    );
   });
 });

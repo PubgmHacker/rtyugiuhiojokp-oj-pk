@@ -252,7 +252,7 @@ export function ChatThemeSheet({
                   className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] transition-colors disabled:opacity-40 ${
                     pattern === p.key
                       ? "bg-accent text-on-accent"
-                      : "bg-surface-2 text-text-secondary"
+                      : "chip text-text-secondary"
                   }`}
                 >
                   {p.label}

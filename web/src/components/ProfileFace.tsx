@@ -145,7 +145,7 @@ export default function ProfileFace({
           style={{ left: ЛИЦО.левый + ЛИЦО.аватар - 6, top: ЛИЦО.обложка - ЛИЦО.нахлёст - 34 }}
           aria-label={мысль ? "О себе. Изменить" : "Добавить пару слов о себе"}
         >
-          <span className={`block text-[13px] leading-snug ${мысль ? "text-white/92" : "text-white/55"}`}>
+          <span className={`block text-[13px] leading-snug ${мысль ? "" : "text-text-muted"}`}>
             {мысль || "Пара слов о себе…"}
           </span>
         </button>
@@ -159,7 +159,7 @@ export default function ProfileFace({
             onClick={onEdit}
             style={тонированный}
             className="glass-tint h-[42px] px-4 rounded-[14px] flex items-center gap-2
-                       text-[14px] font-semibold text-white active:scale-[0.97] transition-transform"
+                       text-[14px] font-semibold active:scale-[0.97] transition-transform"
           >
             <Pencil size={15} />
             Изменить

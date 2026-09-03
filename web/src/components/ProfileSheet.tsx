@@ -227,7 +227,27 @@ function Просмотр({
       </div>
 
       {/* ── Текстовая часть ────────────────────────────────────── */}
-      <div className="px-5 pt-4 pb-8">
+      <div className="relative isolate px-5 pt-4 pb-8">
+        {/* Отсвет снимка, как амбиент обложки в Plink: текущий кадр
+            зеркалится, размывается и растворяется в фон, чтобы текст
+            стоял не на плоской плите, а на свете фото. Видео не
+            зеркалим: второй декодер ради отсвета не нужен. Масштаб
+            больше единицы прячет прозрачную кромку блюра. */}
+        {media[photoIndex] && !media[photoIndex].video && (
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 -z-10 h-72 overflow-hidden pointer-events-none"
+          >
+            <img
+              src={media[photoIndex].src}
+              alt=""
+              draggable={false}
+              className="w-full h-full object-cover scale-x-125 -scale-y-125
+                         blur-[48px] saturate-150 opacity-40 select-none"
+            />
+            <div className="absolute inset-0 bg-linear-to-b from-transparent to-bg" />
+          </div>
+        )}
         {(profile.city || profile.height_cm != null) && (
           <div className="flex items-center gap-3 text-[13.5px] text-text-secondary mb-3">
             {profile.city && (
@@ -260,8 +280,7 @@ function Просмотр({
             {чипы.map((label) => (
               <span
                 key={label}
-                className="text-[13px] px-3 py-1.5 rounded-full bg-surface-2
-                           border border-hairline font-medium"
+                className="text-[13px] px-3 py-1.5 chip font-medium"
               >
                 {label}
               </span>
@@ -271,7 +290,7 @@ function Просмотр({
 
         {profile.bio && (
           <section className="mb-4">
-            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-text-muted mb-1.5">
+            <h3 className="text-caption text-text-muted mb-1.5">
               О себе
             </h3>
             <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
@@ -282,15 +301,14 @@ function Просмотр({
 
         {profile.interests?.length > 0 && (
           <section className="mb-4">
-            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-text-muted mb-1.5">
+            <h3 className="text-caption text-text-muted mb-1.5">
               Интересы
             </h3>
             <div className="flex flex-wrap gap-1.5">
               {profile.interests.map((interest) => (
                 <span
                   key={interest}
-                  className="text-[13px] px-3 py-1.5 rounded-full bg-surface-2
-                             border border-hairline font-medium"
+                  className="text-[13px] px-3 py-1.5 chip font-medium"
                 >
                   {interest}
                 </span>

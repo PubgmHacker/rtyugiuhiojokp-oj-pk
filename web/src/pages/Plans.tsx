@@ -187,7 +187,7 @@ export default function Plans() {
         )}
 
         {/* Переключатель уровней */}
-        <div className="flex p-1 mb-5 rounded-full bg-surface-2 border border-hairline">
+        <div className="flex p-1 mb-5 chip">
               {PAID_TIERS.map((t) => {
                 const info = data.tiers.find((x) => x.tier === t);
                 if (!info) return null;
