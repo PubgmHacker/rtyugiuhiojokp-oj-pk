@@ -32,24 +32,33 @@ def as_list(value) -> list:
     return []
 
 
+def _открывается_чужим_клиентом(значение) -> bool:
+    """Ссылка, которую чужой клиент действительно сможет загрузить.
+
+    Бот, если R2 не настроен, хранит в колонке Telegram file_id — чужой
+    клиент проиграть его не может, да и раскрывать внутренний
+    идентификатор незачем. Отсюда белый список: абсолютный http(s)-адрес
+    или путь от корня сайта («/demo-photos/p00-1.jpg») — так лежит то,
+    что раздаёт сам фронтенд. Протокольно-относительный «//хост/x.jpg»
+    отсекаем: он ведёт на посторонний домен, а не в нашу раздачу.
+    file_id со слэша не начинается никогда.
+    """
+    if not isinstance(значение, str):
+        return False
+    if значение.startswith(("http://", "https://")):
+        return True
+    return значение.startswith("/") and not значение.startswith("//")
+
+
 def public_videos(value) -> list[str]:
     """Видео анкеты, какими их можно показать чужому клиенту.
 
-    Бот, если R2 не настроен, хранит в колонке Telegram file_id — чужой
-    клиент проиграть его не может (и это внутренний идентификатор), поэтому
-    во все ответы про ЧУЖИЕ анкеты идут только публичные URL. Владельцу
-    (/profiles/me, экспорт) список отдаётся как есть — иначе PATCH с веба
-    молча стирал бы залитое через бота.
+    Владельцу (/profiles/me, экспорт) список отдаётся как есть — иначе
+    PATCH с веба молча стирал бы залитое через бота.
     """
-    return [
-        v for v in as_list(value) if isinstance(v, str) and v.startswith("http")
-    ]
+    return [v for v in as_list(value) if _открывается_чужим_клиентом(v)]
 
 
 def public_photos(value) -> list[str]:
     """Фото, безопасные для выдачи в чужую анкету."""
-    return [
-        photo
-        for photo in as_list(value)
-        if isinstance(photo, str) and photo.startswith(("http://", "https://"))
-    ]
+    return [photo for photo in as_list(value) if _открывается_чужим_клиентом(photo)]

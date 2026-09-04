@@ -33,6 +33,28 @@ def test_public_photos_не_выдаёт_telegram_file_id():
     ]
 
 
+def test_public_photos_пропускает_путь_от_корня_сайта():
+    """Фото, которое раздаёт сам фронтенд, лежит относительным путём.
+
+    Фильтр когда-то требовал абсолютный http(s)-адрес, и такие файлы
+    пропадали из ВСЕХ чужих карточек: аватарки в списке чатов, в шапке
+    переписки и в лайках схлопывались до буквы-монограммы, хотя в базе
+    фото лежало. Путь от корня пропускаем, протокольно-относительный
+    «//чужой.хост» — нет: это уже посторонний домен.
+    """
+    from utils import public_photos, public_videos
+
+    assert public_photos([
+        "/demo-photos/p00-1.jpg",
+        "/uploads/photo.jpg",
+        "//evil.example/x.jpg",
+        "AgAA_fake_telegram_file_id",
+    ]) == ["/demo-photos/p00-1.jpg", "/uploads/photo.jpg"]
+    assert public_videos(["/profile-videos/v.mp4", "//evil.example/v.mp4", "BAAD_id"]) == [
+        "/profile-videos/v.mp4"
+    ]
+
+
 def test_геопозиция_с_нулевой_координатой_не_теряется():
     """Экватор и нулевой меридиан — валидные координаты, не «нет данных»."""
     from services.matching import _haversine

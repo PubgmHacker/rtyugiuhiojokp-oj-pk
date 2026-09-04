@@ -59,10 +59,22 @@ JSON.stringify((() => {
     }
     return false;
   };
+  // Невидимое за краем — не дефект: так парканы «ответить свайпом» (opacity 0,
+  // выезжает под палец) и прочие заготовки жестов. Инструмент мерил геометрию
+  // и поднимал тревогу на них каждый круг.
+  const виден = (e) => {
+    const s = getComputedStyle(e);
+    if (s.visibility === 'hidden' || s.display === 'none') return false;
+    for (let n = e; n; n = n.parentElement) {
+      if (parseFloat(getComputedStyle(n).opacity) === 0) return false;
+    }
+    return true;
+  };
   const вылезли = [...document.querySelectorAll('*')]
     .map(e => ({ e, r: e.getBoundingClientRect() }))
     .filter(x => x.r.width > 0 && (x.r.right > d.clientWidth + 1 || x.r.left < -1))
     .filter(x => !вКарусели(x.e))
+    .filter(x => виден(x.e))
     .slice(0, 8)
     .map(x => ({
       тег: x.e.tagName,

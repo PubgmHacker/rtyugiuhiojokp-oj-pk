@@ -44,6 +44,38 @@ function shortCity(city: string): string {
   return SHORT_CITY[city.trim()] ?? city;
 }
 
+/**
+ * Плитка без фото: градиент ауры плюс буква водяным знаком.
+ *
+ * Буква стояла по центру плитки и садилась ровно на строку имени с городом,
+ * а opacity на всём слое гасила заодно и градиент — до грязного пятна.
+ * Теперь фон живёт в полную силу, а буква поднята над подписью и ослаблена
+ * сама: снимка нет, но плитка всё равно читается как чей-то, а не как дырка.
+ */
+function Монограмма({
+  name,
+  seed,
+  mini,
+}: {
+  name?: string | null;
+  seed: string;
+  mini: boolean;
+}) {
+  const стиль = letterAvatarStyle(seed);
+  return (
+    <div className="absolute inset-0" style={{ background: стиль.background }}>
+      <span
+        aria-hidden="true"
+        className={`absolute inset-x-0 top-0 grid place-items-center select-none
+                    font-black leading-none ${mini ? "text-[46px]" : "text-[68px]"}`}
+        style={{ bottom: mini ? 30 : 46, color: стиль.color, opacity: 0.4 }}
+      >
+        {name?.trim()?.[0]?.toUpperCase() ?? "?"}
+      </span>
+    </div>
+  );
+}
+
 export default function PersonCard({
   profile,
   badge,
@@ -67,13 +99,7 @@ export default function PersonCard({
           className="absolute inset-0 w-full h-full object-cover"
         />
       ) : (
-        <div
-          className={`absolute inset-0 flex items-center justify-center
-                      font-bold opacity-90 ${mini ? "text-3xl" : "text-4xl"}`}
-          style={letterAvatarStyle(profile.id)}
-        >
-          {profile.display_name?.[0]?.toUpperCase() ?? "?"}
-        </div>
+        <Монограмма name={profile.display_name} seed={profile.id} mini={mini} />
       )}
 
       <div className="absolute inset-0 bg-scrim pointer-events-none" />

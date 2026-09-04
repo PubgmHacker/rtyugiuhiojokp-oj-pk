@@ -5,6 +5,7 @@ import { askConfirm } from "../lib/telegram";
 import ProfileFace, { ПУЗЫРЬ_МАКС } from "../components/ProfileFace";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { letterAvatarStyle } from "../lib/aura";
+import { plural, счёт } from "../lib/plural";
 import {
   LifeBuoy,
   BadgeCheck,
@@ -250,6 +251,12 @@ export default function Profile() {
     }
   }, [profile, incognitoBusy]);
 
+  // Закрытое напоминание помним здесь, а не внутри баннера: экран выбирает,
+  // что показать вместо него, и должен узнать о закрытии
+  const [закрытоеНапоминание, setЗакрытоеНапоминание] = useState<string | null>(
+    () => localStorage.getItem("nudge_closed_key"),
+  );
+
   const referralLink = profile
     ? `https://t.me/${BOT_USERNAME}?start=ref_${profile.id}`
     : "";
@@ -298,6 +305,12 @@ export default function Profile() {
     );
   }
 
+  const кандидат = следующееНапоминание(profile);
+  const напоминание =
+    кандидат && !остались_крупные(profile) && закрытоеНапоминание !== кандидат.key
+      ? кандидат
+      : null;
+
   return (
     <div className="max-w-[440px] mx-auto px-4 safe-top pb-8">
       {/* ── Лицо анкеты (обложка, аватар в вырезе, пузырь, счётчики) ── */}
@@ -322,14 +335,24 @@ export default function Profile() {
         )}
       </div>
 
-      {/* ── Заполненность анкеты ──────────────────────────────── */}
-      <ProfileCompleteness profile={profile} onEdit={() => navigate("/edit")} />
-      {/* Точечный nudge: подталкивает закрыть одно дешёвое поле, а не весь %
-          прогресса сразу — конверсия выше */}
-      <NudgeBanner
-        profile={profile}
-        onJump={(field) => navigate(`/edit?focus=${field}`)}
-      />
+      {/* ── Заполненность анкеты: ровно одна карточка ─────────── */}
+      {/* Две сиреневые карточки подряд читались как стена уговоров, и вторая
+          обесценивала первую. Пока не закрыты крупные пункты, говорим о них
+          процентом; когда остались только дешёвые поля — точечное
+          напоминание вместо процента: оно конкретнее и конвертирует лучше.
+          Закрыли напоминание — процент возвращается */}
+      {напоминание ? (
+        <NudgeBanner
+          current={напоминание}
+          onJump={(field) => navigate(`/edit?focus=${field}`)}
+          onClose={() => {
+            localStorage.setItem("nudge_closed_key", напоминание.key);
+            setЗакрытоеНапоминание(напоминание.key);
+          }}
+        />
+      ) : (
+        <ProfileCompleteness profile={profile} onEdit={() => navigate("/edit")} />
+      )}
 
       {/* ── Проверка профиля (галочка) ────────────────────────── */}
       {/* Только пока галочки нет: подтверждённому этот вход не нужен,
@@ -1044,7 +1067,7 @@ function TgChannelCard({
           onChange={(e) => setValue(e.target.value)}
           placeholder="username"
           maxLength={100}
-          className="field flex-1 px-4 h-11 rounded-full text-[14.5px]"
+          className="field flex-1 min-w-0 px-4 h-11 rounded-full text-[14.5px]"
         />
         <Button
           variant="primary"
@@ -1180,14 +1203,6 @@ function VisitorsCard() {
   );
 }
 
-function plural(n: number, one: string, few: string, many: string): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
-}
-
 /* ── Заполненность анкеты ───────────────────────────────────── */
 
 /**
@@ -1274,7 +1289,9 @@ function ProfileCompleteness({
           недостатков скорее отталкивает, чем мотивирует */}
       <p className="text-caption text-text-muted mb-3">
         Осталось: {missing.slice(0, 2).map((m) => m.label.toLowerCase()).join(", ")}
-        {missing.length > 2 ? ` и ещё ${missing.length - 2}` : ""}
+        {missing.length > 2
+          ? ` и ещё ${счёт(missing.length - 2, "пункт", "пункта", "пунктов")}`
+          : ""}
       </p>
 
       <Button variant="secondary" size="sm" onClick={onEdit}>
@@ -1325,46 +1342,53 @@ function ScreenChoice({
   );
 }
 
-function NudgeBanner({
-  profile,
-  onJump,
-}: {
-  profile: UserProfile | null;
-  onJump: (field: string) => void;
-}) {
-  const [closedKey, setClosedKey] = useState<string | null>(
-    localStorage.getItem("nudge_closed_key"),
+interface Напоминание {
+  key: string;
+  text: string;
+  cta: string;
+  done: (p: UserProfile) => boolean;
+}
+
+/**
+ * Дешёвые поля, о которых стоит напомнить точечно.
+ *
+ * Порядок важен: «у вас есть субкультура» звучит интереснее, чем «заполните
+ * рост», поэтому даже при равном весе его стоит ставить выше. Список лежит
+ * рядом с `COMPLETENESS`, потому что экран выбирает между процентом и
+ * напоминанием и должен знать оба набора.
+ */
+const НАПОМИНАНИЯ: Напоминание[] = [
+  { key: "subculture", text: "У вас есть субкультура? Укажите свою, и другие увидят её в анкете", cta: "Указать субкультуру", done: (p) => !!p.subculture },
+  { key: "mbti", text: "Есть результат MBTI? Его видно прямо на карточке", cta: "Указать MBTI", done: (p) => !!p.mbti },
+  { key: "height", text: "Рост поднимает анкету в фильтрах у людей с ним", cta: "Указать рост", done: (p) => p.height_cm != null },
+];
+
+/** Первое незаполненное дешёвое поле — или ничего, если все закрыты. */
+function следующееНапоминание(p: UserProfile): Напоминание | null {
+  return НАПОМИНАНИЯ.find((i) => !i.done(p)) ?? null;
+}
+
+/** Остались ли незакрытыми пункты тяжелее напоминаний (фото, био, цель). */
+function остались_крупные(p: UserProfile): boolean {
+  return COMPLETENESS.some(
+    (i) => !i.done(p) && !НАПОМИНАНИЯ.some((n) => n.key === i.key),
   );
+}
 
-  // Порядок важен: «у вас есть субкультура» звучит интереснее, чем «заполните
-  // рост», поэтому даже при равном весе его стоит ставить выше.
-  const PRIORITY: {
-    key: string;
-    text: string;
-    cta: string;
-    done: (p: UserProfile) => boolean;
-  }[] = [
-    { key: "subculture", text: "У вас есть субкультура? Укажите свою, и другие увидят её в анкете", cta: "Указать субкультуру", done: (p) => !!p.subculture },
-    { key: "mbti", text: "Есть результат MBTI? Его видно прямо на карточке", cta: "Указать MBTI", done: (p) => !!p.mbti },
-    { key: "height", text: "Рост поднимает анкету в фильтрах у людей с ним", cta: "Указать рост", done: (p) => p.height_cm != null },
-  ];
-
-  const missing = PRIORITY.filter((i) => !i.done(profile!));
-
-  // Полностью заполненный профиль не нуждается в баннере
-  if (!profile || !missing.length) return null;
-  if (closedKey === missing[0].key) return null;
-
-  const current = missing[0];
-
+function NudgeBanner({
+  current,
+  onJump,
+  onClose,
+}: {
+  current: Напоминание;
+  onJump: (field: string) => void;
+  onClose: () => void;
+}) {
   return (
     <Card className="p-4 mb-4 border-accent/25 bg-accent/8 relative">
       <button
         aria-label="Закрыть"
-        onClick={() => {
-          localStorage.setItem("nudge_closed_key", current.key);
-          setClosedKey(current.key);
-        }}
+        onClick={onClose}
         className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full
                    flex items-center justify-center text-text-muted
                    hover:bg-surface-2"

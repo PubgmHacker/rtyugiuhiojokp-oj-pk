@@ -34,9 +34,14 @@ const КАДР_МС = 5000;
 
 export function StoryViewer({
   userId,
+  avatar = null,
   onClose,
 }: {
   userId: string;
+  /** Снимок автора: в payload истории его нет, полоса передаёт свой. Без
+   *  него в шапке висела цветная буква, пока лицо человека было видно
+   *  строкой выше — в полосе, из которой историю и открыли. */
+  avatar?: string | null;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
@@ -292,7 +297,7 @@ export function StoryViewer({
               <div className="flex items-center gap-2.5">
               <AuraRing
                 seed={story.user_id}
-                src={null}
+                src={avatar}
                 name={story.display_name}
                 size={34}
                 ring={2}

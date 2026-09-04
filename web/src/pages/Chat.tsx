@@ -1102,8 +1102,8 @@ export default function Chat() {
         aria-live="polite"
         aria-relevant="additions"
         aria-label="Переписка"
-        className="chat-surface flex-1 min-h-0 overflow-y-auto overscroll-contain
-                   no-scrollbar px-3 py-3"
+        className="chat-surface flex flex-col flex-1 min-h-0 overflow-y-auto
+                   overscroll-contain no-scrollbar px-3 py-3"
         style={{
           ...обоиЧата,
           ["--chat-ink" as any]: theme?.background_color
@@ -1177,6 +1177,12 @@ export default function Chat() {
           </div>
         ) : (
           <>
+            {/* Распорка съедает пустоту сверху: три фразы в новой переписке
+                должны лежать НА поле ввода, как в Telegram и VK, а не висеть
+                под шапкой с провалом в пол-экрана. Растёт только на слабину,
+                при переполнении сжимается в ноль и не мешает прокрутке */}
+            <div className="flex-1 min-h-0 shrink" aria-hidden="true" />
+
             {/* Верх ленты: полоса ожидания, пока едет предыдущая страница.
                 «Начало переписки» — только если человек действительно
                 пролистал историю, иначе подпись висит над тремя фразами */}

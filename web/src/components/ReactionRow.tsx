@@ -9,6 +9,12 @@
  * поставил именно ты, и не приходится вспоминать, какого цвета акцент темы.
  * Повторный тап по своей плашке снимает реакцию — это ожидание из всех
  * мессенджеров, отдельного крестика тут нет.
+ *
+ * Число стоит всегда, даже когда автор один: знак без числа читается
+ * наклейкой, приехавшей из панели стикеров, а не реакцией на сообщение —
+ * и по нему не видно, ответил ли собеседник тем же. Ряд подтянут к пузырю
+ * вплотную: с зазором плашка висела сама по себе и было непонятно, к какой
+ * из двух соседних реплик она относится.
  */
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -35,7 +41,7 @@ export default function ReactionRow({ reactions, myId, mine, onToggle }: Props) 
 
   return (
     <div
-      className={`flex flex-wrap gap-1 px-0.5 ${
+      className={`relative z-10 -mt-1 flex flex-wrap gap-1 px-0.5 ${
         mine ? "justify-end" : "justify-start"
       }`}
     >
@@ -53,14 +59,12 @@ export default function ReactionRow({ reactions, myId, mine, onToggle }: Props) 
               transition={{ type: "spring", stiffness: 520, damping: 30 }}
               onClick={() => onToggle(r.key)}
               aria-pressed={моя}
-              aria-label={`${REACTION_TITLES[r.key as keyof typeof REACTION_TITLES]}${
-                r.users.length > 1 ? `, ${r.users.length}` : ""
+              aria-label={`${REACTION_TITLES[r.key as keyof typeof REACTION_TITLES]}, ${
+                r.users.length
               }${моя ? ", ваша" : ""}`}
-              className={`inline-flex items-center h-[24px] rounded-full
-                          text-[12px] font-semibold tabular-nums
-                          active:scale-95 transition-transform ${
-                            r.users.length > 1 ? "gap-1 pl-1.5 pr-2" : "px-1.5"
-                          }`}
+              className="inline-flex h-[24px] items-center gap-1 rounded-full
+                         pl-1.5 pr-2 text-[12px] font-semibold tabular-nums
+                         transition-transform active:scale-95"
               style={{
                 // Чужая плашка — стекло, а не плоская поверхность: она лежит
                 // на обоях переписки, и сплошная заливка читалась бы серым
@@ -77,7 +81,7 @@ export default function ReactionRow({ reactions, myId, mine, onToggle }: Props) 
               }}
             >
               <ReactionGlyph k={r.key as any} size={15} />
-              {r.users.length > 1 && r.users.length}
+              {r.users.length}
             </motion.button>
           );
         })}

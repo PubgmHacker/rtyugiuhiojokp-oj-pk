@@ -249,6 +249,17 @@ class MatchResponse(BaseModel):
     # переписку отдельно по каждому мэтчу
     last_message: Optional[str] = None
     last_message_at: Optional[datetime] = None
+    #: Чем было последнее сообщение: "text" | "photo" | "voice" |
+    #: "video_note" | "reel". Список чатов рисует по этому коду значок —
+    #: без него голосовое было неотличимо от реплики «Голосовое сообщение»,
+    #: набранной руками.
+    last_message_kind: Optional[str] = None
+    #: Секунды голосового или кружка — их показывают рядом со значком,
+    #: как в Telegram: длину записи видно до того, как её открыл.
+    last_message_duration: Optional[int] = None
+    #: Последнее сообщение — своё. Список ставит «Вы:», иначе непонятно,
+    #: ждёт ли собеседник ответа или ответа ждём мы.
+    last_message_outgoing: bool = False
     unread_count: int = 0
     #: "match" — взаимный лайк, "direct" — платное письмо без взаимности.
     #: Список чатов отличает их визуально (см. services/direct_messages.py).

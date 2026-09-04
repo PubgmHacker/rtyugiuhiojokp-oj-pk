@@ -15,7 +15,8 @@
 import { Crown, Paintbrush, Pencil } from "lucide-react";
 import type { UserProfile } from "../lib/api";
 import { coverBackground, coverForProfile } from "../lib/cover";
-import { letterAvatarStyle } from "../lib/aura";
+import { letterAvatarStyle, readableOn } from "../lib/aura";
+import { plural } from "../lib/plural";
 import { IdentityBadge } from "./ui";
 
 /** Геометрия лица — цифры Plink (pt → px 1:1). */
@@ -30,6 +31,17 @@ export const ЛИЦО = {
 /** Сколько «о себе» помещается в пузырь целиком. Длиннее — обрезаем и
  *  показываем полный текст карточкой ниже. */
 export const ПУЗЫРЬ_МАКС = 70;
+
+/**
+ * Нижняя кромка пузыря-мысли, от верха обложки.
+ *
+ * Пузырь прижат к этой линии и растёт вверх, а не вниз от неё: хвостики
+ * висят у него под левым нижним углом, и при верхнем якоре они уезжали
+ * вместе с текстом — у короткого «о себе» указывали в пустоту над головой,
+ * у длинного упирались в наклейку. Прижатый низ держит их на одном месте —
+ * на верхне-правой кромке аватара — при любой длине текста.
+ */
+const ПУЗЫРЬ_НИЗ = ЛИЦО.обложка - 12;
 
 interface Props {
   profile: UserProfile;
@@ -61,10 +73,15 @@ export default function ProfileFace({
   const тонированный = { "--tint": cover.accent } as React.CSSProperties;
   const bio = (profile.bio ?? "").trim();
   const мысль = bio.length > ПУЗЫРЬ_МАКС ? bio.slice(0, ПУЗЫРЬ_МАКС - 1).trimEnd() + "…" : bio;
+  const интересов = profile.interests?.length ?? 0;
+  // «Приглашено» отсюда убрано: это реферальная метрика, и она уже показана
+  // своей карточкой с прогрессом ниже на экране. На лице анкеты считаем то,
+  // из чего анкета состоит, — и подпись согласуем с числом, иначе выходит
+  // машинное «3 Интересы»
   const счётчики = counters ?? [
     { label: "Фото", value: profile.photos?.length ?? 0 },
-    { label: "Интересы", value: profile.interests?.length ?? 0 },
-    { label: "Приглашено", value: profile.invited_count ?? 0 },
+    { label: "Видео", value: profile.videos?.length ?? 0 },
+    { label: plural(интересов, "Интерес", "Интереса", "Интересов"), value: интересов },
   ];
 
   return (
@@ -99,8 +116,13 @@ export default function ProfileFace({
             type="button"
             onClick={onDecor}
             aria-label={`Обложка: ${cover.title}. Сменить`}
-            className="absolute top-3 right-[14px] w-8 h-8 rounded-full glass-soft
-                       flex items-center justify-center text-white/90 active:scale-95 transition-transform"
+            /* Не glass-soft: он светлый и на светлой обложке кнопка
+               исчезала. Тёмный скрим читается и на пастельном градиенте,
+               и на фотографии — как элементы управления над фото в iOS. */
+            className="absolute top-3 right-[14px] w-8 h-8 rounded-full
+                       bg-black/35 backdrop-blur-md border border-white/25
+                       shadow-[0_1px_6px_rgba(0,0,0,.35)]
+                       flex items-center justify-center text-white active:scale-95 transition-transform"
           >
             <Paintbrush size={15} />
           </button>
@@ -129,7 +151,9 @@ export default function ProfileFace({
             src={profile.sticker}
             alt=""
             draggable={false}
-            className="absolute -top-1 -right-3 w-11 h-11 rotate-6 select-none
+            /* Низ, а не верх: сверху справа садятся хвостики пузыря-мысли, и
+               наклейка их перекрывала — мысль оказывалась ничьей */
+            className="absolute -bottom-1 -right-3 w-11 h-11 rotate-6 select-none
                        drop-shadow-[0_2px_6px_rgba(0,0,0,.5)]"
           />
         )}
@@ -142,7 +166,7 @@ export default function ProfileFace({
           disabled={!own}
           onClick={onBio}
           className="status-bubble absolute max-w-[min(58%,236px)] text-left"
-          style={{ left: ЛИЦО.левый + ЛИЦО.аватар - 6, top: ЛИЦО.обложка - ЛИЦО.нахлёст - 34 }}
+          style={{ left: ЛИЦО.левый + ЛИЦО.аватар - 6, top: ПУЗЫРЬ_НИЗ, transform: "translateY(-100%)" }}
           aria-label={мысль ? "О себе. Изменить" : "Добавить пару слов о себе"}
         >
           <span className={`block text-[13px] leading-snug ${мысль ? "" : "text-text-muted"}`}>
@@ -176,9 +200,11 @@ export default function ProfileFace({
           <IdentityBadge profile={profile} size={19} />
           {profile.is_premium && (
             <span
+              /* Цвет буквы считаем от акцента: на «Заре» и «Затмении» чёрный
+                 текст верен, а на синей паре личности он почти не виден */
               className="shrink-0 inline-flex items-center gap-1 px-2 h-[18px] rounded-full
-                         text-[10px] font-black tracking-[0.05em] text-black/85"
-              style={{ background: cover.accent }}
+                         text-[10px] font-black tracking-[0.05em]"
+              style={{ background: cover.accent, color: readableOn(cover.accent) }}
             >
               <Crown size={9} fill="currentColor" />
               PREMIUM

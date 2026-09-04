@@ -389,14 +389,37 @@ def notify_text_for(text: str, image_url: str | None, media: dict | None) -> str
 
 
 def превью_сообщения(m: Message | None) -> str | None:
-    """Строка для списка чатов: текст, иначе подпись медиа/фото."""
+    """Строка для списка чатов: текст, иначе подпись медиа/фото/ролика."""
     if m is None:
         return None
     if m.text:
         return m.text
     if m.media_kind:
         return MEDIA_FALLBACK_TEXT.get(m.media_kind, "Сообщение")
-    return "Фотография" if m.image_url else None
+    if m.image_url:
+        return "Фотография"
+    # Пересланный ролик без подписи оставлял строку пустой, и в списке
+    # чатов беседа выглядела так, будто в ней ничего не происходило.
+    return "Видео" if m.reel_id else None
+
+
+def вид_превью(m: Message | None) -> str | None:
+    """Чем было последнее сообщение — код для значка в списке чатов.
+
+    Списку нужен код, а не подпись: значок микрофона, кружка или камеры он
+    рисует сам, а разбирать обратно строку «Голосовое сообщение» пришлось бы
+    сравнением с переводом. Строка остаётся для тех мест, где значка нет
+    (уведомления, пуши).
+    """
+    if m is None:
+        return None
+    if m.media_kind:
+        return m.media_kind
+    if m.image_url:
+        return "photo"
+    if m.reel_id:
+        return "reel"
+    return "text" if m.text else None
 
 
 def reel_preview(reel: Reel | None) -> dict | None:

@@ -342,7 +342,11 @@ export default function VideoNoteBubble({ media, mine, size = 200 }: Props) {
         />
       </div>
 
-      {/* Контур формы: тонкая подложка и поверх неё прогресс */}
+      {/* Контур формы: тонкая подложка и поверх неё прогресс.
+          Подложка — белая в треть силы у обоих собеседников. Своя была
+          акцентной, и на своём же акцентном пузыре кружок выходил
+          сиреневым по сиреневому: акцент перестаёт что-либо значить, если
+          им покрашена и дорожка, и пройденная дуга. Акцент оставлен дуге. */}
       <svg
         viewBox="0 0 100 100"
         aria-hidden="true"
@@ -351,8 +355,8 @@ export default function VideoNoteBubble({ media, mine, size = 200 }: Props) {
         <path
           d={shape.d}
           fill="none"
-          stroke={mine ? "var(--color-accent)" : "currentColor"}
-          strokeOpacity={0.26}
+          stroke="#ffffff"
+          strokeOpacity={0.3}
           strokeWidth={2.2}
           vectorEffect="non-scaling-stroke"
         />

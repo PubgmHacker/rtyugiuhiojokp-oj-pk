@@ -20,7 +20,8 @@ from services.enforcement import enforce_text_verdict
 from services.chat_delivery import (
     ДоставкаОтклонена, check_chat_flood, check_reaction_flood, fan_out,
     media_preview, notify_text_for, нормализовать_медиа, превью_ответа,
-    превью_сообщения, reel_preview, реакции_страницы, save_message, set_reaction,
+    вид_превью, превью_сообщения, reel_preview, реакции_страницы, save_message,
+    set_reaction,
 )
 from services.streaks import (
     can_revive as стрик_оживим, revive_streak, streak_emoji, get_streaks_bulk,
@@ -255,8 +256,14 @@ async def get_matches(
 
         last = last_messages.get(m.id)
         preview = None
+        вид = None
+        длительность = None
+        исходящее = False
         if last and not locked:
             preview = превью_сообщения(last)
+            вид = вид_превью(last)
+            длительность = last.media_duration
+            исходящее = last.sender_id == user.id
 
         # Стрик из пакетного словаря — сгорание и окно revive применены
         # при чтении, как и раньше, но без запроса на каждый чат
@@ -280,6 +287,9 @@ async def get_matches(
                 partner=partner_profile,
                 last_message=preview,
                 last_message_at=last.created_at if last else None,
+                last_message_kind=вид,
+                last_message_duration=длительность,
+                last_message_outgoing=исходящее,
                 unread_count=unread.get(m.id, 0),
                 kind=m.kind,
                 initiator_id=m.initiator_id,

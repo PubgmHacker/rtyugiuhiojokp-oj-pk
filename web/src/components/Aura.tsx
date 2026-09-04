@@ -18,6 +18,18 @@ interface AuraRingProps {
   dim?: boolean;
   /** Кольца нет совсем — обычный аватар. */
   bare?: boolean;
+  /**
+   * Чем красим кольцо.
+   *
+   * aura — цвет человека: годится там, где аватар стоит один и цвет
+   * работает подписью. brand — одно фирменное кольцо на всех: в полосе,
+   * где кружки идут подряд, восемь разных оттенков складываются в радугу,
+   * а имя всё равно напечатано под кружком, так что оттенок никого не
+   * опознаёт. В brand погашенное кольцо — ровная волосяная линия, а не
+   * яркая дуга в треть прозрачности: непросмотренное и просмотренное
+   * должны отличаться рисунком, а не силой цвета.
+   */
+  tone?: "aura" | "brand";
   ring?: number;
   className?: string;
 }
@@ -29,6 +41,7 @@ export function AuraRing({
   size = 56,
   dim = false,
   bare = false,
+  tone = "aura",
   ring = 2.5,
   className = "",
 }: AuraRingProps) {
@@ -38,6 +51,15 @@ export function AuraRing({
   // обводка снимка, а не как отдельный признак человека.
   const gap = bare ? 0 : 2;
   const inner = size - (pad + gap) * 2;
+  const фирменное =
+    "linear-gradient(150deg, var(--color-accent-soft), var(--color-accent) 52%, var(--color-accent-deep))";
+  const кольцо = bare
+    ? "transparent"
+    : tone === "brand"
+      ? dim
+        ? "var(--color-hairline)"
+        : фирменное
+      : aura.ring;
 
   return (
     <div
@@ -47,8 +69,10 @@ export function AuraRing({
         height: size,
         padding: pad,
         borderRadius: "50%",
-        background: bare ? "transparent" : aura.ring,
-        opacity: dim ? 0.32 : 1,
+        background: кольцо,
+        // Гасим прозрачностью только цветное кольцо: фирменное уже меняет
+        // сам цвет, и второе гашение сверху превращало бы его в грязь.
+        opacity: dim && tone === "aura" ? 0.32 : 1,
         transition: "opacity 180ms ease",
       }}
     >

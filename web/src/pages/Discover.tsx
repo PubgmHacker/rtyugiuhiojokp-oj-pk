@@ -81,15 +81,24 @@ export default function Discover() {
                 haptic("light");
                 setFiltersOpen(true);
               }}
-              className={`inline-flex items-center gap-2 pl-3.5 pr-4 py-2 rounded-full
+              /* На 320px (iPhone SE) слово не влезало и «Фильтры» обрезалось
+                 краем экрана. Уже 360px кнопка становится значком в кружке —
+                 как колокол и буст рядом; смысл несёт aria-label */
+              className={`inline-flex items-center justify-center gap-2 py-2 rounded-full
+                          w-11 min-[360px]:w-auto min-[360px]:pl-3.5 min-[360px]:pr-4
                           text-[14.5px] font-semibold liquid
                           active:scale-95 transition-transform
                           ${filtersActive ? "text-accent" : ""}`}
             >
               <SlidersHorizontal size={17} />
-              Фильтры
+              <span className="hidden min-[360px]:inline">Фильтры</span>
               {filtersActive && (
-                <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent" />
+                /* В режиме-значке точка сдвигала иконку с центра: активность
+                   там и без неё видна акцентным цветом */
+                <span
+                  aria-hidden
+                  className="hidden min-[360px]:block w-1.5 h-1.5 rounded-full bg-accent"
+                />
               )}
             </button>
           </div>

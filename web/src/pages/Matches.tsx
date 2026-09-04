@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Users, ChevronRight, Mic, Lock, WifiOff, MessageCircle, Flame } from "lucide-react";
+import {
+  Users, ChevronRight, Mic, Lock, WifiOff, MessageCircle, Flame,
+  Video, Image as ImageIcon, Film,
+} from "lucide-react";
 import type { DailyLimits, MatchResponse } from "../lib/api";
 import { letterAvatarStyle } from "../lib/aura";
-import { getMatches, getDailyLimits } from "../lib/api";
+import { getMatches, getDailyLimits, ПОТОЛОК_ЧАТОВ } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { clearNotificationBadge } from "../lib/native";
@@ -18,6 +21,68 @@ import {
   Button,
   IdentityBadge,
 } from "../components/ui";
+
+/**
+ * Превью последнего сообщения в строке чата.
+ *
+ * Медиа обязано отличаться от текста значком: строка «Голосовое сообщение»
+ * выглядела ровно так же, как если бы собеседник напечатал эти слова
+ * руками, и по списку было не видно, где переписка, а где разговор. Длину
+ * записи ставим вместо подписи — как в Telegram: сколько слушать, видно до
+ * открытия чата. «Вы:» впереди отвечает на главный вопрос списка — ждут
+ * ответа от меня или от него.
+ */
+const ЗНАЧОК_ВИДА = {
+  voice: Mic,
+  video_note: Video,
+  photo: ImageIcon,
+  reel: Film,
+} as const;
+
+const ПОДПИСЬ_ВИДА: Record<keyof typeof ЗНАЧОК_ВИДА, string> = {
+  voice: "Голосовое сообщение",
+  video_note: "Видеосообщение",
+  photo: "Фотография",
+  reel: "Видео",
+};
+
+/** Секунды в 0:07 — как в плеере, а не «7 сек». */
+function длинаЗаписи(sec?: number | null): string {
+  if (!sec || sec < 1) return "";
+  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+}
+
+function ПревьюЧата({ m }: { m: MatchResponse }) {
+  const вид = m.last_message_kind ?? null;
+  const значок = вид && вид in ЗНАЧОК_ВИДА
+    ? ЗНАЧОК_ВИДА[вид as keyof typeof ЗНАЧОК_ВИДА]
+    : null;
+  const Значок = значок;
+  const длина = длинаЗаписи(m.last_message_duration);
+  const подпись =
+    (вид === "voice" || вид === "video_note") && длина ? длина : m.last_message || "";
+
+  return (
+    <p
+      className={`flex items-center gap-1 text-[13.5px] ${
+        m.unread_count ? "text-text font-medium" : "text-text-muted"
+      }`}
+    >
+      {m.last_message_outgoing && (
+        <span className="shrink-0 text-text-faint">Вы:</span>
+      )}
+      {Значок && (
+        <>
+          <Значок size={13} aria-hidden="true" className="shrink-0 text-accent" />
+          <span className="sr-only">
+            {ПОДПИСЬ_ВИДА[вид as keyof typeof ЗНАЧОК_ВИДА]}
+          </span>
+        </>
+      )}
+      <span className="truncate">{подпись}</span>
+    </p>
+  );
+}
 
 export default function Matches() {
   const navigate = useNavigate();
@@ -36,10 +101,15 @@ export default function Matches() {
       const свежие = await getMatches();
       setMatches(свежие);
       // Бейдж «Чаты» пересчитываем по свежему списку: человек читает
-      // переписки, и цифра с момента входа в приложение успевает соврать
-      setUnreadMessages(
-        свежие.reduce((sum, m) => sum + (m.unread_count ?? 0), 0)
-      );
+      // переписки, и цифра с момента входа в приложение успевает соврать.
+      // Но только пока список не упёрся в серверный потолок: за ним сумма
+      // по видимым чатам меньше настоящей, и бейдж бы тихо занизился —
+      // тогда доверяем цифре из /badges, посчитанной по всей базе
+      if (свежие.length < ПОТОЛОК_ЧАТОВ) {
+        setUnreadMessages(
+          свежие.reduce((sum, m) => sum + (m.unread_count ?? 0), 0)
+        );
+      }
       clearNotificationBadge();
       if (свежие.some((m) => m.locked)) {
         // Нужно только для времени возврата слота в шторке — сам факт
@@ -289,13 +359,7 @@ export default function Matches() {
                         Лимит мэтчей на сегодня — откройте по подписке
                       </p>
                     ) : (
-                      <p
-                        className={`text-[13.5px] truncate ${
-                          m.unread_count ? "text-text font-medium" : "text-text-muted"
-                        }`}
-                      >
-                        {m.last_message}
-                      </p>
+                      <ПревьюЧата m={m} />
                     )}
                   </div>
                   {!!m.unread_count && (

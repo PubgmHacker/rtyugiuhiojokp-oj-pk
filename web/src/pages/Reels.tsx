@@ -673,7 +673,9 @@ function ReelItem({
 
           {/* Столбик TikTok/Instagram: плоские белые значки с тенью и числом под
               каждым, без стеклянных кружков — так их читают все */}
-          <div className="flex flex-col items-center gap-[18px] pb-1 w-12 shrink-0 pointer-events-auto">
+          {/* w-16, а не w-12: подпись «Отправить» шире числовых и на 48px вылезала
+                из столбика — на 390px она упиралась в самый край экрана */}
+          <div className="flex flex-col items-center gap-[18px] pb-1 w-16 shrink-0 pointer-events-auto">
             <button
               aria-label={reel.liked_by_me ? "Убрать лайк" : "Лайк"}
               aria-pressed={reel.liked_by_me}

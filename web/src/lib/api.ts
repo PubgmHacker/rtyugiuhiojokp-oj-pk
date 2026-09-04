@@ -184,6 +184,12 @@ export interface MatchResponse {
   /** Превью для списка чатов — приходит вместе со списком мэтчей. */
   last_message?: string | null;
   last_message_at?: string | null;
+  /** Чем было последнее сообщение — по коду список рисует значок. */
+  last_message_kind?: "text" | "photo" | "voice" | "video_note" | "reel" | null;
+  /** Секунды голосового или кружка — показываем рядом со значком. */
+  last_message_duration?: number | null;
+  /** Последнее сообщение — своё: в строке появляется «Вы:». */
+  last_message_outgoing?: boolean;
   unread_count?: number;
   /** "match" — взаимный лайк, "direct" — платное письмо без взаимности. */
   kind?: "match" | "direct";
@@ -453,6 +459,13 @@ export async function markNotificationsRead(): Promise<{ read: number }> {
   const { data } = await api.post("/notifications/read");
   return data;
 }
+
+/**
+ * Потолок списка чатов на сервере (routers/matches.py). Клиенту он нужен,
+ * чтобы понимать: ответ ровно этой длины может быть обрезан, и считать по
+ * нему итоги (например, сумму непрочитанных) уже нельзя.
+ */
+export const ПОТОЛОК_ЧАТОВ = 200;
 
 export async function getMatches(signal?: AbortSignal): Promise<MatchResponse[]> {
   const { data } = await api.get("/matches");
