@@ -9,7 +9,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, Flag, Send, Users, WifiOff, MessageCircle } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Flag,
+  MessageCircle,
+  Send,
+  WifiOff,
+} from "lucide-react";
 import {
   getRoomMessages,
   getRooms,
@@ -104,36 +111,61 @@ export default function Rooms() {
         Общаться в общем чате проще, чем писать первым в личку.
       </p>
 
-      <div className="px-4 pt-3 flex flex-col gap-2.5">
-        {rooms.map((room) => (
-          <button
-            key={room.id}
-            onClick={() => {
-              haptic("light");
-              setActive(room);
-            }}
-            className="w-full text-left px-4 py-3.5 glass rounded-[20px]
-                       active:scale-[0.99] transition-transform"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-bold text-[15.5px] flex-1">{room.title}</span>
-              {/* Пустая комната без пометки выглядит так же, как живая, и
-                  человек уходит, не дождавшись ответа */}
-              {room.messages_today > 0 ? (
-                <span
-                  className="flex items-center gap-1 text-[12px] font-semibold
-                             text-accent shrink-0"
-                >
-                  <Users size={12} />
-                  {room.messages_today} за сутки
-                </span>
-              ) : (
-                <span className="text-[12px] text-text-faint shrink-0">тихо</span>
-              )}
-            </div>
-            <p className="text-caption text-text-muted">{room.description}</p>
-          </button>
-        ))}
+      {/* Одна карта со строками, а не карточка на каждую комнату: во всём
+          приложении список — это стекло с волосяными разделителями (стек
+          настроек, расклад Таро, инбокс). Пять отдельных плиток подряд
+          читались как пять разных разделов. Кружок с буквой — та же
+          палитра, что у аватаров в самой комнате. */}
+      <div className="px-4 pt-3">
+        <div className="settings-card rounded-[20px] overflow-hidden">
+          {rooms.map((room) => (
+            <button
+              key={room.id}
+              onClick={() => {
+                haptic("light");
+                setActive(room);
+              }}
+              className="w-full text-left flex items-center gap-3 px-4 py-3
+                         border-t border-[color:var(--glass-divider)] first:border-t-0
+                         active:bg-surface-2 transition-colors"
+            >
+              <span
+                aria-hidden="true"
+                className="w-10 h-10 rounded-full grid place-items-center
+                           text-[15px] font-bold shrink-0"
+                style={letterAvatarStyle(room.title)}
+              >
+                {room.title.trim().slice(0, 1).toUpperCase()}
+              </span>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-[15px] truncate flex-1">
+                    {room.title}
+                  </span>
+                  {/* Пустая комната без пометки выглядит так же, как живая, и
+                      человек уходит, не дождавшись ответа */}
+                  {room.messages_today > 0 ? (
+                    <span
+                      className="flex items-center gap-1 text-[12px] font-semibold
+                                 text-accent shrink-0 tabular-nums"
+                    >
+                      <MessageCircle size={12} />
+                      {room.messages_today} за сутки
+                    </span>
+                  ) : (
+                    <span className="text-[12px] text-text-faint shrink-0">тихо</span>
+                  )}
+                </div>
+                <p className="text-caption text-text-muted truncate">
+                  {room.description}
+                </p>
+              </div>
+
+              <ChevronRight size={14} className="text-text-faint shrink-0" />
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

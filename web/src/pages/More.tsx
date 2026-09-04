@@ -31,12 +31,10 @@ interface Item {
   icon: typeof Film;
   title: string;
   hint: string;
-  /** Платная фича: помечаем замком — это честно, а не «премиум-шильдик»,
-      который звучит как реклама и который человек не попросил. */
-  paid?: boolean;
-  /** Премиум-класс: звезда рядом с иконкой, как в референсе — мягкий тизер
-      подписки, а не стена, залитая акцентом целиком. */
-  premium?: boolean;
+  /** Нужна подписка. Признак ровно один и стоит только там, где сервер
+      действительно просит подписку: у оценки фото гейта нет, карта дня
+      бесплатна — значки на них были рекламой, а не правдой. */
+  plus?: boolean;
 }
 
 /** Знакомства — то, что приводит к мэтчу. */
@@ -74,7 +72,6 @@ const FUN: Item[] = [
     icon: Star,
     title: "Оценка фото",
     hint: "Оцените чужие и узнайте оценку своего",
-    premium: true,
   },
   {
     path: "/likes?tab=top",
@@ -87,14 +84,13 @@ const FUN: Item[] = [
     icon: Gift,
     title: "Кейсы",
     hint: "Наклейки и обложки для анкеты",
-    paid: true,
+    plus: true,
   },
   {
     path: "/tarot",
     icon: Moon,
-    title: "Карта дня",
-    hint: "Карта дня и расклады — повод начать разговор",
-    premium: true,
+    title: "Таро",
+    hint: "Карта дня бесплатно, расклады — по подписке",
   },
 ];
 
@@ -144,8 +140,7 @@ function Section({ title, items }: { title: string; items: Item[] }) {
           icon={item.icon}
           title={item.title}
           hint={item.hint}
-          premium={item.premium}
-          locked={item.paid}
+          plus={item.plus}
         />
       ))}
     </SettingsGroup>

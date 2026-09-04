@@ -15,7 +15,7 @@
  */
 import type { ComponentType, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Lock, Sparkles } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { haptic } from "../lib/haptics";
 
 export function SettingsGroup({
@@ -45,10 +45,10 @@ export interface SettingsRowProps {
   valueLang?: string;
   to?: string;
   onClick?: () => void;
-  /** Премиум-класс: звёздочка у заголовка — мягкий тизер, не стена. */
-  premium?: boolean;
-  /** Платная фича: замок у заголовка — честнее «премиум-шильдика». */
-  locked?: boolean;
+  /** Нужна подписка: словесный значок «Plus» у заголовка. Один признак на
+      одно значение и с именем для читалки — два молчаливых значка (звезда
+      плюс замок) значили то же самое и не назывались вслух. */
+  plus?: boolean;
   /** Шеврон справа; у строк-переключателей он не нужен. */
   chevron?: boolean;
   /** Цвет значка вместо акцента (например, синий галочки). */
@@ -67,8 +67,7 @@ export function SettingsRow({
   valueLang,
   to,
   onClick,
-  premium,
-  locked,
+  plus,
   chevron = true,
   iconColor,
   tone,
@@ -106,8 +105,11 @@ export function SettingsRow({
           >
             {title}
           </p>
-          {premium && <Sparkles size={12} className="text-warn shrink-0" />}
-          {locked && <Lock size={11} className="text-text-faint shrink-0" />}
+          {plus && (
+            <span className="plus-badge shrink-0">
+              Plus<span className="sr-only"> — нужна подписка</span>
+            </span>
+          )}
         </div>
         {hint && (
           <p className="text-[12px] text-text-muted mt-0.5 leading-snug">{hint}</p>

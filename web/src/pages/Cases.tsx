@@ -169,6 +169,7 @@ export default function Cases() {
   }
 
   const платно = state.per_month === 0;
+  // Таблица редкостей общая для всех кейсов — берём у первого, где она есть
   const награда = won?.result.reward;
   const можноНадеть = Boolean(награда?.sticker || награда?.decor);
 
@@ -385,6 +386,9 @@ function ПлиткаКейса({
   //: Инлайновый backgroundImage замещает блик стекла свечением кейса,
   //: заливка, блюр и обводка остаются от glass.
   const акцент = /^#[0-9a-f]{6}$/i.test(кейс.accent) ? кейс.accent : "";
+  const шансы = ПОРЯДОК_РЕДКОСТЕЙ.filter(
+    (r) => кейс.rarity_chances?.[r] != null,
+  ).map((r) => [r, кейс.rarity_chances[r]] as const);
 
   return (
     <section
@@ -428,18 +432,43 @@ function ПлиткаКейса({
         )}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {ПОРЯДОК_РЕДКОСТЕЙ.filter((r) => кейс.rarity_chances[r] != null).map((r) => (
-          <span
-            key={r}
-            className="px-2 py-0.5 chip
-                       text-[11px] font-semibold tabular-nums"
-          >
-            <РедкостьПодпись rarity={r} title={ИМЯ_РЕДКОСТИ[r] ?? r} /> ·{" "}
-            {кейс.rarity_chances[r]}%
-          </span>
-        ))}
-      </div>
+      {/* Шкала набора: у плитки должно быть своё число, а не только общее
+          «что выпадает» внизу страницы. Заполнение красим акцентом кейса —
+          тем же, что и его свечение. */}
+      {кейс.total > 0 && (
+        <div
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={кейс.total}
+          aria-valuenow={кейс.owned}
+          aria-label={`Собрано ${кейс.owned} из ${кейс.total}`}
+          className="mt-2.5 h-[5px] rounded-full bg-surface-3 overflow-hidden"
+        >
+          <div
+            className="h-full rounded-full transition-[width] duration-500"
+            style={{
+              width: `${Math.min(100, Math.round((кейс.owned / кейс.total) * 100))}%`,
+              background: акцент || "var(--color-accent)",
+            }}
+          />
+        </div>
+      )}
+
+      {/* Доли редкостей — у каждого набора свои: сервер нормирует веса по
+          фактическому составу, и в наборе без легендарных строки легендарных
+          не будет. Одной таблицей на страницу это не сводится. */}
+      {шансы.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {шансы.map(([r, доля]) => (
+            <span
+              key={r}
+              className="px-2 py-0.5 chip text-[11px] font-semibold tabular-nums"
+            >
+              <РедкостьПодпись rarity={r} title={ИМЯ_РЕДКОСТИ[r] ?? r} /> · {доля}%
+            </span>
+          ))}
+        </div>
+      )}
 
       {платно ? (
         <p className="mt-3 flex items-center gap-1.5 text-[12.5px] text-text-muted">
@@ -448,6 +477,9 @@ function ПлиткаКейса({
         </p>
       ) : (
         <Button
+          /* Собранный набор больше ничего не обещает — дальше только обложки
+             и повторы. Кричать главным акцентом ему уже не за что. */
+          variant={собрано ? "secondary" : "primary"}
           size="md"
           fullWidth
           className="mt-3"

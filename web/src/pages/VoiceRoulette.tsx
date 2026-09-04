@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Flag, Mic, MicOff, PhoneOff, SkipForward } from "lucide-react";
 import { getIceServers, reportUser } from "../lib/api";
 import { haptic } from "../lib/haptics";
@@ -296,6 +296,8 @@ export default function VoiceRoulette() {
     }
   }, [start, stopCall, teardownCall]);
 
+  const безДвижения = useReducedMotion();
+
   const toggleMute = useCallback(() => {
     const track = localRef.current?.getAudioTracks()[0];
     if (!track) return;
@@ -311,25 +313,39 @@ export default function VoiceRoulette() {
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
         <audio ref={audioRef} autoPlay playsInline className="hidden" />
 
-        <motion.button
-          onClick={stage === "idle" ? start : undefined}
-          disabled={stage !== "idle"}
-          animate={
-            stage === "waiting"
-              ? { scale: [1, 1.06, 1] }
-              : { scale: 1 }
-          }
-          transition={{
-            duration: 1.4,
-            repeat: stage === "waiting" ? Infinity : 0,
-          }}
-          className={`w-32 h-32 rounded-full flex items-center justify-center glow-rose
-                      ${stage === "idle" ? "bg-accent active:scale-95" : "bg-accent/60"}
-                      transition-transform`}
-          aria-label={stage === "idle" ? "Начать звонок" : "Идёт поиск"}
-        >
-          <Mic size={44} className="text-white" />
-        </motion.button>
+        {/* Диск и радар вокруг него. Пока ищем — круги расходятся от кнопки:
+            ожидание видно и без надписи, а сам диск при этом стоит на месте
+            (раньше он раздувался целиком и уезжал под текст). */}
+        <div className="relative grid place-items-center">
+          {stage === "waiting" &&
+            !безДвижения &&
+            [0, 0.6, 1.2].map((задержка) => (
+              <motion.span
+                key={задержка}
+                aria-hidden="true"
+                className="absolute w-32 h-32 rounded-full border border-accent/45"
+                initial={{ scale: 1, opacity: 0.55 }}
+                animate={{ scale: 2.1, opacity: 0 }}
+                transition={{
+                  duration: 1.8,
+                  delay: задержка,
+                  repeat: Infinity,
+                  ease: "easeOut",
+                }}
+              />
+            ))}
+          <motion.button
+            onClick={stage === "idle" ? start : undefined}
+            disabled={stage !== "idle"}
+            whileTap={stage === "idle" ? { scale: 0.95 } : undefined}
+            transition={{ type: "spring", stiffness: 520, damping: 30 }}
+            className={`voice-disc relative w-32 h-32 rounded-full flex items-center justify-center
+                        ${stage === "idle" ? "" : "opacity-70"}`}
+            aria-label={stage === "idle" ? "Начать звонок" : "Идёт поиск"}
+          >
+            <Mic size={44} className="text-on-accent" />
+          </motion.button>
+        </div>
 
         <p className="mt-6 text-[15px] text-text-secondary max-w-[280px]">
           {stage === "idle" && "Нажмите, чтобы начать случайный голосовой звонок"}

@@ -466,6 +466,7 @@ export function ScreenHeader({
 }) {
   return (
     <header className="chrome sticky top-0 z-30 safe-top border-b border-hairline/60">
+      <span aria-hidden className="header-fade" />
       <div className="flex items-center gap-3 px-4 pb-3 min-h-[52px]">
         {left}
         <div className="flex-1 min-w-0">

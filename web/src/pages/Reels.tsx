@@ -274,8 +274,9 @@ export default function Reels() {
         ))}
       </div>
 
-      {/* Шапка поверх ленты: название слева, звук и запись справа */}
-      <div className="absolute inset-x-0 top-0 z-30 safe-top pointer-events-none">
+      {/* Шапка поверх ленты: название слева, звук и запись справа. Под ней
+          вуаль: на светлом кадре белый заголовок исчезал вместе с кадром */}
+      <div className="absolute inset-x-0 top-0 z-30 safe-top pointer-events-none bg-scrim-top pb-4">
         <div className="flex items-center justify-between px-4 pt-2">
           <h1 className="text-[20px] font-extrabold tracking-[-0.02em] reel-shadow">
             Видео
@@ -298,8 +299,8 @@ export default function Reels() {
                 haptic("light");
                 setUploadOpen(true);
               }}
-              className="h-10 pl-3 pr-3.5 rounded-full bg-white text-black flex items-center gap-1.5
-                         text-[14px] font-semibold active:scale-95 transition-transform"
+              className="h-10 pl-3 pr-3.5 rounded-full bg-white/12 backdrop-blur-md flex items-center gap-1.5
+                         text-[14px] font-semibold reel-shadow active:scale-95 transition-transform"
             >
               <Plus size={18} />
               Снять
@@ -673,9 +674,10 @@ function ReelItem({
 
           {/* Столбик TikTok/Instagram: плоские белые значки с тенью и числом под
               каждым, без стеклянных кружков — так их читают все */}
-          {/* w-16, а не w-12: подпись «Отправить» шире числовых и на 48px вылезала
-                из столбика — на 390px она упиралась в самый край экрана */}
-          <div className="flex flex-col items-center gap-[18px] pb-1 w-16 shrink-0 pointer-events-auto">
+          {/* Ровно w-12 под число. Слово «Отправить» стояло среди чисел, весило
+              больше них и заставляло держать w-16 — колонка съедала 16px у
+              подписи ролика. Имя действия и так есть в aria-label */}
+          <div className="flex flex-col items-center gap-[18px] pb-1 w-12 shrink-0 pointer-events-auto">
             <button
               aria-label={reel.liked_by_me ? "Убрать лайк" : "Лайк"}
               aria-pressed={reel.liked_by_me}
@@ -702,7 +704,6 @@ function ReelItem({
             {!reel.is_hidden && (
               <button aria-label="Переслать видео" onClick={onForward} className="reel-action">
                 <Share2 size={28} strokeWidth={1.9} />
-                <span>Отправить</span>
               </button>
             )}
 

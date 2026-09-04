@@ -316,6 +316,37 @@
   background: var(--gradient-scrim);
 }
 
+/* Тот же приём сверху. Шапка ленты стояла на голом кадре: на светлом
+   видео (небо, снег, белая стена) заголовок и значок звука пропадали
+   вместе с кадром. Сверху хватает вдвое более лёгкой вуали, чем снизу —
+   там подпись в три строки, здесь одна строка и два значка. */
+@utility bg-scrim-top {
+  background: linear-gradient(
+    to bottom,
+    rgb(12 8 9 / 0.58) 0%,
+    rgb(12 8 9 / 0.28) 46%,
+    transparent 100%
+  );
+}
+
+/* Растушёвка под шапкой экрана. `chrome` гасит орбы живого фона ровно
+   на своей высоте, поэтому на светлом орбе (экран «Ещё») стык шапки с
+   контентом читался ступенькой яркости во всю ширину. Полоса ниже
+   волосяной линии сводит перепад к нулю за 14px; сама линия остаётся —
+   она и есть край стекла. */
+@utility header-fade {
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  height: 14px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-bg) 58%, transparent),
+    transparent
+  );
+}
+
 /* Роль «контрол»: кнопки, карточки настроек, пилюли */
 /* Глиф пустого состояния: иконка в мягком акцентном диске вместо эмодзи */
 @utility empty-glyph {
@@ -583,6 +614,79 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent);
   color: var(--color-accent);
 }
+/* Диск голосовой рулетки. Была плоская фиолетовая заливка во весь экран —
+   единственный крупный предмет страницы и самый дешёвый на вид. Тот же
+   рецепт, что у главной кнопки (btn-torch), плюс объём: блик сверху,
+   затемнение снизу и два неподвижных ореола вместо анимации. */
+@utility voice-disc {
+  background-color: var(--color-accent);
+  background-image:
+    radial-gradient(88% 68% at 50% 6%, rgb(255 255 255 / 0.32), transparent 58%),
+    var(--gradient-torch);
+  border: 1px solid rgb(255 255 255 / 0.2);
+  box-shadow:
+    inset 0 2px 1px rgb(255 255 255 / 0.3),
+    inset 0 -12px 22px -12px rgb(0 0 0 / 0.5),
+    0 18px 34px -14px color-mix(in srgb, var(--color-accent) 60%, transparent),
+    0 0 0 10px color-mix(in srgb, var(--color-accent) 9%, transparent),
+    0 0 0 22px color-mix(in srgb, var(--color-accent) 5%, transparent);
+}
+
+/* Лицо карты Таро. В раскладе на каждой карте стояла одна и та же искорка:
+   четыре одинаковых значка столбиком и ни одной картинки — при том что
+   картинка в Таро и есть весь смысл. Здесь настоящее лицо: двойная кромка,
+   римский номер аркана сверху, знак в середине, имя внизу. Знак берёт тот
+   же единственный акцент экрана, разноцветить карты по-прежнему нельзя. */
+@utility tarot-face {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  aspect-ratio: 2 / 3;
+  padding: 8px 5px 7px;
+  border-radius: 11px;
+  background:
+    radial-gradient(
+      130% 78% at 50% 4%,
+      color-mix(in srgb, var(--color-accent) 20%, transparent),
+      transparent 62%
+    ),
+    linear-gradient(180deg, var(--color-surface-2), var(--color-surface-3));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
+    var(--shadow-card);
+  overflow: hidden;
+}
+/* Внутренняя рамка отдельным слоем: у ::before нет своего фона, поэтому
+   она не спорит с радиальным свечением под ней */
+@utility tarot-face-rule {
+  position: absolute;
+  inset: 3.5px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+  pointer-events: none;
+}
+
+/* Значок платной строки. Раньше их было два — звёздочка и замок — и оба
+   значили одно и то же, но ни один не назывался вслух: читалка проезжала
+   мимо, а глазами звезда читалась как «новое», замок как «недоступно».
+   Одна подпись словом, тем самым, что стоит на карте подписки вверху. */
+@utility plus-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--color-warn);
+  background: color-mix(in srgb, var(--color-warn) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-warn) 26%, transparent);
+}
+
 /* Строка стека настроек: без своей подложки (стекло даёт карта), разделитель
    от отметки 60 — только между соседями, у первой строки линии нет */
 @utility settings-row {

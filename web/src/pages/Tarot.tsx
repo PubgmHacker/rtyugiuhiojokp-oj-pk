@@ -15,9 +15,35 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { isAxiosError } from "axios";
-import { Crown, Lock, Sparkles } from "lucide-react";
+import {
+  Bell,
+  Crown,
+  Droplets,
+  Flame,
+  Flower2,
+  Footprints,
+  Globe,
+  Heart,
+  Hourglass,
+  Lamp,
+  Landmark,
+  LifeBuoy,
+  Link as LinkIcon,
+  Lock,
+  Moon,
+  MoonStar,
+  Sailboat,
+  Scale,
+  Skull,
+  Sparkles,
+  Star,
+  Sun,
+  WandSparkles,
+  Zap,
+} from "lucide-react";
+import type { ComponentType } from "react";
 import {
   getTarotDay,
   getTarotPair,
@@ -37,6 +63,37 @@ const TABS: { type: TarotSpreadType; label: string }[] = [
   { type: "relationship", label: "Отношения" },
   { type: "pair", label: "Он и я" },
 ];
+
+/** Лицо карты: римский номер аркана и знак. Порядок и имена — те же, что в
+ *  колоде сервера (api/services/tarot_deck.py, старший аркан 0–XXI); ключ —
+ *  имя карты, потому что именно оно приходит в ответе. Карту не из колоды
+ *  (сервер добавит новую) рисуем нейтральной искрой, а не пустым местом. */
+const АРКАНЫ: Record<string, { n: string; icon: ComponentType<{ size?: number; className?: string }> }> = {
+  Шут: { n: "0", icon: Footprints },
+  Маг: { n: "I", icon: WandSparkles },
+  Жрица: { n: "II", icon: Moon },
+  Императрица: { n: "III", icon: Flower2 },
+  Император: { n: "IV", icon: Crown },
+  Жрец: { n: "V", icon: Landmark },
+  Влюблённые: { n: "VI", icon: Heart },
+  Колесница: { n: "VII", icon: Sailboat },
+  Сила: { n: "VIII", icon: Flame },
+  Отшельник: { n: "IX", icon: Lamp },
+  Колесо: { n: "X", icon: LifeBuoy },
+  Справедливость: { n: "XI", icon: Scale },
+  Повешенный: { n: "XII", icon: Hourglass },
+  Смерть: { n: "XIII", icon: Skull },
+  Умеренность: { n: "XIV", icon: Droplets },
+  Дьявол: { n: "XV", icon: LinkIcon },
+  Башня: { n: "XVI", icon: Zap },
+  Звезда: { n: "XVII", icon: Star },
+  Луна: { n: "XVIII", icon: MoonStar },
+  Солнце: { n: "XIX", icon: Sun },
+  Суд: { n: "XX", icon: Bell },
+  Мир: { n: "XXI", icon: Globe },
+};
+
+const ЗАПАСНОЙ_АРКАН = { n: "", icon: Sparkles };
 
 /** Карта дня бесплатна, остальные расклады — по подписке (см. серверный гейт
  *  `tarot_spreads` в api/routers/tarot.py). */
@@ -243,25 +300,47 @@ export default function Tarot() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
           >
-            <h2 className="text-caption text-text-muted mb-2 px-1">
-              {spread.title}
-            </h2>
-            <div className="glass rounded-[20px] overflow-hidden mb-3">
+            {/* Заголовок расклада — только если он не повторяет активную
+                вкладку: на карте дня «Карта дня» стояло два раза подряд, в
+                пилюле и подписью под ней */}
+            {spread.title !== TABS.find((t) => t.type === tab)?.label && (
+              <h2 className="text-caption text-text-muted mb-2 px-1">
+                {spread.title}
+              </h2>
+            )}
+
+            {/* Лица карт — то, за чем в Таро вообще приходят. Раскрываются
+                по очереди, как их выкладывают на стол. */}
+            <div
+              className={`flex justify-center gap-2 mb-3 ${
+                spread.cards.length === 1 ? "px-16" : "px-1"
+              }`}
+              aria-hidden="true"
+            >
               {spread.cards.map((card, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 px-4 py-3
-                             border-t border-[color:var(--glass-divider)] first:border-t-0"
-                >
-                  <Sparkles size={17} className="text-accent shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14.5px] font-semibold">
-                      {card.position}: {card.name}
-                    </p>
-                    <p className="text-caption text-text-muted">{card.meaning}</p>
-                  </div>
-                </div>
+                <ЛицоКарты key={i} name={card.name} задержка={i * 0.08} />
               ))}
+            </div>
+
+            <div className="glass rounded-[20px] overflow-hidden mb-3">
+              {spread.cards.map((card, i) => {
+                const Знак = (АРКАНЫ[card.name] ?? ЗАПАСНОЙ_АРКАН).icon;
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 px-4 py-3
+                               border-t border-[color:var(--glass-divider)] first:border-t-0"
+                  >
+                    <Знак size={17} className="text-accent shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14.5px] font-semibold">
+                        {card.position}: {card.name}
+                      </p>
+                      <p className="text-caption text-text-muted">{card.meaning}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <Card className="p-4 mb-2">
@@ -282,6 +361,34 @@ export default function Tarot() {
         )}
       </div>
     </div>
+  );
+}
+
+/* ── Лицо карты ──────────────────────────────────────────────── */
+
+/** Плашка карты: номер аркана, знак, имя. Читалке она не нужна — те же имя и
+ *  значение стоят ниже строкой списка, поэтому ряд помечен aria-hidden, а
+ *  здесь только картинка. */
+function ЛицоКарты({ name, задержка }: { name: string; задержка: number }) {
+  const безДвижения = useReducedMotion();
+  const { n, icon: Знак } = АРКАНЫ[name] ?? ЗАПАСНОЙ_АРКАН;
+  return (
+    <motion.div
+      className="tarot-face flex-1 min-w-0 max-w-[112px]"
+      initial={безДвижения ? false : { opacity: 0, rotateY: -62, y: 6 }}
+      animate={{ opacity: 1, rotateY: 0, y: 0 }}
+      transition={{ duration: 0.38, delay: задержка, ease: [0.22, 1, 0.36, 1] }}
+      style={{ transformPerspective: 620 }}
+    >
+      <span className="tarot-face-rule" />
+      <span className="text-[9px] font-bold tracking-[0.14em] text-text-faint leading-none">
+        {n}
+      </span>
+      <Знак size={26} className="text-accent" />
+      <span className="text-[9.5px] font-semibold leading-tight text-center text-text-secondary px-0.5">
+        {name}
+      </span>
+    </motion.div>
   );
 }
 

@@ -199,15 +199,21 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
                 aria-label={h.done_today ? "Снять отметку" : "Отметить сделано"}
                 className={`tap-target grid h-9 w-9 shrink-0 place-items-center rounded-full border transition-all active:scale-90 ${
                   h.done_today
-                    ? "border-transparent bg-accent text-white"
-                    : "border-hairline bg-surface-2 text-text-faint"
+                    ? "border-transparent bg-accent text-on-accent"
+                    : "border-hairline bg-surface-2 text-text-secondary"
                 }`}
               >
+                {/* Невыполненная задача — пустой круг. Раньше галочка стояла в
+                    обеих ветках, только бледная: строка читалась как «сделано
+                    и потускнело». Если отметки уже есть, но до цели не дошли,
+                    в круге стоит их число — это и не галочка, и не пустота. */}
                 {h.done_today ? (
                   <Check size={18} strokeWidth={3} />
-                ) : (
-                  <Check size={18} strokeWidth={2.2} />
-                )}
+                ) : h.today_count > 0 ? (
+                  <span className="text-[13px] font-bold tabular-nums">
+                    {h.today_count}
+                  </span>
+                ) : null}
               </button>
 
               <div className="min-w-0 flex-1">
