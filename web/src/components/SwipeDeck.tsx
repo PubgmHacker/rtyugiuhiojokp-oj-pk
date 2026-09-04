@@ -330,8 +330,8 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
             экран, и интерфейс «прыгал» после загрузки */}
         <div className="relative flex-1 min-h-0">
           <Skeleton className="absolute inset-0 rounded-[var(--radius-card)]" />
-          <div className="absolute right-3 bottom-24 flex flex-col items-center gap-3">
-            {[48, 64, 48, 48].map((s, i) => (
+          <div className="absolute right-3 bottom-24 flex flex-col items-center gap-2.5">
+            {[52, 68, 52, 52].map((s, i) => (
               <Skeleton key={i} className="rounded-full" style={{ width: s, height: s }} />
             ))}
           </div>
@@ -468,7 +468,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
             pointer-events-none на контейнере, чтобы свайп проходил насквозь
             между кнопками */}
         <div
-          className="absolute right-3 bottom-24 z-30 flex flex-col items-center gap-3
+          className="absolute right-3 bottom-24 z-30 flex flex-col items-center gap-2.5
                      pointer-events-none"
         >
           {/* Буста здесь больше нет: он действует на СВОЮ анкету, а не на
@@ -485,16 +485,14 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
               }
               onClick={() => handleButton("up")}
               disabled={superlikesLeft === 0}
-              size={48}
+              size={52}
             >
               <Star size={20} fill="currentColor" />
             </IconButton>
             {superlikesLeft !== null && superlikesLeft > 0 && (
               <span
                 aria-hidden
-                className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1
-                           rounded-full bg-info text-bg text-[10px] font-bold
-                           flex items-center justify-center"
+                className="absolute -top-0.5 -right-0.5 liquid-badge"
               >
                 {superlikesLeft}
               </span>
@@ -548,21 +546,20 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
                 }
                 handleButton("right");
               }}
-              size={64}
+              size={68}
               tone="primary"
             >
               <Heart size={28} fill="currentColor" />
             </IconButton>
-            {лайковОсталось !== null && (
+            {/* Счётчик показываем, когда лайки на исходе (≤5) или кончились:
+                полный запас «20» на каждой карточке был шумом, а точное число
+                всегда есть в подписи кнопки для читалки */}
+            {лайковОсталось !== null && лайковОсталось <= 5 && (
               <span
                 aria-hidden
-                className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
-                            rounded-full text-[10px] font-bold flex items-center
-                            justify-center ${
-                              лайковОсталось > 0
-                                ? "bg-bg-elevated border border-hairline text-text"
-                                : "bg-danger text-bg"
-                            }`}
+                className={`absolute -top-0.5 -right-0.5 liquid-badge ${
+                  лайковОсталось > 0 ? "" : "liquid-badge-alert"
+                }`}
               >
                 {лайковОсталось}
               </span>
@@ -581,7 +578,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
                 setDirectFor(top);
               }}
               disabled={!deck.length}
-              size={48}
+              size={52}
             >
               <MessageCircleHeart size={20} />
             </IconButton>
@@ -591,7 +588,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
             <IconButton
               label="Пропустить"
               onClick={() => handleButton("left")}
-              size={48}
+              size={52}
             >
               <X size={22} strokeWidth={2.6} />
             </IconButton>

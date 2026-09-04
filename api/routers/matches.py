@@ -16,7 +16,8 @@ from services.ai_matchmaker import generate_icebreakers
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import enforce_text_verdict
 from services.chat_delivery import (
-    ДоставкаОтклонена, check_chat_flood, fan_out, reel_preview, save_message,
+    ДоставкаОтклонена, check_chat_flood, fan_out, media_preview, notify_text_for,
+    нормализовать_медиа, превью_сообщения, reel_preview, save_message,
 )
 from services.streaks import (
     can_revive as стрик_оживим, revive_streak, streak_emoji, get_streaks_bulk,
@@ -235,7 +236,7 @@ async def get_matches(
         last = last_messages.get(m.id)
         preview = None
         if last and not locked:
-            preview = last.text or ("Фотография" if last.image_url else None)
+            preview = превью_сообщения(last)
 
         # Стрик из пакетного словаря — сгорание и окно revive применены
         # при чтении, как и раньше, но без запроса на каждый чат
@@ -307,6 +308,7 @@ async def get_messages(
         {"id": m.id, "sender_id": m.sender_id, "text": m.text,
          "image_url": m.image_url,
          "reel": reel_preview(reels.get(m.reel_id)) if m.reel_id else None,
+         "media": media_preview(m),
          "read_at": m.read_at.isoformat() if m.read_at else None,
          "created_at": m.created_at.isoformat() if m.created_at else None}
         for m in messages
@@ -336,7 +338,11 @@ async def post_message(
 
     text = str(data.get("text", "")).strip()[:2000]
     image_url = data.get("image_url")
-    if not text and not image_url:
+    try:
+        media = нормализовать_медиа(user.id, data.get("media"))
+    except ДоставкаОтклонена as отказ:
+        raise HTTPException(status_code=400, detail=отказ.detail)
+    if not text and not image_url and not media:
         raise HTTPException(status_code=400, detail="Пустое сообщение")
 
     # Антифлуд до модерации: залп сообщений — это прежде всего залп платных
@@ -360,15 +366,17 @@ async def post_message(
     await session.commit()
 
     try:
-        payload = await save_message(match_id, user.id, text, image_url)
+        payload = await save_message(match_id, user.id, text, image_url, media=media)
     except ДоставкаОтклонена as отказ:
         # Чужая ссылка — ошибка запроса, остальное — запрет по правилам чата
-        код = 400 if отказ.code == "foreign_image" else 403
+        код = 400 if отказ.code in ("foreign_image", "foreign_media", "bad_media") else 403
         raise HTTPException(status_code=код, detail=отказ.detail)
     if payload is None:
         raise HTTPException(status_code=404, detail="Чат не найден")
 
-    await fan_out(payload, match_id, user.id, partner_id, text)
+    await fan_out(
+        payload, match_id, user.id, partner_id, notify_text_for(text, image_url, media)
+    )
     return payload
 
 

@@ -213,15 +213,6 @@ function Просмотр({
               </span>
             )}
             {profile.is_verified && <VerifiedBadge size={18} />}
-            {profile.is_online && (
-              <span className="flex items-center gap-1.5 text-[12px] text-white/85">
-                <span
-                  className="w-2 h-2 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]"
-                  aria-hidden="true"
-                />
-                в сети
-              </span>
-            )}
           </div>
         </div>
       </div>

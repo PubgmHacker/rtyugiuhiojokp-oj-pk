@@ -208,6 +208,19 @@ export interface ReelPreview {
 }
 
 /** Одно сообщение переписки. */
+/** Голосовое или видеокружок в сообщении. Форма кружка — код из noteShapes. */
+export interface ChatMedia {
+  url: string;
+  kind: "voice" | "video_note";
+  /** Секунды, 0 — неизвестно. */
+  duration: number;
+  shape?: string | null;
+  /** Столбики волны голосового: цифры 0–9, до 64 штук. */
+  waveform?: string | null;
+  /** Постер видеокружка — первый кадр записи, лежит рядом с видео. */
+  poster?: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   match_id: string;
@@ -215,6 +228,7 @@ export interface ChatMessage {
   text: string;
   image_url?: string | null;
   reel?: ReelPreview | null;
+  media?: ChatMedia | null;
   read_at?: string | null;
   created_at: string;
 }
@@ -454,6 +468,52 @@ export async function uploadProfileVideo(
     headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
+}
+
+/**
+ * Голосовое для лички. Файл ложится в R2 под папкой отправителя — доставка
+ * принимает в сообщение только такие ссылки (чужую запись не переслать).
+ * Длительность считает клиент, сервер сверяет диапазон 1–60 с.
+ */
+export async function uploadVoice(
+  blob: Blob,
+  duration: number
+): Promise<{ url: string; key: string; duration: number }> {
+  const form = new FormData();
+  form.append("file", blob, `voice.${extFor(blob.type)}`);
+  form.append("duration", String(Math.max(1, Math.round(duration))));
+  const { data } = await api.post("/upload/voice", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+/**
+ * Видеокружок для лички. Как у видео анкеты: сервер ролик не разбирает,
+ * кадры с разных моментов записи снимает клиент — по ним модерация.
+ */
+export async function uploadVideoNote(
+  blob: Blob,
+  covers: Blob[],
+  duration: number
+): Promise<{ url: string; key: string; duration: number; poster?: string | null }> {
+  const form = new FormData();
+  form.append("file", blob, `note.${extFor(blob.type)}`);
+  covers.forEach((cover, i) => form.append("covers", cover, `cover${i + 1}.jpg`));
+  form.append("duration", String(Math.max(1, Math.round(duration))));
+  const { data } = await api.post("/upload/video-note", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+function extFor(mime: string): string {
+  const base = mime.split(";")[0];
+  if (base.endsWith("/mp4")) return base.startsWith("audio") ? "m4a" : "mp4";
+  if (base.endsWith("/ogg")) return "ogg";
+  if (base.endsWith("/quicktime")) return "mov";
+  if (base.endsWith("/mpeg")) return "mp3";
+  return "webm";
 }
 
 export async function reportUser(reportedId: string, reason: string, description = ""): Promise<void> {

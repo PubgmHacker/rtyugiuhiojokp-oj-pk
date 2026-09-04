@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,20 @@ from services.r2_storage import upload_photo_to_r2, delete_photo_from_r2, upload
 from services.ai_moderation import log_moderation, moderate_image, verify_profile_photo
 from services.enforcement import enforce_text_verdict
 from services.image_sanitizer import ImageRejected, sanitize_image
-from services.video_validation import модерировать_кадры, прочитать_видео
+from services.media_notes import (
+    ALLOWED_AUDIO,
+    MAX_NOTE_BYTES,
+    MAX_VOICE_BYTES,
+    looks_like_audio,
+    разобрать_длительность,
+    чистый_тип,
+)
+from services.video_validation import (
+    ALLOWED_VIDEO,
+    looks_like_video,
+    модерировать_кадры,
+    прочитать_видео,
+)
 from utils import as_list
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -165,6 +178,111 @@ async def upload_profile_video(
         raise HTTPException(status_code=500, detail="Upload failed")
 
     return {"url": url, "key": object_key}
+
+
+@router.post("/voice")
+async def upload_voice(
+    file: UploadFile = File(...),
+    duration: str = Form(..., description="Секунды записи, 1–60"),
+    user: User = Depends(get_current_user),
+):
+    """Голосовое сообщение для лички — файл в R2 под папкой отправителя.
+
+    AI-модерации нет: транскрибировать аудио нечем, а слушать вручную — не
+    масштаб. Защита та же, что у текста в целом: жалоба и блок. Зато файл
+    привязан к отправителю префиксом `chat-media/{user_id}/`: доставка
+    (services/chat_delivery) принимает в сообщение только его — чужую запись
+    переслать как свою нельзя.
+
+    Возвращает `{"url", "key", "duration"}`; в сообщение ссылку кладёт клиент
+    полем `media`.
+    """
+    if not uploads_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Загрузка медиа временно недоступна — хранилище не настроено",
+        )
+    секунд = разобрать_длительность(duration)
+
+    тип = чистый_тип(file.content_type)
+    ext = ALLOWED_AUDIO.get(тип)
+    if not ext:
+        raise HTTPException(status_code=400, detail="Формат аудио не поддерживается")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Пустая запись")
+    if len(data) > MAX_VOICE_BYTES:
+        raise HTTPException(status_code=400, detail="Запись слишком большая")
+    if not looks_like_audio(data):
+        raise HTTPException(status_code=400, detail="Файл не похож на аудио")
+
+    object_key = f"chat-media/{user.id}/voice-{uuid.uuid4()}.{ext}"
+    url = await upload_photo_to_r2(object_key, data, тип)
+    if not url:
+        raise HTTPException(status_code=500, detail="Upload failed")
+    return {"url": url, "key": object_key, "duration": секунд}
+
+
+@router.post("/video-note")
+async def upload_video_note(
+    file: UploadFile = File(...),
+    covers: list[UploadFile] = File(
+        ..., description="Кадры с разных моментов записи — их и модерируем"
+    ),
+    duration: str = Form(..., description="Секунды записи, 1–60"),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Видеокружок для лички: файл в R2 + AI-модерация по кадрам.
+
+    Контракт тот же, что у видео анкеты и роликов ленты: сервер видео не
+    декодирует, кадры снимает клиент прямо во время записи. Форму кружка
+    сервер не хранит здесь — она едет в самом сообщении (поле media.shape) и
+    к файлу отношения не имеет: одно и то же видео можно показать любой.
+    """
+    if not uploads_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Загрузка медиа временно недоступна — хранилище не настроено",
+        )
+    секунд = разобрать_длительность(duration)
+
+    тип = чистый_тип(file.content_type)
+    ext = ALLOWED_VIDEO.get(тип)
+    if not ext:
+        raise HTTPException(status_code=400, detail="Поддерживаются MP4, MOV и WebM")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Пустая запись")
+    if len(data) > MAX_NOTE_BYTES:
+        raise HTTPException(status_code=400, detail="Запись слишком большая")
+    if not looks_like_video(data):
+        raise HTTPException(status_code=400, detail="Файл не похож на видео")
+
+    кадры, ответ_бана = await модерировать_кадры(
+        session, user, covers, "video_note", f"video note by {user.id}"
+    )
+    if ответ_бана is not None:
+        return ответ_бана
+
+    stem = f"note-{uuid.uuid4()}"
+    # Постер — первый промодерированный кадр рядом с видео: собеседник видит
+    # лицо в фигуре сразу, а не пустой контур до нажатия (iOS без постера
+    # первый кадр не рисует). Не залился — не беда, кружок работает и без него.
+    poster_url = None
+    if кадры:
+        poster_bytes, poster_type, poster_ext = кадры[0]
+        poster_url = await upload_photo_to_r2(
+            f"chat-media/{user.id}/{stem}.{poster_ext}", poster_bytes, poster_type
+        )
+
+    object_key = f"chat-media/{user.id}/{stem}.{ext}"
+    url = await upload_photo_to_r2(object_key, data, тип)
+    if not url:
+        raise HTTPException(status_code=500, detail="Upload failed")
+    return {"url": url, "key": object_key, "duration": секунд, "poster": poster_url}
 
 
 @router.delete("/photo")

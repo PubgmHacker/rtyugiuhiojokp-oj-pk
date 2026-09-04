@@ -421,6 +421,24 @@ class Message(Base):
     reel_id: Mapped[Optional[str]] = mapped_column(
         String, ForeignKey("dating_reels.id", ondelete="SET NULL"), nullable=True
     )
+    #: Голосовое или видеокружок — файл в нашем R2 (chat-media/{sender}/…).
+    #: Отдельно от image_url: у медиа есть длительность, форма кружка и
+    #: волна голоса, а картинка — просто ссылка. Ничего из этого в text не
+    #: кладём: превью списка чатов и уведомления собираются по media_kind.
+    media_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: "voice" | "video_note"
+    media_kind: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    #: Секунды, 1..60 — как в Telegram; клиент режет запись сам, сервер сверяет.
+    media_duration: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    #: Форма видеокружка (circle, heart, star…) — наша фишка поверх кружков
+    #: мессенджеров. Код из VIDEO_NOTE_SHAPES, иначе circle.
+    media_shape: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    #: Волна голосового: до 64 цифр 0–9, по ним рисуются столбики без
+    #: декодирования аудио на приёмнике.
+    media_waveform: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    #: Постер видеокружка — первый промодерированный кадр, лежит в R2 рядом с
+    #: видео. Без него iOS показывает пустую фигуру до первого нажатия.
+    media_poster_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -56,7 +56,7 @@ export default function Discover() {
         <div className="flex items-center justify-between gap-2 min-h-[44px]">
           <span
             className="inline-flex items-center gap-2 pl-2 pr-4 py-1.5 rounded-full
-                       bg-accent text-white font-bold text-[15px] shadow-lg"
+                       liquid-primary text-white font-bold text-[15px]"
           >
             <span
               aria-hidden
@@ -82,9 +82,9 @@ export default function Discover() {
                 setFiltersOpen(true);
               }}
               className={`inline-flex items-center gap-2 pl-3.5 pr-4 py-2 rounded-full
-                          text-[14.5px] font-semibold glass-strong
+                          text-[14.5px] font-semibold liquid
                           active:scale-95 transition-transform
-                          ${filtersActive ? "text-accent" : "text-text-secondary"}`}
+                          ${filtersActive ? "text-accent" : ""}`}
             >
               <SlidersHorizontal size={17} />
               Фильтры
@@ -123,7 +123,7 @@ function NotificationsBell() {
       aria-label={unread > 0 ? `Уведомления, ${unread} новых` : "Уведомления"}
       onClick={() => haptic("light")}
       className="relative inline-flex items-center justify-center w-9 h-9
-                 rounded-full glass-strong text-text-secondary
+                 rounded-full liquid
                  active:scale-95 transition-transform"
     >
       <Bell size={17} />
@@ -195,8 +195,8 @@ function BoostButton() {
         onClick={activate}
         disabled={busy || boost.active}
         className={`relative tap-target inline-flex items-center justify-center w-11 h-11
-                    rounded-full glass-strong active:scale-95 transition-transform
-                    ${boost.active ? "text-success" : "text-text-secondary"}`}
+                    rounded-full liquid active:scale-95 transition-transform
+                    ${boost.active ? "text-success" : ""}`}
       >
         <Zap size={18} fill={boost.active ? "currentColor" : "none"} />
         {boost.active && (

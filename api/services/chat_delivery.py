@@ -37,6 +37,7 @@ from services.direct_messages import (
     can_send_message,
     mark_answered_if_needed,
 )
+from services.media_notes import MAX_MEDIA_SECONDS, VIDEO_NOTE_SHAPES
 from services.public_profile import наша_картинка
 from services.push import is_configured, notify_new_message
 from services.realtime import get_redis, publish_bot_event
@@ -56,6 +57,25 @@ REEL_FALLBACK_TEXT = "прислал видео"
 DENIED_FOREIGN_IMAGE = DirectDenied(
     "foreign_image", "Картинку можно отправить только загрузкой"
 )
+
+#: Голосовое и кружок — те же правила, что у картинки, плюс одно: файл должен
+#: лежать в папке ОТПРАВИТЕЛЯ (chat-media/{sender}/). Иначе чужую запись из
+#: другого чата можно было бы переслать как свою — голосом другого человека.
+DENIED_FOREIGN_MEDIA = DirectDenied(
+    "foreign_media", "Голосовое или видео можно отправить только записью"
+)
+DENIED_BAD_MEDIA = DirectDenied("bad_media", "Медиа не распознано")
+
+#: Чем подписывать медиа там, где его нельзя показать: список чатов,
+#: Telegram-уведомление, пуш.
+MEDIA_FALLBACK_TEXT = {
+    "voice": "Голосовое сообщение",
+    "video_note": "Видеосообщение",
+}
+
+#: Столбиков волны в голосовом — цифр 0–9 в строке. Больше не нужно: пузырь
+#: шириной 200px не покажет и этого.
+MAX_WAVEFORM_LEN = 64
 
 
 class ДоставкаОтклонена(Exception):
@@ -121,6 +141,110 @@ async def check_chat_flood(sender_id: str) -> None:
         raise ДоставкаОтклонена(DENIED_FLOOD)
 
 
+def наше_медиа(url: str | None, sender_id: str) -> bool:
+    """Лежит ли файл в нашем R2 в папке именно этого отправителя."""
+    if not url:
+        return False
+    from config import get_settings
+
+    prefix = (get_settings().R2_PUBLIC_URL or "").rstrip("/") + "/"
+    if prefix == "/":
+        return False
+    return url.startswith(f"{prefix}chat-media/{sender_id}/")
+
+
+def нормализовать_медиа(sender_id: str, raw: object) -> dict | None:
+    """Пакет медиа из клиента → проверенный словарь для записи, или None.
+
+    Отказ — `ДоставкаОтклонена`, как у чужой картинки: чужой файл (или файл
+    из чужой папки) — не «странный ввод», а попытка обойти запись.
+    Длительность и форма чинятся молча: минута сверх лимита режется, а
+    неизвестная форма становится кругом — за это человека не наказывают.
+    """
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, dict):
+        raise ДоставкаОтклонена(DENIED_BAD_MEDIA)
+
+    kind = raw.get("kind")
+    if kind not in MEDIA_FALLBACK_TEXT:
+        raise ДоставкаОтклонена(DENIED_BAD_MEDIA)
+
+    url = raw.get("url")
+    if not isinstance(url, str) or not наше_медиа(url, sender_id):
+        raise ДоставкаОтклонена(DENIED_FOREIGN_MEDIA)
+
+    try:
+        duration = int(raw.get("duration") or 0)
+    except (TypeError, ValueError):
+        duration = 0
+    duration = max(0, min(duration, MAX_MEDIA_SECONDS))
+
+    shape = raw.get("shape") if kind == "video_note" else None
+    if shape not in VIDEO_NOTE_SHAPES:
+        shape = VIDEO_NOTE_SHAPES[0] if kind == "video_note" else None
+
+    waveform = None
+    if kind == "voice":
+        сырое = raw.get("waveform")
+        if isinstance(сырое, str):
+            цифры = "".join(ch for ch in сырое if ch.isdigit())[:MAX_WAVEFORM_LEN]
+            waveform = цифры or None
+
+    # Постер кружка — тоже файл, и правило то же: только из папки отправителя.
+    # Чужая ссылка здесь — способ подсунуть картинку мимо модерации.
+    poster = raw.get("poster") if kind == "video_note" else None
+    if not isinstance(poster, str) or not poster:
+        poster = None
+    elif not наше_медиа(poster, sender_id):
+        raise ДоставкаОтклонена(DENIED_FOREIGN_MEDIA)
+
+    return {
+        "url": url,
+        "kind": kind,
+        "duration": duration,
+        "shape": shape,
+        "waveform": waveform,
+        "poster": poster,
+    }
+
+
+def media_preview(m: Message) -> dict | None:
+    """Медиа сообщения — единая форма для REST и для WebSocket."""
+    if not m.media_url or not m.media_kind:
+        return None
+    return {
+        "url": m.media_url,
+        "kind": m.media_kind,
+        "duration": m.media_duration or 0,
+        "shape": m.media_shape,
+        "waveform": m.media_waveform,
+        "poster": m.media_poster_url,
+    }
+
+
+def notify_text_for(text: str, image_url: str | None, media: dict | None) -> str:
+    """Чем подписать сообщение там, где его нельзя показать целиком."""
+    if text:
+        return text
+    if media:
+        return MEDIA_FALLBACK_TEXT.get(media.get("kind") or "", "Сообщение")
+    if image_url:
+        return "Фотография"
+    return ""
+
+
+def превью_сообщения(m: Message | None) -> str | None:
+    """Строка для списка чатов: текст, иначе подпись медиа/фото."""
+    if m is None:
+        return None
+    if m.text:
+        return m.text
+    if m.media_kind:
+        return MEDIA_FALLBACK_TEXT.get(m.media_kind, "Сообщение")
+    return "Фотография" if m.image_url else None
+
+
 def reel_preview(reel: Reel | None) -> dict | None:
     """Превью ролика для сообщения — единая форма для REST и для WebSocket.
 
@@ -143,6 +267,7 @@ async def save_message(
     text: str,
     image_url: Optional[str] = None,
     reel_id: Optional[str] = None,
+    media: Optional[dict] = None,
 ) -> Optional[dict]:
     """Сохранить сообщение и собрать payload события. None — мэтч уже неактивен.
 
@@ -161,6 +286,9 @@ async def save_message(
     """
     if not наша_картинка(image_url):
         raise ДоставкаОтклонена(DENIED_FOREIGN_IMAGE)
+    # Медиа перепроверяем и здесь, а не только в роутере: путей в save_message
+    # несколько, и словарь мог собрать кто угодно
+    media = нормализовать_медиа(sender_id, media)
 
     async with async_session_factory() as session:
         async with session.begin():
@@ -198,6 +326,12 @@ async def save_message(
                 text=text,
                 image_url=image_url,
                 reel_id=reel_id,
+                media_url=media["url"] if media else None,
+                media_kind=media["kind"] if media else None,
+                media_duration=media["duration"] if media else None,
+                media_shape=media["shape"] if media else None,
+                media_waveform=media["waveform"] if media else None,
+                media_poster_url=media.get("poster") if media else None,
             )
             session.add(message)
             await session.flush()
@@ -222,6 +356,7 @@ async def save_message(
                 # Форма та же, что у GET /matches/{id}/messages: иначе клиенту
                 # пришлось бы рисовать пересланный ролик двумя разными ветками
                 "reel": preview,
+                "media": media_preview(message),
                 "created_at": message.created_at.isoformat() if message.created_at else None,
             }
 

@@ -184,8 +184,8 @@ export class ChatWebSocket {
   }
 
   /** @returns true, если сообщение реально ушло в сокет */
-  send(text: string, imageUrl?: string): boolean {
-    return this.sendRaw({ type: "message", text, image_url: imageUrl });
+  send(text: string, imageUrl?: string, media?: Record<string, unknown>): boolean {
+    return this.sendRaw({ type: "message", text, image_url: imageUrl, media });
   }
 
   sendRaw(payload: Record<string, unknown>): boolean {

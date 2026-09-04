@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select, and_, not_, func, or_
@@ -359,27 +359,18 @@ async def get_deck_profiles(
         )
         referral_boost_ids = {row[0] for row in result.all()}
 
-    # «Сейчас в сети» и галочка — одним запросом на всю деку: обращаться за
-    # этим на каждую карточку значило бы N+1 на самом горячем экране
-    недавно = datetime.now(timezone.utc) - timedelta(minutes=ОНЛАЙН_МИНУТ)
-    онлайн: set[str] = set()
+    # Галочка — одним запросом на всю деку: обращаться за этим на каждую
+    # карточку значило бы N+1 на самом горячем экране
     верифицированные: set[str] = set()
     # Буст новичка: доля свежести 0..1 по каждому кандидату моложе суток.
-    # Едет тем же запросом, что онлайн и галочка, — не N+1
+    # Едет тем же запросом, что галочка, — не N+1
     свежесть_по_id: dict[str, float] = {}
     if candidate_ids:
         result = await session.execute(
-            select(
-                User.id, User.last_seen_at, User.is_verified, User.created_at
-            ).where(User.id.in_(candidate_ids))
+            select(User.id, User.is_verified, User.created_at)
+            .where(User.id.in_(candidate_ids))
         )
-        for uid, last_seen, is_verified, created_at in result.all():
-            # Колонка без таймзоны отдаёт naive-время — приводим к UTC,
-            # иначе сравнение с aware-границей падает TypeError'ом
-            if last_seen is not None and last_seen.tzinfo is None:
-                last_seen = last_seen.replace(tzinfo=timezone.utc)
-            if last_seen is not None and last_seen >= недавно:
-                онлайн.add(uid)
+        for uid, is_verified, created_at in result.all():
             if is_verified:
                 верифицированные.add(uid)
             доля = _свежесть(created_at)
@@ -487,11 +478,11 @@ async def get_deck_profiles(
             # выдать спрятавшегося
             sticker=картинка_наклейки(profile.sticker),
             decor=безопасный_код(profile.decor),
-            is_online=(
-                profile.user_id in онлайн
-                and not profile.is_incognito
-                and not profile.is_paused
-            ),
+            # Незнакомцу не говорим, в сети ли человек: по этому флагу можно
+            # следить за чужим расписанием, не будучи даже в мэтче. «В сети»
+            # остаётся только внутри мэтча (routers/matches.py) — там оба уже
+            # согласились общаться. Поле в схеме живёт ради совместимости
+            is_online=False,
             is_verified=(profile.user_id in верифицированные),
         ))
 

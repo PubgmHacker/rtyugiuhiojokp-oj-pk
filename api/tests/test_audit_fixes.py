@@ -3743,10 +3743,11 @@ def test_клиент_показывает_комментарии_и_жалоб�
     лента = (web / "pages" / "Reels.tsx").read_text(encoding="utf-8")
 
     assert "comments_count" in лента
-    assert "onComments" in лента and "onReport" in лента
+    assert "onComments" in лента and "ReportReasonSheet" in лента
     assert "recordReelView" in лента
     # Просмотры видит только автор — чужому зрителю цифра ничего не даёт
-    assert "reel.is_mine && reel.views_count" in лента
+    # Просмотры — только автору (после переезда ленты на TikTok-раскладку блок многострочный)
+    assert "reel.is_mine && (" in лента and "reel.views_count" in лента
 
     assert (web / "components" / "ReelComments.tsx").exists()
 

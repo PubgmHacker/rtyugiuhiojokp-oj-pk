@@ -292,6 +292,14 @@ class Message(Base):
     reel_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("dating_reels.id", ondelete="SET NULL"), nullable=True
     )
+    #: Голосовые и видеокружки — зеркало api/models/models.py; бот их не
+    #: создаёт, но колонки обязаны быть: create_all() бота может отработать первым
+    media_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    media_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    media_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    media_shape: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    media_waveform: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    media_poster_url: Mapped[str | None] = mapped_column(String, nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

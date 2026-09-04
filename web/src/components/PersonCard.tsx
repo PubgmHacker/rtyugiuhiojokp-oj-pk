@@ -28,8 +28,20 @@ interface Props {
   children?: ReactNode;
   /** tile — сетка в 2 колонки; mini — горизонтальная лента поуже. */
   size?: "tile" | "mini";
-  /** Сейчас в сети — зелёная точка, как в деке. */
-  online?: boolean;
+}
+
+/** В мини-плитке (три в ряд) длинные города не влезают — режем по-человечески,
+ *  а не троеточием посреди слова. */
+const SHORT_CITY: Record<string, string> = {
+  "Санкт-Петербург": "Петербург",
+  "Нижний Новгород": "Н. Новгород",
+  "Ростов-на-Дону": "Ростов",
+  "Набережные Челны": "Челны",
+  "Комсомольск-на-Амуре": "Комсомольск",
+};
+
+function shortCity(city: string): string {
+  return SHORT_CITY[city.trim()] ?? city;
 }
 
 export default function PersonCard({
@@ -37,7 +49,6 @@ export default function PersonCard({
   badge,
   children,
   size = "tile",
-  online,
 }: Props) {
   const decor = decorStyle(profile.decor);
   const mini = size === "mini";
@@ -120,13 +131,6 @@ export default function PersonCard({
             </span>
           )}
           {profile.is_verified && <VerifiedBadge size={mini ? 12 : 14} />}
-          {online && (
-            <span
-              role="img"
-              aria-label="Сейчас в сети"
-              className="shrink-0 w-2 h-2 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]"
-            />
-          )}
         </div>
 
         {profile.city && (
@@ -136,7 +140,7 @@ export default function PersonCard({
             }`}
           >
             <MapPin size={mini ? 10 : 12} className="shrink-0" />
-            <span className="truncate">{profile.city}</span>
+            <span className="truncate">{mini ? shortCity(profile.city) : profile.city}</span>
           </div>
         )}
 

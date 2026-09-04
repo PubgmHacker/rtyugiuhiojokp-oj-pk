@@ -103,9 +103,12 @@ interface IconButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
 }
 
 const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
-  // Главное действие деки: тот же перелив, что у факела и CTA.
-  primary: "btn-torch text-on-accent border-transparent glow-rose",
-  neutral: "text-text-secondary",
+  // Главное действие деки: перелив факела в стекле (liquid-primary), цвет
+  // туши даёт сам рецепт. Нейтральная тоже без своего цвета: на фото тушь
+  // белая из liquid-photo, а text-text-secondary в светлой теме темнел бы
+  // на снимке.
+  primary: "",
+  neutral: "",
   danger: "text-danger",
   success: "text-success",
   warn: "text-warn",
@@ -138,8 +141,8 @@ export function IconButton({
       }}
       style={{ width: size, height: size }}
       className={`
-        ${tone === "primary" ? "" : "glass-strong"} ${TONE_CLASS[tone]}
-        rounded-full flex items-center justify-center float-shadow
+        ${tone === "primary" ? "liquid-primary" : "liquid liquid-photo"} ${TONE_CLASS[tone]}
+        rounded-full flex items-center justify-center
         disabled:opacity-30 disabled:pointer-events-none
         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
         ${className}

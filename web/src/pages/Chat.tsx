@@ -18,6 +18,8 @@ import {
   Lock,
   WifiOff,
   Heart,
+  Mic,
+  Video,
 } from "lucide-react";
 import {
   getMessages,
@@ -28,6 +30,8 @@ import {
   reportUser,
   blockUser,
   unmatch,
+  uploadVoice,
+  uploadVideoNote,
   type ChatMessage,
   type ChatTheme,
   type DailyLimits,
@@ -39,6 +43,10 @@ import { haptic } from "../lib/haptics";
 import { useIsMounted } from "../hooks/useSafeAsync";
 import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
+import VoiceBubble from "../components/VoiceBubble";
+import VideoNoteBubble from "../components/VideoNoteBubble";
+import NoteRecorder from "../components/NoteRecorder";
+import { recordingSupported, type NoteKind, type Recording } from "../lib/recorder";
 import { ChatThemeSheet } from "../components/ChatThemeSheet";
 import { HabitsSheet } from "../components/HabitsSheet";
 import ProfileSheet from "../components/ProfileSheet";
@@ -84,6 +92,12 @@ export default function Chat() {
   // пустой ленты с «нет связи» показываем причину
   const [лимитМэтчей, setЛимитМэтчей] = useState(false);
   const [limits, setLimits] = useState<DailyLimits | null>(null);
+  // Голосовое / видеокружок: пока идёт запись, панель стоит на месте поля
+  // ввода; пока файл едет на сервер — кнопки панели заперты
+  const [recording, setRecording] = useState<NoteKind | null>(null);
+  const [sendingNote, setSendingNote] = useState(false);
+  const [noteError, setNoteError] = useState("");
+  const canRecord = useMemo(() => recordingSupported(), []);
 
   const wsRef = useRef<ChatWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -169,6 +183,16 @@ export default function Chat() {
         setPartnerTyping(true);
         if (typingTimer.current) clearTimeout(typingTimer.current);
         typingTimer.current = setTimeout(() => setPartnerTyping(false), 3000);
+      } else if (data.type === "rejected") {
+        // Сервер не принял сообщение — медиа чужое, антифлуд или модерация.
+        // Раньше отказ читался только в логах: текст исчезал, а человек был
+        // уверен, что оно ушло
+        setNoteError(
+          typeof data.reason === "string" && data.reason
+            ? data.reason
+            : "Сообщение не принято"
+        );
+        haptic("error");
       } else if (data.type === "read") {
         const now = new Date().toISOString();
         const me = useStore.getState().user?.id;
@@ -286,6 +310,64 @@ export default function Chat() {
       wsRef.current.sendRaw({ type: "typing" });
       lastTypingSent.current = now;
     }
+  }, []);
+
+  // Запись готова: грузим файл (видео — вместе с кадрами на модерацию) и
+  // шлём сообщение тем же сокетом, что и текст. Текст пустой — сервер
+  // подпишет превью сам («Голосовое сообщение» в списке чатов).
+  const sendNote = useCallback(
+    async (rec: Recording, shape: string, kind: NoteKind) => {
+      if (!wsRef.current) return;
+      setSendingNote(true);
+      setNoteError("");
+      try {
+        const uploaded =
+          kind === "voice"
+            ? await uploadVoice(rec.blob, rec.duration)
+            : await uploadVideoNote(rec.blob, rec.covers, rec.duration);
+        const media: Record<string, unknown> = {
+          url: uploaded.url,
+          kind,
+          duration: rec.duration,
+        };
+        if (kind === "voice") {
+          media.waveform = rec.waveform;
+        } else {
+          media.shape = shape;
+          const poster = (uploaded as { poster?: string | null }).poster;
+          if (poster) media.poster = poster;
+        }
+        const sent = wsRef.current?.send("", undefined, media);
+        if (!sent) {
+          setNoteError("Запись не ушла — нет связи. Попробуйте ещё раз");
+          haptic("error");
+          return;
+        }
+        haptic("light");
+        setRecording(null);
+      } catch (e: any) {
+        haptic("error");
+        const status = e?.response?.status;
+        setNoteError(
+          e?.response?.data?.detail ??
+            (status === 503
+              ? "Загрузка медиа сейчас недоступна"
+              : status === 413
+                ? "Запись слишком длинная"
+                : "Не удалось отправить запись — попробуйте ещё раз")
+        );
+        setRecording(null);
+      } finally {
+        setSendingNote(false);
+      }
+    },
+    []
+  );
+
+  const startNote = useCallback((kind: NoteKind) => {
+    setNoteError("");
+    setRecording(kind);
+    haptic("light");
   }, []);
 
   const loadIcebreakers = useCallback(async () => {
@@ -710,14 +792,33 @@ export default function Chat() {
                   >
                     {group.messages.map((m, i) => {
                       const isLast = i === group.messages.length - 1;
+                      if (m.media?.kind === "video_note") {
+                        // Кружок сам себе пузырь: подложка под звездой или
+                        // ёлкой превратила бы форму в «картинку в рамке»
+                        return (
+                          <motion.div
+                            key={m.id}
+                            initial={{ opacity: 0, scale: 0.92 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                            className="py-0.5"
+                          >
+                            <VideoNoteBubble media={m.media} mine={group.mine} />
+                          </motion.div>
+                        );
+                      }
                       return (
                         <motion.div
                           key={m.id}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                          className={`max-w-[78%] px-3.5 py-2 text-[15px] leading-snug
+                          className={`max-w-[78%] text-[15px] leading-snug
                                       break-words selectable ${
+                                        m.media?.kind === "voice"
+                                          ? "px-2 py-1.5"
+                                          : "px-3.5 py-2"
+                                      } ${
                                         theme?.bubble_mine_color ||
                                         theme?.bubble_theirs_color
                                           ? ""
@@ -746,6 +847,9 @@ export default function Chat() {
                           }}
                         >
                           {m.reel && <ReelBubble reel={m.reel} mine={group.mine} />}
+                          {m.media?.kind === "voice" && (
+                            <VoiceBubble media={m.media} mine={group.mine} />
+                          )}
                           {m.image_url && (
                             <img
                               src={m.image_url}
@@ -828,32 +932,82 @@ export default function Chat() {
           </button>
         )}
 
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            placeholder="Сообщение…"
-            rows={1}
-            className="field flex-1 max-h-[120px] px-4 py-2.5 rounded-[22px] resize-none text-[15px] no-scrollbar"
-          />
+        {noteError && (
           <button
-            aria-label="Отправить"
-            onClick={() => send()}
-            disabled={!input.trim()}
-            className="w-11 h-11 rounded-full bg-accent text-white shrink-0
-                       flex items-center justify-center
-                       disabled:opacity-30 active:scale-95 transition-transform"
+            onClick={() => setNoteError("")}
+            className="block mx-auto mb-2 px-4 py-2 rounded-full bg-danger/15
+                       border border-danger/30 text-danger text-[13px] font-medium"
           >
-            <Send size={18} />
+            {noteError} · закрыть
           </button>
-        </div>
+        )}
+
+        {recording ? (
+          <NoteRecorder
+            kind={recording}
+            busy={sendingNote}
+            onDone={sendNote}
+            onCancel={() => setRecording(null)}
+            onError={(msg) => {
+              setRecording(null);
+              setNoteError(msg);
+              haptic("error");
+            }}
+          />
+        ) : (
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => onInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+              placeholder="Сообщение…"
+              rows={1}
+              className="field flex-1 max-h-[120px] px-4 py-2.5 rounded-[22px] resize-none text-[15px] no-scrollbar"
+            />
+            {input.trim() || !canRecord ? (
+              <button
+                aria-label="Отправить"
+                onClick={() => send()}
+                disabled={!input.trim()}
+                className="w-11 h-11 rounded-full liquid-primary shrink-0
+                           flex items-center justify-center
+                           disabled:opacity-30 active:scale-95 transition-transform"
+              >
+                <Send size={18} />
+              </button>
+            ) : (
+              // Пустое поле — на месте «Отправить» запись: голос и кружок.
+              // Две кнопки, а не переключатель по тапу как в Telegram: второй
+              // тап «чтобы сменить режим» там регулярно уходит в запись
+              <>
+                <button
+                  aria-label="Записать видеосообщение"
+                  onClick={() => startNote("video_note")}
+                  className="w-11 h-11 rounded-full chip text-text shrink-0
+                             flex items-center justify-center
+                             active:scale-95 transition-transform"
+                >
+                  <Video size={19} />
+                </button>
+                <button
+                  aria-label="Записать голосовое"
+                  onClick={() => startNote("voice")}
+                  className="w-11 h-11 rounded-full liquid-primary shrink-0
+                             flex items-center justify-center
+                             active:scale-95 transition-transform"
+                >
+                  <Mic size={19} />
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <ReportSheet

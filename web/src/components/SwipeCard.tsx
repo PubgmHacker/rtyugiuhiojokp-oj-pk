@@ -267,9 +267,9 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
             haptic("light");
             onFlag(profile);
           }}
-          className="absolute top-7 right-3 z-30 tap-target grid h-9 w-9 place-items-center
-                     rounded-full glass-strong text-white/80 active:text-white
-                     transition-colors"
+          className="absolute top-7 right-3 z-30 grid h-[34px] w-[34px] place-items-center
+                     rounded-full liquid liquid-photo text-white/85 active:text-white
+                     transition-colors after:absolute after:-inset-1.5 after:content-['']"
         >
           <Flag size={15} />
         </button>
@@ -298,89 +298,85 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
       {/* Информация о профиле. Правый отступ — под столбец кнопок действий,
           иначе длинное имя уезжает под них */}
       <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 pr-[84px] z-20 pointer-events-none">
-        {/* Наклейка из коллекции — средний значок, «наклеенный» на фото над
-            именем: лица не закрывает, лежит на нижней трети снимка и читается
-            как оформление анкеты, а не как ещё одна иконка в строке. Одна:
-            витрина достижений отвлекала бы от человека */}
-        {profile.sticker && (
-          <img
-            src={profile.sticker}
-            alt=""
-            draggable={false}
-            className="block w-16 h-16 mb-2 -ml-1 -rotate-6 select-none
-                       drop-shadow-[0_3px_8px_rgba(0,0,0,.55)]"
-          />
-        )}
-        {profile.match_score != null && (
-          <div className="inline-flex items-center gap-1.5 mb-3 px-2.5 py-1 rounded-full glass-strong">
-            <Sparkles size={13} className="text-accent" />
-            <span className="text-[12px] font-semibold">
-              {profile.match_score}% совпадение
-            </span>
-          </div>
-        )}
+        {/* Слева имя и город, справа — наклейка из кейса: она занимает пустой
+            угол между строкой роста и столбцом кнопок, где раньше ничего не
+            было. Одна и «наклеена» косо, как на крышку ноутбука: оформление
+            анкеты, а не ещё одна иконка в строке. Витрина всех наклеек
+            отвлекала бы от человека */}
+        <div className="flex items-end gap-3">
+          <div className="min-w-0 flex-1">
+            {profile.match_score != null && (
+              <div className="inline-flex items-center gap-1.5 mb-3 px-2.5 py-1 rounded-full liquid liquid-photo">
+                <Sparkles size={13} className="text-accent-soft" />
+                <span className="text-[12px] font-semibold">
+                  {profile.match_score}% совпадение
+                </span>
+              </div>
+            )}
 
-        <div className="flex items-center gap-2 mb-1.5">
-          <h2 className="text-[30px] font-extrabold tracking-[-0.03em] leading-none text-white">
-            {profile.display_name}
-          </h2>
-          {profile.age != null && (
-            <span className="text-[26px] font-light text-white/85 leading-none">
-              {profile.age}
-            </span>
-          )}
-          {/* Галочка живой проверки: человек в анкете — реальный */}
-          {profile.is_verified && <VerifiedBadge size={20} />}
-          {/* «Сейчас в сети» — самый полезный сигнал на карточке: подсказывает,
-              ответят ли сегодня. Точное время последнего входа не показываем,
-              это была бы слежка */}
-          {profile.is_online && (
-            <span className="flex items-center gap-1.5 text-[12px] text-white/85">
-              <span
-                className="w-2 h-2 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]"
-                aria-hidden="true"
-              />
-              в сети
-            </span>
+            <div className="flex items-center gap-2 mb-1.5">
+              <h2 className="text-[30px] font-extrabold tracking-[-0.03em] leading-none text-white">
+                {profile.display_name}
+              </h2>
+              {profile.age != null && (
+                <span className="text-[26px] font-light text-white/85 leading-none">
+                  {profile.age}
+                </span>
+              )}
+              {/* Галочка живой проверки: человек в анкете — реальный.
+                  «В сети» незнакомцу не показываем: по нему можно следить за
+                  чужим расписанием; статус остаётся только внутри мэтча */}
+              {profile.is_verified && <VerifiedBadge size={20} />}
+            </div>
+
+            {(profile.city || profile.distance != null || profile.height_cm != null) && (
+              <div className="flex items-center gap-1.5 text-[13px] text-white/75 mb-2.5">
+                <MapPin size={13} className="shrink-0" />
+                <span className="truncate">
+                  {[
+                    profile.city,
+                    profile.distance != null ? `${profile.distance} км` : null,
+                    profile.height_cm != null ? `${profile.height_cm} см` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {profile.sticker && (
+            <img
+              src={profile.sticker}
+              alt=""
+              draggable={false}
+              className="block w-[68px] h-[68px] shrink-0 mb-2 -rotate-6 select-none
+                         drop-shadow-[0_4px_10px_rgba(0,0,0,.55)]"
+            />
           )}
         </div>
-
-        {(profile.city || profile.distance != null || profile.height_cm != null) && (
-          <div className="flex items-center gap-1.5 text-[13px] text-white/75 mb-2.5">
-            <MapPin size={13} className="shrink-0" />
-            <span className="truncate">
-              {[
-                profile.city,
-                profile.distance != null ? `${profile.distance} км` : null,
-                profile.height_cm != null ? `${profile.height_cm} см` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-          </div>
-        )}
 
         {(profile.goal || profile.relation_type || profile.subculture || profile.mbti) && (
           <div className="flex flex-wrap gap-1.5 mb-2.5">
             {profile.relation_type && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
                 {optionLabel(RELATION_TYPES, profile.relation_type)}
               </span>
             )}
             {profile.goal && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
                 {optionLabel(GOALS, profile.goal)}
               </span>
             )}
             {profile.subculture && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
                 {optionLabel(SUBCULTURES, profile.subculture)}
               </span>
             )}
             {/* MBTI показываем кодом: расшифровка «INFJ · Активист» в тесную
                 карточку не влезает, а тем, кто ищет по типу, кода достаточно */}
             {profile.mbti && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full glass-strong font-medium">
+              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
                 {profile.mbti}
               </span>
             )}
@@ -398,13 +394,13 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
             {profile.interests.slice(0, 4).map((interest) => (
               <span
                 key={interest}
-                className="text-[12px] px-2.5 py-1 rounded-full glass font-medium"
+                className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium"
               >
                 {interest}
               </span>
             ))}
             {profile.interests.length > 4 && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full glass font-medium">
+              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
                 +{profile.interests.length - 4}
               </span>
             )}

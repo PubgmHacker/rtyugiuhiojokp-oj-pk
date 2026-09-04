@@ -14,7 +14,8 @@ from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import TEXT_BAN_REASONS, register_text_strike
 from services.chat_delivery import (
-    ДоставкаОтклонена, check_chat_flood, fan_out, save_message,
+    ДоставкаОтклонена, check_chat_flood, fan_out, notify_text_for,
+    нормализовать_медиа, save_message,
 )
 from services.token_revocation import is_revoked
 from services.quotas import open_match
@@ -147,7 +148,14 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             # Обычное сообщение
             text = str(data.get("text", "")).strip()[:2000]
             image_url = data.get("image_url")
-            if not text and not image_url:
+            # Голосовое/кружок: чужой файл — отказ тем же кадром «rejected»,
+            # что и прочие правила чата, без разрыва сокета
+            try:
+                media = нормализовать_медиа(user_id, data.get("media"))
+            except ДоставкаОтклонена as отказ:
+                await websocket.send_json({"type": "rejected", "reason": отказ.detail})
+                continue
+            if not text and not image_url and not media:
                 continue
 
             # Антифлуд до модерации: залп сообщений — это прежде всего залп
@@ -217,14 +225,19 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             # отдельной сессией, и между проверкой и вставкой успевал пройти
             # второй кадр из того же соединения
             try:
-                payload = await save_message(match_id, user_id, text, image_url)
+                payload = await save_message(
+                    match_id, user_id, text, image_url, media=media
+                )
             except ДоставкаОтклонена as отказ:
                 await websocket.send_json({"type": "rejected", "reason": отказ.detail})
                 continue
             if payload is None:
                 await websocket.close(code=4004, reason="Match is no longer active")
                 break
-            await fan_out(payload, match_id, user_id, partner_id, text)
+            await fan_out(
+                payload, match_id, user_id, partner_id,
+                notify_text_for(text, image_url, media),
+            )
 
     except WebSocketDisconnect:
         pass

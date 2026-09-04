@@ -25,7 +25,6 @@ from services.ai_matchmaker import score_match
 from services.analytics import EVENT_FIRST_MATCH, EVENT_FIRST_SWIPE, track
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import enforce_text_verdict
-from services.matching import ОНЛАЙН_МИНУТ
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
@@ -60,7 +59,6 @@ async def _profile_to_user(
     like_message: str = "",
     *,
     is_verified: bool = False,
-    is_online: bool = False,
 ) -> UserProfile:
     if not profile:
         return UserProfile(id=user_id, like_message=like_message)
@@ -92,9 +90,9 @@ async def _profile_to_user(
         like_message=like_message,
         tg_channel=tg_channel,
         is_verified=is_verified,
-        # «В сети» не выдаёт спрятавшихся: инкогнито и пауза гасят флаг —
-        # то же правило, что в деке (services/matching.py)
-        is_online=is_online and not profile.is_incognito and not profile.is_paused,
+        # «В сети» здесь не отдаём: кто лайкнул — ещё не мэтч, а по флагу
+        # можно следить за чужим расписанием. Статус виден только внутри
+        # мэтча (routers/matches.py), как и в деке (services/matching.py)
     )
 
 
@@ -446,7 +444,7 @@ async def get_likes_received(
     my_rated = {row[0] for row in result.all()}
 
     result = await session.execute(
-        select(Like, User.is_verified, User.last_seen_at)
+        select(Like, User.is_verified)
         .join(User, Like.liker_id == User.id)
         .where(and_(
             Like.liked_id == user.id,
@@ -477,12 +475,8 @@ async def get_likes_received(
     # показалось бы, что его никто не лайкал.
     revealed = tier_allows(await current_tier(session, user.id), "see_who_liked")
 
-    # Порог «в сети» — общий с декой: два разных представления об «онлайне»
-    # на соседних экранах читались бы как баг
-    недавно = datetime.now(timezone.utc) - timedelta(minutes=ОНЛАЙН_МИНУТ)
-
     out: list[UserProfile] = []
-    for lk, verified, last_seen in rows:
+    for lk, verified in rows:
         if lk.liker_id in my_rated:
             continue
         if not revealed:
@@ -490,11 +484,8 @@ async def get_likes_received(
             continue
         result = await session.execute(select(Profile).where(Profile.user_id == lk.liker_id))
         profile = result.scalar_one_or_none()
-        if last_seen is not None and last_seen.tzinfo is None:
-            last_seen = last_seen.replace(tzinfo=timezone.utc)
         out.append(await _profile_to_user(
             session, profile, lk.liker_id, lk.message or "",
             is_verified=bool(verified),
-            is_online=last_seen is not None and last_seen >= недавно,
         ))
     return out
