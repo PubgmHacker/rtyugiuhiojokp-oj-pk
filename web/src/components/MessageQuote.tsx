@@ -16,7 +16,7 @@ import { formatClock } from "./VoiceBubble";
 /** Чем подписать цитату, у которой нет текста. */
 function подпись(q: Цитата): string {
   if (q.text) return q.text;
-  if (q.kind === "video_note") return `Видеосообщение · ${formatClock(q.duration)}`;
+  if (q.kind === "video_note") return `Видеокружок · ${formatClock(q.duration)}`;
   if (q.kind === "voice") return `Голосовое · ${formatClock(q.duration)}`;
   if (q.kind === "reel") return "Ролик";
   if (q.kind === "photo") return "Фотография";

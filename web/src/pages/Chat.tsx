@@ -83,9 +83,14 @@ import {
 import { REPORT_REASONS } from "../lib/profileOptions";
 import { readableOn } from "../lib/aura";
 import { useChatWallpaper } from "../lib/chatWallpaper";
+import { noteShape } from "../lib/noteShapes";
 
 // Порция истории — столько же, сколько сервер отдаёт по умолчанию.
 const ПОРЦИЯ = 50;
+
+/* Кружок в покое. Держим числом здесь, а не значением по умолчанию внутри
+   компонента: по нему же считается, на сколько поднять время сбоку. */
+const РАЗМЕР_КРУЖКА = 148;
 
 /**
  * Одна общая кнопка справа: тап меняет микрофон на камеру, удержание пишет.
@@ -1378,6 +1383,14 @@ export default function Chat() {
                         // Кружок сам себе пузырь: подложка под звездой или
                         // ёлкой превратила бы форму в «картинку в рамке»
                         const цитата = m.reply_to;
+                        // Время равняется по строке метки ВНУТРИ фигуры, а не
+                        // по низу квадрата: у звезды и сердца между лучами и
+                        // краем бокса 40 px пустоты, и часы повисали там сами
+                        // по себе — подписью к следующему сообщению
+                        const якорь = noteShape(m.media.shape).anchor.y;
+                        const подъёмВремени = Math.round(
+                          (РАЗМЕР_КРУЖКА * (100 - якорь)) / 100 - 6.5,
+                        );
                         return (
                           <MessageRow
                             key={m.id}
@@ -1416,8 +1429,12 @@ export default function Chat() {
                                   group.mine ? "flex-row-reverse" : ""
                                 }`}
                               >
-                                <VideoNoteBubble media={m.media} mine={group.mine} />
-                                <span className="pb-1.5">
+                                <VideoNoteBubble
+                                  media={m.media}
+                                  mine={group.mine}
+                                  size={РАЗМЕР_КРУЖКА}
+                                />
+                                <span style={{ marginBottom: подъёмВремени }}>
                                   <МетаСообщения
                                     время={время}
                                     mine={group.mine}
@@ -1456,7 +1473,7 @@ export default function Chat() {
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                          className={`relative max-w-[78%] text-[15px] leading-snug
+                          className={`relative max-w-full text-[15px] leading-snug
                                       break-words selectable ${
                                         m.media?.kind === "voice"
                                           ? "px-2 py-1.5"

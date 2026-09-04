@@ -305,7 +305,14 @@ export default function Matches() {
     <div>
       <ScreenHeader
         title="Чаты"
-        subtitle={`${matches.length} ${plural(matches.length, "совпадение", "совпадения", "совпадений")}`}
+        /* Считаем то, что человек видит списком, — переписки. «3 совпадения»
+           под заголовком «Чаты» пересчитывали и беседы без взаимного лайка,
+           и мэтчи из верхней ленты, где переписки ещё нет вовсе */
+        subtitle={
+          conversations.length
+            ? `${conversations.length} ${plural(conversations.length, "переписка", "переписки", "переписок")}`
+            : `${matches.length} ${plural(matches.length, "совпадение", "совпадения", "совпадений")}`
+        }
       />
 
       {/* Истории — над списком: они живут сутки, а переписка ждёт. Полоса
@@ -423,11 +430,6 @@ export default function Matches() {
                           {m.streak_days}
                         </span>
                       )}
-                      {m.last_message_at && (
-                        <span className="ml-auto text-[11.5px] text-text-faint shrink-0">
-                          {formatTime(m.last_message_at, язык)}
-                        </span>
-                      )}
                     </div>
                     {m.locked ? (
                       // Превью сервер не отдал — и не должен. Вместо него
@@ -441,14 +443,28 @@ export default function Matches() {
                       <ПревьюЧата m={m} />
                     )}
                   </div>
-                  {!!m.unread_count && (
-                    <span
-                      className="min-w-[20px] h-5 px-1.5 rounded-full bg-accent
-                                 text-white text-[11px] font-bold
-                                 flex items-center justify-center shrink-0"
-                    >
-                      {m.unread_count > 99 ? "99+" : m.unread_count}
-                    </span>
+                  {/* Время и счётчик — одной колонкой у правого края. Пока
+                      время висело в строке имени, а счётчик стоял отдельным
+                      столбцом по центру строки, правый край списка шёл рваной
+                      лесенкой: часы на одном отступе, кружок на другом и на
+                      другой высоте. В Telegram и VK это один столбик */}
+                  {(m.last_message_at || !!m.unread_count) && (
+                    <div className="shrink-0 self-start pt-0.5 flex flex-col items-end gap-1">
+                      {m.last_message_at && (
+                        <span className="text-[11.5px] leading-none text-text-faint tabular-nums">
+                          {formatTime(m.last_message_at, язык)}
+                        </span>
+                      )}
+                      {!!m.unread_count && (
+                        <span
+                          className="min-w-[20px] h-5 px-1.5 rounded-full bg-accent
+                                     text-white text-[11px] font-bold
+                                     flex items-center justify-center"
+                        >
+                          {m.unread_count > 99 ? "99+" : m.unread_count}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </button>
               </motion.li>

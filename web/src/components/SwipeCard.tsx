@@ -350,7 +350,7 @@ function SwipeCardImpl({
               <div className="inline-flex items-center gap-1.5 mb-3 px-2.5 py-1 rounded-full liquid liquid-photo">
                 <Sparkles size={13} className="text-accent-soft" />
                 <span className="text-[12px] font-semibold">
-                  {profile.match_score}% совпадение
+                  Совпадение {profile.match_score}%
                 </span>
               </div>
             )}

@@ -40,6 +40,16 @@ const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simpmatchbot";
  *  Сами уровни приходят с сервера — здесь только порядок показа. */
 const PAID_TIERS = ["plus", "ultra", "aurora"] as const;
 
+/** Рубли по-русски: запятая в дробной части и неразрывный разряд тысяч.
+ *
+ *  Сервер отдаёт цену за день числом (16.6), и в JSX она печаталась «16.6 ₽» —
+ *  точка в дробях читается как опечатка ровно там, где человек решает
+ *  платить. Округляем до десятой: вторая цифра после запятой в цене за день
+ *  не значит ничего. */
+function рубли(n: number): string {
+  return n.toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+}
+
 export default function Plans() {
   const { user, setUser } = useStore();
   const [data, setData] = useState<PlansOut | null>(null);
@@ -499,15 +509,16 @@ function PlanRow({
         {/* С ценой App Store рублёвую раскладку не показываем совсем:
             разложить чужую валюту «в месяц и в день» без парсинга её формата
             нельзя, а срок и так в заголовке, выгода — в бейдже */}
-        {!storePrice && (
+        {/* Цена за день — на длинных сроках она и продаёт: «4 ₽ в день»
+            читается как мелочь, а «1290 ₽» как крупная трата. У месячного
+            плана раскладки нет совсем: «499 ₽ в месяц» под заголовком
+            «1 месяц» повторяло и срок, и то же самое число из колонки цены
+            справа — строка не сообщала ничего. Неразрывный пробел перед «₽» —
+            чтобы перенос не оставлял строку «17» и строку «₽ в день» */}
+        {!storePrice && plan.months > 1 && (
           <p className="text-caption text-text-muted">
-            {`${plan.price_per_month}\u00A0₽ в месяц`}
-            {/* Цена за день — на длинных сроках она и продаёт: «4 ₽ в день»
-                читается как мелочь, а «1290 ₽» как крупная трата. У месячного
-                плана не показываем: там это не выгода, а лишний шум.
-                Неразрывный пробел перед «₽» — чтобы перенос не оставлял
-                строку «17» и строку «₽ в день» по отдельности */}
-            {plan.months > 1 && ` · ${plan.price_per_day}\u00A0₽ в день`}
+            {`${рубли(plan.price_per_month)}\u00A0₽ в месяц`}
+            {` · ${рубли(plan.price_per_day)}\u00A0₽ в день`}
           </p>
         )}
       </div>
@@ -521,7 +532,7 @@ function PlanRow({
           именно их и сравнивают между сроками */}
       <div className="shrink-0 flex flex-col items-end gap-0.5">
         <span className="font-bold text-[16px]">
-          {busy ? <Spinner size={16} /> : storePrice ?? `${plan.price_rub} ₽`}
+          {busy ? <Spinner size={16} /> : (storePrice ?? `${рубли(plan.price_rub)}\u00A0₽`)}
         </span>
         {saving > 0 && (
           <span className="px-2 py-0.5 rounded-full bg-success/15 text-success

@@ -254,15 +254,23 @@ function PhotoTile({
     );
   }
 
+  // Свободные слоты дальше очереди больше не гасим до 35 %: поверх живого
+  // фона полупрозрачная плитка пропускала розовый орб и читалась как сбой
+  // отрисовки — из пяти ячеек четыре выглядели сломанными. Сетка теперь стоит
+  // ровной рамкой, а пунктир и значок остаются только у той ячейки, в которую
+  // снимок и ляжет: заполнение идёт по порядку, и подсказывать надо одну цель.
   return (
     <label
       htmlFor={inputId}
       aria-disabled={disabled}
-      className={`aspect-[3/4] rounded-[var(--radius-tile)] border border-dashed
-                  border-hairline bg-surface flex items-center justify-center
-                  ${disabled ? "opacity-35 pointer-events-none" : "cursor-pointer"}`}
+      className={`aspect-[3/4] rounded-[var(--radius-tile)] bg-surface
+                  flex items-center justify-center ${
+                    disabled
+                      ? "pointer-events-none"
+                      : "border border-dashed border-accent/45 cursor-pointer"
+                  }`}
     >
-      <Camera size={22} className="text-text-faint" />
+      {!disabled && <Camera size={22} className="text-accent/75" />}
       {fileInput}
     </label>
   );

@@ -48,7 +48,10 @@ function resampleBars(src: string, count = BAR_COUNT): string {
 }
 
 export function formatClock(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
+  // Не число — ноль, а не «NaN:NaN». Длительность приходит из четырёх мест
+  // (медиа сообщения, цитата, запись, черновик), и хватает одного, где её
+  // ещё нет, чтобы человек увидел в переписке отладочный мусор
+  const s = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0;
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 

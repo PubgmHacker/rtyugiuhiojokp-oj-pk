@@ -153,9 +153,14 @@ export default function MessageRow({
         e.stopPropagation();
       }}
     >
+      {/* Потолок ширины держит КОРПУС, а не пузырь внутри него. У пузыря
+          max-w в процентах считался от самого корпуса: при вычислении
+          внутренней ширины проценты игнорируются, корпус брал max-content,
+          и 78% отмерялись уже от него — пузырь недобирал пятую часть строки,
+          рвал короткие фразы на два ряда и отрывал от себя реакции. */}
       <div
         ref={корпус}
-        className="relative"
+        className="relative max-w-[78%]"
         style={{
           transform: сдвиг ? `translateX(${сдвиг.toFixed(1)}px)` : undefined,
           transition: тянем ? "none" : "transform 0.24s cubic-bezier(0.2,0.8,0.2,1)",
