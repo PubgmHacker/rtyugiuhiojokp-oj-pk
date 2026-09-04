@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { Pause, Play } from "lucide-react";
 import type { ChatMedia } from "../lib/api";
 import { claimPlayback } from "../lib/playbackFocus";
@@ -25,6 +25,13 @@ interface Props {
   media: ChatMedia;
   /** Своё сообщение — краски на акцентном фоне; чужое — на карточке. */
   mine: boolean;
+  /**
+   * Время сообщения с галочками. Стоит в одной строке с длительностью, а не
+   * поверх пузыря: два одинаковых числа по краям читались как две
+   * длительности («0:14» и «10:00»), и понять, какое из них час, можно было
+   * только по смыслу.
+   */
+  meta?: ReactNode;
 }
 
 /** Ровная волна на случай записи без анализатора громкости. */
@@ -59,7 +66,7 @@ function подписьСкорости(v: number): string {
   return `${String(v).replace(".", ",")}×`;
 }
 
-export default function VoiceBubble({ media, mine }: Props) {
+export default function VoiceBubble({ media, mine, meta }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const waveRef = useRef<HTMLDivElement | null>(null);
   const releaseRef = useRef<(() => void) | null>(null);
@@ -245,42 +252,55 @@ export default function VoiceBubble({ media, mine }: Props) {
         </div>
 
         <div
-          className={`flex items-center gap-1.5 text-[11.5px] tabular-nums ${
-            mine ? "text-white/80" : "text-text-muted"
+          /* Цвет строки — цвет пузыря в полную силу: длительность это
+             содержание («сколько слушать»), и она обязана быть ярче часов.
+             Часы внутри гасятся своими 0.68 и попадают ровно в ту же
+             яркость, что и часы у соседних текстовых пузырей — замер:
+             179 у входящего текста против 116, когда строка была muted. */
+          className={`flex items-center gap-1.5 h-[17px] text-[11.5px] tabular-nums ${
+            mine ? "text-white" : "text-text"
           }`}
         >
-          <span>{failed ? "Не удалось воспроизвести" : formatClock(shown)}</span>
+          <span className="truncate">
+            {failed ? "Не удалось воспроизвести" : formatClock(shown)}
+          </span>
           {unheard && !failed && (
             <span
-              className={`w-[5px] h-[5px] rounded-full ${mine ? "bg-white" : "bg-accent"}`}
+              className={`shrink-0 w-[5px] h-[5px] rounded-full ${
+                mine ? "bg-white" : "bg-accent"
+              }`}
               aria-label="не прослушано"
             />
           )}
+
+          {/* Скорость — только когда есть что ускорять. Стоит в этой строке, а
+              не сбоку от волны: сбоку она появлялась с началом звука и на ходу
+              отбирала у волны тридцать пикселей — столбики перестраивались
+              прямо во время прослушивания. */}
+          {активна && !failed && (
+            <button
+              type="button"
+              aria-label={`Скорость воспроизведения ${подписьСкорости(speed)}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                haptic("light");
+                setSpeedIdx((i) => (i + 1) % SPEEDS.length);
+              }}
+              className={`shrink-0 px-1.5 h-[17px] rounded-full text-[10px]
+                          font-semibold tabular-nums leading-none flex items-center
+                          justify-center active:scale-90 transition-transform ${
+                            mine
+                              ? "bg-white/22 text-white"
+                              : "bg-text/10 text-text-muted"
+                          }`}
+            >
+              {подписьСкорости(speed)}
+            </button>
+          )}
+
+          {meta && <span className="ml-auto pl-2 shrink-0">{meta}</span>}
         </div>
       </div>
-
-      {/* Скорость — только когда есть что ускорять */}
-      {активна && !failed && (
-        <button
-          type="button"
-          aria-label={`Скорость воспроизведения ${подписьСкорости(speed)}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            haptic("light");
-            setSpeedIdx((i) => (i + 1) % SPEEDS.length);
-          }}
-          className={`shrink-0 self-start mt-0.5 px-1.5 h-[22px] rounded-full
-                      text-[10.5px] font-semibold tabular-nums leading-none
-                      flex items-center justify-center active:scale-90
-                      transition-transform ${
-                        mine
-                          ? "bg-white/22 text-white"
-                          : "bg-text/10 text-text-muted"
-                      }`}
-        >
-          {подписьСкорости(speed)}
-        </button>
-      )}
     </div>
   );
 }

@@ -534,6 +534,23 @@ export async function uploadPhoto(file: File): Promise<{ url: string; key: strin
 }
 
 /**
+ * Фото в переписку. Отдельный вход, а не загрузка фото анкеты: та требует
+ * хорошо видимое лицо владельца и завернула бы кота, чек и скриншот — то, что
+ * и шлют в личку. Модерация и срезание EXIF остаются.
+ *
+ * Ссылку из ответа клиент кладёт в сообщение полем `image_url`; доставка
+ * принимает только файлы из папки отправителя.
+ */
+export async function uploadChatPhoto(file: File): Promise<{ url: string; key: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await api.post("/upload/chat-photo", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+/**
  * Видеоролик анкеты. Контракт как у публикации ролика в ленте: сервер видео
  * не разбирает, кадры с разных таймкодов снимает браузер (grabVideoCovers),
  * и модерация смотрит на них — без кадров загрузки нет.

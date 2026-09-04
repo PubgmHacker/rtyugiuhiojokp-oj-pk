@@ -1189,6 +1189,82 @@ async def test_своя_анкета_отдаёт_видео_как_есть(app
     assert r.json()["videos"] == ["BAACAgIAAxkBAAI-бот"]
 
 
+@pytest.fixture
+def фото_лички(monkeypatch):
+    """POST /upload/chat-photo без R2 и Zhipu: перекодирование и модерация
+    подменены, заливка запоминает ключ — по нему тест сверяет префикс, тот
+    самый, который доставка требует от `image_url`. Гейт лица тоже подменён,
+    и подменён так, чтобы отказать: если его вдруг позовут, тест это увидит
+    и по вызову, и по коду ответа."""
+    from routers import upload
+
+    проверенные: list[bytes] = []
+    вердикт = {"blocked": False}
+    ключи: list[str] = []
+    лицо: list[str] = []
+
+    def _sanitize(raw: bytes):
+        return raw, "image/jpeg", "jpg"
+
+    async def _moderate_image(данные: bytes):
+        проверенные.append(данные)
+        return dict(вердикт)
+
+    async def _upload(key: str, _data: bytes, _ct: str):
+        ключи.append(key)
+        return f"https://media.simp.test/{key}"
+
+    async def _verify(*_args, **_kw):
+        лицо.append("звали")
+        return {"ok": False, "reason": "На фото анкеты должно быть хорошо видно ваше лицо"}
+
+    monkeypatch.setattr(upload, "sanitize_image", _sanitize)
+    monkeypatch.setattr(upload, "moderate_image", _moderate_image)
+    monkeypatch.setattr(upload, "log_moderation", _async_return(None))
+    monkeypatch.setattr(upload, "upload_photo_to_r2", _upload)
+    monkeypatch.setattr(upload, "verify_profile_photo", _verify)
+    return SimpleNamespace(
+        проверенные=проверенные, вердикт=вердикт, ключи=ключи, лицо=лицо
+    )
+
+
+async def test_фото_лички_идёт_в_свою_папку_и_без_гейта_лица(app, фото_лички):
+    """В переписку шлют кота, чек и скриншот расписания — требование
+    «хорошо видно ваше лицо» здесь не к месту, и его тут нет. А префикс
+    chat-media/{user_id}/ обязателен: доставка (services/chat_delivery)
+    принимает в сообщение только свою папку отправителя, так что снимок,
+    уехавший мимо неё, до собеседника не дойдёт вовсе."""
+    session = _Session([])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/upload/chat-photo", files={"file": ("cat.jpg", _КАДР, "image/jpeg")}
+        )
+
+    assert r.status_code == 200, r.text
+    assert not фото_лички.лицо, "гейт анкеты звали на фото переписки"
+    assert len(фото_лички.проверенные) == 1, "модерация не звалась"
+    ключ = фото_лички.ключи[0]
+    assert ключ.startswith("chat-media/u-me/"), f"чужой префикс: {ключ}"
+    assert r.json()["url"].endswith(ключ)
+
+
+async def test_фото_лички_не_уезжает_в_r2_после_отказа_модерации(app, фото_лички):
+    """Заблокированный снимок отбивается 422 и в хранилище не попадает:
+    иначе ссылку на него можно было бы вклеить в сообщение руками, минуя
+    422 — файл-то уже лежит в своей папке отправителя."""
+    фото_лички.вердикт["blocked"] = True
+    session = _Session([])
+
+    async with await _client(app, session, _user()) as client:
+        r = await client.post(
+            "/api/upload/chat-photo", files={"file": ("bad.jpg", _КАДР, "image/jpeg")}
+        )
+
+    assert r.status_code == 422, r.text
+    assert not фото_лички.ключи, "заблокированный снимок всё же залили"
+
+
 # ── Прод без внешних ключей: деградация, а не падение ───────────
 
 
@@ -1210,8 +1286,8 @@ def прод_без_хранилища(monkeypatch):
 async def test_прод_без_r2_отвечает_503_на_каждой_точке_загрузки(
     app, прод_без_хранилища, кадры_видео_анкеты
 ):
-    """Без ключей R2 сервис живёт, а каждая точка загрузки — фото и видео
-    анкеты, история, ролик — отвечает 503 сразу, до чтения лимитов и платной
+    """Без ключей R2 сервис живёт, а каждая точка загрузки — фото анкеты и
+    фото лички, видео анкеты, история, ролик — отвечает 503 сразу, до чтения лимитов и платной
     модерации. Ответ различаем по detail сторожа: 503 «проверка недоступна»
     от fail-closed модерации здесь был бы ложным зелёным — он значил бы, что
     платный вызов уже сожжён."""
@@ -1221,6 +1297,9 @@ async def test_прод_без_r2_отвечает_503_на_каждой_точ�
         ответы = [
             await client.post(
                 "/api/upload/photo", files={"file": ("p.jpg", _КАДР, "image/jpeg")}
+            ),
+            await client.post(
+                "/api/upload/chat-photo", files={"file": ("c.jpg", _КАДР, "image/jpeg")}
             ),
             await client.post("/api/upload/video", files=_файлы_видео_анкеты(3)),
             await client.post(

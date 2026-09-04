@@ -2090,18 +2090,27 @@ def test_шестнадцать_типов_в_справочнике():
 
 
 def test_веса_заполненности_дают_ровно_сто():
-    """Иначе «100%» недостижимо и полоса никогда не закрывается."""
+    """Иначе «100%» недостижимо и полоса никогда не закрывается.
+
+    Таблица переехала из Profile.tsx в lib/completeness.ts: ту же полосу
+    рисует экран редактирования, и вторая копия весов разъехалась бы с
+    первой. Читаем единственный дом — если появится второй, этот тест
+    останется зелёным на старом, поэтому ниже сверяем и отсутствие копии.
+    """
     import re
     from pathlib import Path
 
-    профиль = (
-        Path(__file__).resolve().parents[2] / "web" / "src" / "pages" / "Profile.tsx"
-    ).read_text(encoding="utf-8")
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    таблица = (web / "lib" / "completeness.ts").read_text(encoding="utf-8")
 
-    блок = профиль[профиль.index("const COMPLETENESS") : профиль.index("function ProfileCompleteness")]
+    блок = таблица[таблица.index("const COMPLETENESS") :]
+    блок = блок[: блок.index("];")]
     веса = [int(n) for n in re.findall(r"weight:\s*(\d+)", блок)]
     assert веса, "не удалось разобрать веса"
     assert sum(веса) == 100, f"сумма весов {sum(веса)}"
+
+    профиль = (web / "pages" / "Profile.tsx").read_text(encoding="utf-8")
+    assert "const COMPLETENESS" not in профиль, "веса снова размножились"
 
 
 # ════════════════════════════════════════════════════════════════

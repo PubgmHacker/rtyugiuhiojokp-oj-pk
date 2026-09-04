@@ -33,6 +33,11 @@ router = APIRouter(prefix="/upload", tags=["upload"])
 
 settings = get_settings()
 
+#: Потолок картинки — общий для анкеты и для лички. Считается ДО
+#: перекодирования: пережать 40-мегабайтный снимок стоит памяти и
+#: процессора ровно столько же, сколько принять его.
+MAX_PHOTO_BYTES = 10 * 1024 * 1024
+
 
 @router.post("/photo")
 async def upload_photo(
@@ -50,7 +55,7 @@ async def upload_photo(
         raise HTTPException(status_code=400, detail="Only images are allowed")
 
     contents = await file.read()
-    if len(contents) > 10 * 1024 * 1024:  # 10 MB
+    if len(contents) > MAX_PHOTO_BYTES:
         raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
 
     # Перекодирование до модерации и до R2: срезает EXIF с GPS-координатами
@@ -116,6 +121,71 @@ async def upload_photo(
 
     object_key = f"photos/{user.id}/{uuid.uuid4()}.{file_ext}"
 
+    url = await upload_photo_to_r2(object_key, contents, content_type)
+    if not url:
+        raise HTTPException(status_code=500, detail="Upload failed")
+
+    return {"url": url, "key": object_key}
+
+
+@router.post("/chat-photo")
+async def upload_chat_photo(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Фото для лички: R2 + AI-модерация, но без гейта анкеты.
+
+    Отдельный вход, а не `/upload/photo`, ровно из-за одной проверки:
+    `verify_profile_photo` требует хорошо видимое лицо владельца, и это
+    правильно для анкеты и бессмысленно для переписки — в чат шлют кота, чек
+    из кофейни и скриншот расписания. По старому входу такой снимок получал
+    «На фото анкеты должно быть хорошо видно ваше лицо».
+
+    Что остаётся общим и не обсуждается: перекодирование (срезает EXIF с
+    GPS — для дейтинга это домашний адрес получателя ровно так же, как
+    отправителя) и AI-модерация с тем же страйком за рекламу, что у текста.
+
+    Файл ложится в `chat-media/{user_id}/` — доставка (services/chat_delivery)
+    принимает в сообщение только свою папку, так что чужой снимок нельзя
+    переслать как свой. Ссылку в сообщение кладёт клиент полем `image_url`.
+    """
+    if not uploads_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Загрузка медиа временно недоступна — хранилище не настроено",
+        )
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Можно отправить только изображение")
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Пустой файл")
+    if len(contents) > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail="Файл слишком большой — до 10 МБ")
+
+    try:
+        contents, content_type, file_ext = sanitize_image(contents)
+    except ImageRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    mod_result = await moderate_image(contents)
+    await log_moderation(user.id, "chat_photo", file.filename or "photo", mod_result)
+    if mod_result.get("unavailable"):
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка фото сейчас недоступна — попробуйте через пару минут",
+        )
+    if mod_result.get("category") == "ad":
+        ответ_бана = await enforce_text_verdict(
+            session, user, mod_result, "Image violates content policy"
+        )
+        if ответ_бана is not None:
+            return ответ_бана
+    if mod_result["blocked"]:
+        raise HTTPException(status_code=422, detail="Снимок нарушает правила сервиса")
+
+    object_key = f"chat-media/{user.id}/photo-{uuid.uuid4()}.{file_ext}"
     url = await upload_photo_to_r2(object_key, contents, content_type)
     if not url:
         raise HTTPException(status_code=500, detail="Upload failed")

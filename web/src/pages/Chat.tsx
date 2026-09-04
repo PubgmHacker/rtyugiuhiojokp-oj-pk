@@ -29,6 +29,7 @@ import {
   Mic,
   Video,
   ChevronDown,
+  ImagePlus,
 } from "lucide-react";
 import {
   getMessages,
@@ -41,6 +42,7 @@ import {
   unmatch,
   uploadVoice,
   uploadVideoNote,
+  uploadChatPhoto,
   putReaction,
   type ChatMessage,
   type ChatTheme,
@@ -102,6 +104,11 @@ const ДЕРЖУ_МС = 240;
 const ЗАКРЕПИТЬ_PX = 44;
 const ОТМЕНА_PX = 64;
 
+/* Потолок фото — тот же, что на сервере (routers/upload.py). Проверяем до
+   загрузки: отказ после десяти мегабайт по мобильной сети приходит через
+   полминуты, и человек успевает решить, что чат сломан. */
+const ПОТОЛОК_ФОТО = 10 * 1024 * 1024;
+
 interface Удержание {
   id: number;
   x: number;
@@ -152,6 +159,11 @@ export default function Chat() {
   const [recording, setRecording] = useState<NoteKind | null>(null);
   const [sendingNote, setSendingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
+  // Фото из галереи: скрытый input и один флаг занятости кнопки. Ошибку
+  // показываем в той же строке, что и сбой записи, — сбоит одно и то же
+  // место интерфейса, и двух разных красных полос человеку не надо
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [sendingPhoto, setSendingPhoto] = useState(false);
   const canRecord = useMemo(() => recordingSupported(), []);
   // Режим общей кнопки — тот же, каким её оставили в прошлый раз
   const [noteKind, setNoteKind] = useState<NoteKind>(() => readPreferredKind());
@@ -630,6 +642,55 @@ export default function Chat() {
         setRecording(null);
       } finally {
         setSendingNote(false);
+      }
+    },
+    [replyTo]
+  );
+
+  /**
+   * Фото из галереи. Путь тот же, что у записи: файл едет на сервер, ссылка —
+   * сообщением в тот же сокет. Проверки типа и размера стоят до загрузки.
+   */
+  const sendPhoto = useCallback(
+    async (file: File) => {
+      if (!wsRef.current) return;
+      if (!file.type.startsWith("image/")) {
+        setNoteError("Отправить можно только изображение");
+        haptic("error");
+        return;
+      }
+      if (file.size > ПОТОЛОК_ФОТО) {
+        setNoteError("Снимок больше 10 МБ — выберите другой");
+        haptic("error");
+        return;
+      }
+      setSendingPhoto(true);
+      setNoteError("");
+      try {
+        const { url } = await uploadChatPhoto(file);
+        const sent = wsRef.current?.send("", url, undefined, replyTo?.id);
+        if (!sent) {
+          setNoteError("Фото не ушло — нет связи. Попробуйте ещё раз");
+          haptic("error");
+          return;
+        }
+        haptic("light");
+        setReplyTo(null);
+      } catch (e: any) {
+        haptic("error");
+        const status = e?.response?.status;
+        setNoteError(
+          e?.response?.data?.detail ??
+            (status === 503
+              ? "Загрузка медиа сейчас недоступна"
+              : status === 413
+                ? "Снимок слишком большой"
+                : status === 429
+                  ? "Слишком много загрузок — подождите немного"
+                  : "Не удалось отправить фото — попробуйте ещё раз")
+        );
+      } finally {
+        setSendingPhoto(false);
       }
     },
     [replyTo]
@@ -1153,28 +1214,12 @@ export default function Chat() {
           </div>
 
 
-          <button
-            aria-label="Задачи на день"
-            onClick={() => {
-              haptic("light");
-              setHabitsOpen(true);
-            }}
-            className="tap-target flex items-center justify-center text-text-secondary"
-          >
-            <ListChecks size={20} />
-          </button>
-
-          <button
-            aria-label="Тема переписки"
-            onClick={() => {
-              haptic("light");
-              setThemeOpen(true);
-            }}
-            className="tap-target flex items-center justify-center text-text-secondary"
-          >
-            <Palette size={20} />
-          </button>
-
+          {/*
+            В шапке — только назад, собеседник и одно меню, как в Telegram и
+            ВК. Тема и задачи стояли здесь отдельными значками: две редкие
+            настройки занимали столько же места, сколько имя человека, и
+            съедали ширину у статуса.
+          */}
           <div className="relative">
             <button
               aria-label="Действия"
@@ -1206,6 +1251,30 @@ export default function Chat() {
                     >
                       <Paperclip size={16} className="text-text-secondary" />
                       Вложения
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setThemeOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-3 text-left
+                                 text-[14.5px] border-t border-hairline
+                                 active:bg-surface transition-colors"
+                    >
+                      <Palette size={16} className="text-text-secondary" />
+                      Тема переписки
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setHabitsOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-3 text-left
+                                 text-[14.5px] border-t border-hairline
+                                 active:bg-surface transition-colors"
+                    >
+                      <ListChecks size={16} className="text-text-secondary" />
+                      Задачи на день
                     </button>
                     <button
                       onClick={() => {
@@ -1456,6 +1525,10 @@ export default function Chat() {
                       // поверх слов, а перенос строки ради времени — расточительство.
                       const надМедиа = !m.text && !!(m.image_url || m.reel);
                       const распорка = group.mine ? 54 : 38;
+                      // У голосового время едет внутрь пузыря, в строку с
+                      // длительностью: снаружи справа оно вставало вторым
+                      // таким же числом и читалось как ещё одна длительность
+                      const голос = m.media?.kind === "voice" && !m.text;
 
                       return (
                         <MessageRow
@@ -1516,7 +1589,19 @@ export default function Chat() {
                           )}
                           {m.reel && <ReelBubble reel={m.reel} mine={group.mine} />}
                           {m.media?.kind === "voice" && (
-                            <VoiceBubble media={m.media} mine={group.mine} />
+                            <VoiceBubble
+                              media={m.media}
+                              mine={group.mine}
+                              meta={
+                                голос ? (
+                                  <МетаСообщения
+                                    время={время}
+                                    mine={group.mine}
+                                    прочитано={!!m.read_at}
+                                  />
+                                ) : undefined
+                              }
+                            />
                           )}
                           {m.image_url && (
                             <img
@@ -1533,31 +1618,33 @@ export default function Chat() {
                               style={{ width: распорка }}
                             />
                           )}
-                          <span
-                            className={`absolute pointer-events-none ${
-                              надМедиа
-                                ? "px-1.5 py-[2px] rounded-full text-white"
-                                : ""
-                            }`}
-                            style={
-                              надМедиа
-                                ? {
-                                    right: 12,
-                                    bottom: 10,
-                                    background: "rgba(0,0,0,0.45)",
-                                    backdropFilter: "blur(6px)",
-                                    WebkitBackdropFilter: "blur(6px)",
-                                  }
-                                : { right: 12, bottom: 5 }
-                            }
-                          >
-                            <МетаСообщения
-                              время={время}
-                              mine={group.mine}
-                              прочитано={!!m.read_at}
-                              светлая={надМедиа}
-                            />
-                          </span>
+                          {!голос && (
+                            <span
+                              className={`absolute pointer-events-none ${
+                                надМедиа
+                                  ? "px-1.5 py-[2px] rounded-full text-white"
+                                  : ""
+                              }`}
+                              style={
+                                надМедиа
+                                  ? {
+                                      right: 12,
+                                      bottom: 10,
+                                      background: "rgba(0,0,0,0.45)",
+                                      backdropFilter: "blur(6px)",
+                                      WebkitBackdropFilter: "blur(6px)",
+                                    }
+                                  : { right: 12, bottom: 5 }
+                              }
+                            >
+                              <МетаСообщения
+                                время={время}
+                                mine={group.mine}
+                                прочитано={!!m.read_at}
+                                светлая={надМедиа}
+                              />
+                            </span>
+                          )}
                         </motion.div>
                         </MessageRow>
                       );
@@ -1691,6 +1778,43 @@ export default function Chat() {
           посреди записи уже никуда не приходило.
         */}
         <div className="flex items-end gap-2">
+          {/*
+            Фото слева, отправка справа — как в ВК: главное действие держит
+            акцентный круг, вложение стоит спокойным. Внутрь поля скрепку не
+            кладём: правый край поля вплотную к кнопке записи, и два значка
+            подряд читаются как панель инструментов.
+          */}
+          {!recording && (
+            <>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const файл = e.target.files?.[0];
+                  // Значение чистим всегда: иначе повторный выбор того же
+                  // снимка не даёт события change и кнопка выглядит мёртвой
+                  e.target.value = "";
+                  if (файл) sendPhoto(файл);
+                }}
+              />
+              <button
+                type="button"
+                aria-label="Отправить фото"
+                disabled={sendingPhoto}
+                onClick={() => {
+                  haptic("light");
+                  photoInputRef.current?.click();
+                }}
+                className="w-11 h-11 rounded-full liquid shrink-0 flex items-center
+                           justify-center text-text-secondary disabled:opacity-40
+                           active:scale-95 transition-transform"
+              >
+                {sendingPhoto ? <Spinner size={18} /> : <ImagePlus size={20} />}
+              </button>
+            </>
+          )}
           {recording ? (
             <NoteRecorder
               kind={recording}

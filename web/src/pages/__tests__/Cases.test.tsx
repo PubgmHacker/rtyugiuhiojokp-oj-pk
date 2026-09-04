@@ -124,6 +124,12 @@ function отрисовать() {
   );
 }
 
+/*
+ * Витрина кейсов, наклейки и обложки грузятся тремя независимыми запросами.
+ * Дождавшись первого, счётчик второго нельзя проверять напрямую: на занятой
+ * машине он ещё в полёте, и тест падает без единой правки в коде экрана —
+ * поэтому ниже везде waitFor вокруг самого счётчика.
+ */
 async function дождатьсяВитрины() {
   await screen.findByRole("region", { name: "Кейс «Керопи»" });
 }
@@ -185,7 +191,7 @@ describe("Cases", () => {
     vi.mocked(openCase).mockResolvedValue(дроп());
     отрисовать();
     await дождатьсяВитрины();
-    expect(getStickers).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(getStickers).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "Открыть кейс «Керопи»" }));
 
@@ -257,7 +263,7 @@ describe("Cases", () => {
     vi.mocked(selectDecor).mockResolvedValue({ decors: [], selected: "frost", owned: 1, total: 5 });
     отрисовать();
     await дождатьсяВитрины();
-    expect(getDecor).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(getDecor).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "Открыть кейс «Star Rail»" }));
 
