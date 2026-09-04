@@ -1,5 +1,5 @@
 import { useCallback, useId, useState } from "react";
-import { Video, X } from "lucide-react";
+import { Video, X, Plus } from "lucide-react";
 import { uploadProfileVideo } from "../lib/api";
 import { grabVideoCovers, CoverFailed } from "../lib/videoCover";
 import { MAX_VIDEO_MB } from "../lib/profileOptions";
@@ -82,15 +82,19 @@ export default function VideoGrid({
   onPick: (f: File) => void;
   onRemove: (id: string) => void;
 }) {
+  // Четыре колонки при трёх слотах — не обрезанный ряд, а левый строй: ячейка
+  // выходит ровно того же размера, что маленькая плитка фотосетки. Видео —
+  // дополнение к фото, и на общем экране оно не должно быть крупнее того,
+  // что дополняет; на сетке из трёх колонок получалось ровно наоборот.
   return (
-    <div className="grid grid-cols-3 gap-2.5">
+    <div className="grid grid-cols-4 gap-2">
       {Array.from({ length: max }).map((_, i) => (
         <VideoTile
           key={videos[i]?.id ?? `vempty-${i}`}
           slot={videos[i]}
           onPick={onPick}
           onRemove={() => videos[i] && onRemove(videos[i].id)}
-          disabled={i > videos.length}
+          next={i === videos.length}
         />
       ))}
     </div>
@@ -101,12 +105,13 @@ function VideoTile({
   slot,
   onPick,
   onRemove,
-  disabled,
+  next,
 }: {
   slot?: VideoSlot;
   onPick: (f: File) => void;
   onRemove: () => void;
-  disabled: boolean;
+  /** Ближайший свободный слот: ролик ляжет именно сюда. */
+  next: boolean;
 }) {
   const inputId = useId();
 
@@ -116,7 +121,6 @@ function VideoTile({
       type="file"
       accept="video/mp4,video/quicktime,video/webm"
       className="hidden"
-      disabled={disabled}
       onChange={(e) => {
         const f = e.target.files?.[0];
         if (!f) return;
@@ -181,23 +185,24 @@ function VideoTile({
     );
   }
 
-  // Свободные слоты дальше очереди больше не гасим до 35 %: поверх живого
-  // фона полупрозрачная плитка пропускала розовый орб и читалась как сбой
-  // отрисовки — из пяти ячеек четыре выглядели сломанными. Сетка теперь стоит
-  // ровной рамкой, а пунктир и значок остаются только у той ячейки, в которую
-  // снимок и ляжет: заполнение идёт по порядку, и подсказывать надо одну цель.
+  // Свободный слот остаётся живым, как и в фотосетке: загрузка всё равно идёт
+  // в конец очереди, куда бы ни ткнули, а инертные ячейки читались заглушками.
   return (
     <label
       htmlFor={inputId}
-      aria-disabled={disabled}
-      className={`aspect-[3/4] rounded-[var(--radius-tile)] bg-surface
-                  flex items-center justify-center ${
-                    disabled
-                      ? "pointer-events-none"
-                      : "border border-dashed border-accent/45 cursor-pointer"
+      className={`aspect-[3/4] rounded-[var(--radius-tile)] bg-surface cursor-pointer
+                  flex items-center justify-center transition-colors active:bg-surface-2 ${
+                    next
+                      ? "border border-dashed border-accent/45"
+                      : "border border-hairline"
                   }`}
     >
-      {!disabled && <Video size={22} className="text-accent/75" />}
+      {next ? (
+        <Video size={19} strokeWidth={2.1} aria-hidden="true" className="text-accent" />
+      ) : (
+        <Plus size={18} strokeWidth={2.2} aria-hidden="true" className="text-text-faint" />
+      )}
+      <span className="sr-only">Добавить видео</span>
       {fileInput}
     </label>
   );

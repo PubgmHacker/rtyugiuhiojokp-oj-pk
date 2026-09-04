@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type CSSProperties } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Users, ChevronRight, Mic, Lock, WifiOff,
+  Users, ChevronRight, Mic, Lock, WifiOff, Heart,
   Video, Image as ImageIcon, Film,
 } from "lucide-react";
 import type { DailyLimits, MatchResponse } from "../lib/api";
@@ -86,42 +86,84 @@ function ПревьюЧата({ m }: { m: MatchResponse }) {
 }
 
 /** Ряд-вход в соседний способ познакомиться. Один и тот же и в пустом
- *  экране, и под списком чатов: это не украшение, а вторая дверь. */
+ *  экране, и под списком чатов: это не украшение, а вторая дверь.
+ *
+ *  Значок лежит на залитой плитке своего тона. Пока обе двери были одинаковыми
+ *  тёмными плашками с фиолетовой иконкой, список читался как две строки одного
+ *  меню, а не как два разных места; заливка отвечает на «куда это ведёт»
+ *  раньше, чем прочитана подпись, — так устроены разделы в Telegram и в
+ *  настройках iOS. Тон не произвольный: общие чаты — акцент продукта,
+ *  голос — факел марки. */
 function Рельса({
   to,
   icon: Icon,
+  tone,
   label,
   hint,
 }: {
   to: string;
   icon: typeof Users;
+  tone: "accent" | "flame";
   label: string;
-  hint?: string;
+  hint: string;
 }) {
   return (
     <Link
       to={to}
       onClick={() => haptic("light")}
-      className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
-                 bg-surface-2 border border-hairline active:bg-surface
-                 transition-colors"
+      className="flex items-center gap-3 px-3.5 py-2.5
+                 active:bg-surface transition-colors"
     >
-      <Icon size={18} className="text-accent shrink-0" />
+      <span
+        aria-hidden="true"
+        className={`nav-tile ${tone === "flame" ? "tile-flame" : "tile-accent"}`}
+      >
+        <Icon size={19} strokeWidth={2.1} />
+      </span>
       <span className="flex-1 min-w-0">
-        <span className="block text-[14.5px] font-semibold">{label}</span>
-        {hint && (
-          <span className="block text-[12.5px] text-text-muted">{hint}</span>
-        )}
+        <span className="block text-[14.5px] font-semibold leading-snug">{label}</span>
+        <span className="block text-[12.5px] text-text-muted leading-snug mt-px">
+          {hint}
+        </span>
       </span>
       <ChevronRight size={17} className="text-text-faint shrink-0" />
     </Link>
   );
 }
 
+/** Обе двери одной картой: это один узел «где ещё говорят», а не два
+ *  независимых блока — двумя отдельными плашками они спорили за внимание
+ *  со списком переписок, ради которого экран и открывают. */
+function Двери() {
+  return (
+    <div
+      className="mx-4 rounded-[var(--radius-card)] overflow-hidden
+                 bg-surface-2 border border-hairline"
+    >
+      <Рельса
+        to="/rooms"
+        tone="accent"
+        icon={Users}
+        label="Чаты по интересам"
+        hint="Общая комната: написать первым проще, чем в личку"
+      />
+      {/* Линия от края плитки, а не от края карты — как в списках Telegram */}
+      <span aria-hidden="true" className="block h-px ml-16 bg-hairline" />
+      <Рельса
+        to="/voice"
+        tone="flame"
+        icon={Mic}
+        label="Голосовая рулетка"
+        hint="Минута голосом говорит больше десяти сообщений"
+      />
+    </div>
+  );
+}
+
 export default function Matches() {
   const navigate = useNavigate();
   const язык = useЯзык();
-  const { matches, setMatches, setUnreadMessages } = useStore();
+  const { matches, setMatches, setUnreadMessages, unreadLikes } = useStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   // Суточный лимит открытых мэтчей. Запрашиваем только если в списке
@@ -184,6 +226,12 @@ export default function Matches() {
   // беседа уезжала бы в «Новые совпадения» вместе с настоящими новыми
   const fresh = matches.filter((m) => !m.last_message && !m.last_message_at);
   const conversations = matches.filter((m) => m.last_message || m.last_message_at);
+
+  // Присутствие сервер считал и присылал (`is_online` в /matches, порог —
+  // last_seen_at за последние минуты, инкогнито и пауза его гасят), а список
+  // молча выбрасывал. Это главный сигнал любого мессенджера и единственный,
+  // который отвечает «писать сейчас или позже»
+  const в_сети = matches.filter((m) => !m.locked && m.partner.is_online).length;
 
   if (loading) {
     return (
@@ -282,19 +330,10 @@ export default function Matches() {
           <p className="text-caption text-text-muted mt-8 mb-2.5">
             Пока никого — говорят здесь
           </p>
-          <div className="grid gap-2">
-            <Рельса
-              to="/rooms"
-              icon={Users}
-              label="Чаты по интересам"
-              hint="Общая комната: написать первым проще, чем в личку"
-            />
-            <Рельса
-              to="/voice"
-              icon={Mic}
-              label="Голосовая рулетка"
-              hint="Минута голосом говорит больше десяти сообщений"
-            />
+          {/* -mx-4: карта дверей держит собственные поля экрана, а этот блок
+              уже внутри px-4 — иначе она встала бы уже остального текста */}
+          <div className="-mx-4">
+            <Двери />
           </div>
         </div>
       </div>
@@ -309,9 +348,13 @@ export default function Matches() {
            под заголовком «Чаты» пересчитывали и беседы без взаимного лайка,
            и мэтчи из верхней ленты, где переписки ещё нет вовсе */
         subtitle={
-          conversations.length
+          (conversations.length
             ? `${conversations.length} ${plural(conversations.length, "переписка", "переписки", "переписок")}`
-            : `${matches.length} ${plural(matches.length, "совпадение", "совпадения", "совпадений")}`
+            : `${matches.length} ${plural(matches.length, "совпадение", "совпадения", "совпадений")}`) +
+          /* «в сети» — то же, что стоит под заголовком в Telegram и VK:
+             первая причина открыть список именно сейчас. Цифру считаем по
+             тем же данным, что рисуют точки на аватарах */
+          (в_сети ? ` · ${в_сети} в сети` : "")
         }
       />
 
@@ -321,9 +364,8 @@ export default function Matches() {
 
       {/* Комнаты и рулетка: в общий чат написать проще, чем первым в личку,
           поэтому обе двери живут рядом со списком переписок */}
-      <div className="mx-4 mt-3 grid gap-2">
-        <Рельса to="/rooms" icon={Users} label="Чаты по интересам" />
-        <Рельса to="/voice" icon={Mic} label="Голосовая рулетка" />
+      <div className="mt-3">
+        <Двери />
       </div>
 
       {/* ── Новые мэтчи ────────────────────────────────────── */}
@@ -346,6 +388,7 @@ export default function Matches() {
                   size={64}
                   ring={!m.locked}
                   locked={m.locked}
+                  online={m.partner.is_online}
                 />
                 <span className="text-[12px] text-text-secondary truncate w-full text-center">
                   {m.locked ? "Закрыт" : m.partner.display_name}
@@ -362,11 +405,18 @@ export default function Matches() {
           <h2 className="px-4 text-caption text-text-muted mb-2">Сообщения</h2>
           <ul>
             {conversations.map((m, i) => (
+              /* Разделитель — псевдоэлементом строки, с отступом до края
+                 аватара: тремя парящими строками без единой линии список не
+                 читался списком, а сплошная линия во всю ширину рубила бы
+                 колонку аватаров. Ровно так устроены Telegram и VK. */
               <motion.li
                 key={m.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.03, 0.25) }}
+                className="relative after:absolute after:left-[84px] after:right-0
+                           after:bottom-0 after:h-px after:bg-hairline/70
+                           last:after:hidden"
               >
                 <button
                   onClick={() => open(m)}
@@ -379,6 +429,7 @@ export default function Matches() {
                     seed={m.partner.id}
                     size={56}
                     locked={m.locked}
+                    online={m.partner.is_online}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
@@ -389,6 +440,11 @@ export default function Matches() {
                       >
                         {m.locked ? "Кто-то вам написал" : m.partner.display_name}
                       </span>
+                      {/* Точка на аватаре — только для глаз; голосом её
+                          не прочитать, поэтому статус дублируем словами */}
+                      {!m.locked && m.partner.is_online && (
+                        <span className="sr-only">, в сети</span>
+                      )}
                       {/* Наклейка рядом с именем: в списке фото нет, значку
                           лечь некуда. 24px, не меньше: персонажи с деталями
                           (Март 7, Пепе в маске) на 16–20 сливаются в пятно */}
@@ -473,6 +529,55 @@ export default function Matches() {
         </section>
       )}
 
+      {/* ── Конец списка ───────────────────────────────────
+          Три переписки занимали четверть экрана, а ниже шла треть высоты,
+          на которой взгляд останавливался и не находил ничего. Ставим сюда
+          не украшение, а то, что у продукта уже есть: лайки, которые ждут
+          ответа (цифра приходит с /badges вместе с бейджем вкладки), либо,
+          когда их нет, честный конец и прямой вход в ленту. */}
+      <section className="px-4 pt-5 pb-3">
+        {unreadLikes > 0 ? (
+          <Link
+            to="/likes"
+            onClick={() => haptic("light")}
+            className="flex items-center gap-3.5 p-3.5 rounded-[var(--radius-card)]
+                       bg-surface-2 border border-hairline
+                       active:bg-surface transition-colors"
+          >
+            <span
+              aria-hidden="true"
+              className="nav-tile tile-flame"
+              style={{ width: 44, height: 44, borderRadius: 13 }}
+            >
+              <Heart size={21} fill="currentColor" strokeWidth={0} />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[15px] font-semibold leading-snug">
+                Вас лайкнули
+              </span>
+              <span className="block text-[12.5px] text-text-muted leading-snug mt-px">
+                {unreadLikes} {plural(unreadLikes, "человек", "человека", "человек")} —
+                ответная симпатия открывает чат
+              </span>
+            </span>
+            <ChevronRight size={17} className="text-text-faint shrink-0" />
+          </Link>
+        ) : (
+          <div
+            className="rounded-[var(--radius-card)] border border-hairline
+                       bg-surface-2/50 px-4 py-5 text-center"
+          >
+            <p className="text-[14.5px] font-semibold">Это все переписки</p>
+            <p className="text-[13px] text-text-muted leading-snug mt-1 mb-3.5 mx-auto max-w-[30ch]">
+              Новые появятся, когда симпатия станет взаимной
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => navigate("/discover")}>
+              Смотреть анкеты
+            </Button>
+          </div>
+        )}
+      </section>
+
       {/* Один лист на все закрытые строки: объяснение и вход в подписку */}
       <LimitSheet
         kind="matches"
@@ -493,6 +598,7 @@ function Avatar({
   size,
   ring,
   locked,
+  online,
 }: {
   src?: string;
   name?: string;
@@ -502,23 +608,22 @@ function Avatar({
   ring?: boolean;
   /** Мэтч за суточным лимитом: ни фото, ни первой буквы имени. */
   locked?: boolean;
+  /** Точка присутствия. У закрытого мэтча не показываем ничего: сам факт,
+   *  что человек сейчас в сети, — уже сведения о нём. */
+  online?: boolean;
 }) {
-  if (locked) {
-    return (
-      <div
-        style={{ width: size, height: size }}
-        className="rounded-full shrink-0 bg-surface-2 border border-hairline
-                   flex items-center justify-center"
-      >
-        <Lock size={size / 2.8} className="text-text-faint" />
-      </div>
-    );
-  }
-
-  return (
+  const круг = locked ? (
     <div
       style={{ width: size, height: size }}
-      className={`rounded-full overflow-hidden shrink-0 ${
+      className="rounded-full bg-surface-2 border border-hairline
+                 flex items-center justify-center"
+    >
+      <Lock size={size / 2.8} className="text-text-faint" />
+    </div>
+  ) : (
+    <div
+      style={{ width: size, height: size }}
+      className={`rounded-full overflow-hidden ${
         ring ? "avatar-ring" : "bg-surface-2"
       }`}
     >
@@ -538,6 +643,21 @@ function Avatar({
         >
           {name?.[0]?.toUpperCase() ?? "?"}
         </div>
+      )}
+    </div>
+  );
+
+  // Обёртка вокруг круга, а не точка внутри него: круг режет содержимое
+  // маской, и точка на краю обрезалась бы ровно наполовину
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      {круг}
+      {online && !locked && (
+        <span
+          aria-hidden="true"
+          className="presence-dot"
+          style={{ "--dot": `${Math.round(size * 0.23)}px` } as CSSProperties}
+        />
       )}
     </div>
   );

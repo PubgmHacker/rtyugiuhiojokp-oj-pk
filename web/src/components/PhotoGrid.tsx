@@ -1,5 +1,5 @@
 import { useCallback, useId, useState } from "react";
-import { Camera, X, Star } from "lucide-react";
+import { Camera, X, Star, Plus } from "lucide-react";
 import { uploadPhoto } from "../lib/api";
 import { haptic } from "../lib/haptics";
 import { Spinner } from "./ui";
@@ -94,17 +94,26 @@ export default function PhotoGrid({
   onRemove: (id: string) => void;
   onMakePrimary: (id: string) => void;
 }) {
+  // Главное фото занимает столько места, сколько весит в продукте: по нему
+  // свайпают в деке, оно стоит в лайках, чатах и «Гостях». Ведущая плитка 2×2
+  // в сетке из четырёх колонок, четыре маленьких ровно закрывают оставшиеся
+  // ячейки двух рядов — сетка сходится без дырки в конце (3×2 при пяти слотах
+  // всегда оставляла шестую ячейку пустой) и становится на ~78 px короче.
+  // Раскладка сходится, только когда остаток делится на четыре: 5, 9, 13.
+  const ведущая = (max - 1) % 4 === 0;
+
   return (
-    <div className="grid grid-cols-3 gap-2.5">
+    <div className={ведущая ? "grid grid-cols-4 gap-2" : "grid grid-cols-3 gap-2.5"}>
       {Array.from({ length: max }).map((_, i) => (
         <PhotoTile
           key={photos[i]?.id ?? `empty-${i}`}
           slot={photos[i]}
           isPrimary={i === 0}
+          lead={ведущая && i === 0}
           onPick={onPick}
           onRemove={() => photos[i] && onRemove(photos[i].id)}
           onMakePrimary={() => photos[i] && onMakePrimary(photos[i].id)}
-          disabled={i > photos.length}
+          next={i === photos.length}
         />
       ))}
     </div>
@@ -114,19 +123,26 @@ export default function PhotoGrid({
 function PhotoTile({
   slot,
   isPrimary,
+  lead,
   onPick,
   onRemove,
   onMakePrimary,
-  disabled,
+  next,
 }: {
   slot?: PhotoSlot;
   isPrimary: boolean;
+  /** Ведущая ячейка 2×2 — только под главное фото. */
+  lead: boolean;
   onPick: (f: File) => void;
   onRemove: () => void;
   onMakePrimary: () => void;
-  disabled: boolean;
+  /** Ближайший свободный слот: снимок ляжет именно сюда. */
+  next: boolean;
 }) {
   const inputId = useId();
+  // Высоту двух рядов ведущей плитке задают соседние маленькие: свой
+  // aspect-ratio здесь дал бы вторую, спорящую с ними меру.
+  const рамка = lead ? "col-span-2 row-span-2" : "aspect-[3/4]";
 
   const fileInput = (
     <input
@@ -134,7 +150,6 @@ function PhotoTile({
       type="file"
       accept="image/*"
       className="hidden"
-      disabled={disabled}
       onChange={(e) => {
         const f = e.target.files?.[0];
         if (!f) return;
@@ -188,15 +203,16 @@ function PhotoTile({
 
   if (slot?.url) {
     return (
-      <div className="relative aspect-[3/4] rounded-[var(--radius-tile)] overflow-hidden bg-surface-2">
+      <div className={`relative ${рамка} rounded-[var(--radius-tile)] overflow-hidden bg-surface-2`}>
         <img src={slot.url} alt="" className="w-full h-full object-cover" />
         {isPrimary ? (
           <span
-            className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full
-                       bg-accent text-[10px] font-bold text-white
-                       flex items-center gap-1"
+            className={`absolute top-2 left-2 rounded-full bg-accent font-bold
+                        text-white flex items-center gap-1 ${
+                          lead ? "px-2.5 py-1 text-[11.5px]" : "px-2 py-0.5 text-[10px]"
+                        }`}
           >
-            <Star size={9} fill="currentColor" />
+            <Star size={lead ? 11 : 9} fill="currentColor" />
             Главное
           </span>
         ) : (
@@ -209,13 +225,19 @@ function PhotoTile({
             className="absolute inset-0 flex items-end justify-start p-1.5
                        active:bg-black/25 transition-colors"
           >
+            {/* На маленькой плитке подпись шире самой плитки и лезет
+                на соседнюю колонку — там остаётся один значок, слово
+                живёт только на крупной ячейке */}
             <span
-              className="px-2 py-0.5 rounded-full bg-black/55 backdrop-blur-sm
-                         text-[10px] font-semibold text-white
-                         flex items-center gap-1"
+              className={`rounded-full bg-black/55 backdrop-blur-sm text-white
+                          font-semibold flex items-center ${
+                            lead
+                              ? "gap-1 px-2 py-0.5 text-[10px]"
+                              : "w-6 h-6 justify-center"
+                          }`}
             >
-              <Star size={9} />
-              Главным
+              <Star size={lead ? 9 : 12} />
+              {lead ? "Главным" : null}
             </span>
           </button>
         )}
@@ -233,7 +255,7 @@ function PhotoTile({
 
   if (slot?.uploading) {
     return (
-      <div className="aspect-[3/4] rounded-[var(--radius-tile)] skeleton flex items-center justify-center">
+      <div className={`${рамка} rounded-[var(--radius-tile)] skeleton flex items-center justify-center`}>
         <Spinner size={20} />
       </div>
     );
@@ -243,9 +265,9 @@ function PhotoTile({
     return (
       <label
         htmlFor={inputId}
-        className="aspect-[3/4] rounded-[var(--radius-tile)] cursor-pointer
-                   border border-danger/40 bg-danger/10 p-2
-                   flex flex-col items-center justify-center text-center gap-1"
+        className={`${рамка} rounded-[var(--radius-tile)] cursor-pointer
+                    border border-danger/40 bg-danger/10 p-2
+                    flex flex-col items-center justify-center text-center gap-1`}
       >
         <X size={18} className="text-danger" />
         <span className="text-[10.5px] leading-tight text-danger">{slot.error}</span>
@@ -254,23 +276,41 @@ function PhotoTile({
     );
   }
 
-  // Свободные слоты дальше очереди больше не гасим до 35 %: поверх живого
-  // фона полупрозрачная плитка пропускала розовый орб и читалась как сбой
-  // отрисовки — из пяти ячеек четыре выглядели сломанными. Сетка теперь стоит
-  // ровной рамкой, а пунктир и значок остаются только у той ячейки, в которую
-  // снимок и ляжет: заполнение идёт по порядку, и подсказывать надо одну цель.
+  // Свободный слот — это приглашение, а не выключенный прямоугольник. Раньше
+  // всё, что дальше очереди, стояло инертным (`pointer-events-none`, без
+  // значка): из пяти ячеек четыре читались как заглушки, и экран выглядел
+  // наполовину сломанным. Загрузка всё равно идёт в конец списка, куда бы ни
+  // ткнули, — значит и вести себя все свободные ячейки должны одинаково.
+  // Пунктир и акцент остаются у ближайшей: она показывает, куда ляжет снимок.
   return (
     <label
       htmlFor={inputId}
-      aria-disabled={disabled}
-      className={`aspect-[3/4] rounded-[var(--radius-tile)] bg-surface
-                  flex items-center justify-center ${
-                    disabled
-                      ? "pointer-events-none"
-                      : "border border-dashed border-accent/45 cursor-pointer"
+      className={`${рамка} rounded-[var(--radius-tile)] bg-surface cursor-pointer
+                  flex flex-col items-center justify-center gap-2
+                  transition-colors active:bg-surface-2 ${
+                    next
+                      ? "border border-dashed border-accent/45"
+                      : "border border-hairline"
                   }`}
     >
-      {!disabled && <Camera size={22} className="text-accent/75" />}
+      {lead ? (
+        <>
+          <span aria-hidden="true" className="nav-tile tile-accent">
+            <Camera size={19} strokeWidth={2.1} />
+          </span>
+          <span className="text-caption text-text-muted">Главное фото</span>
+        </>
+      ) : (
+        <>
+          <Plus
+            size={20}
+            strokeWidth={2.2}
+            aria-hidden="true"
+            className={next ? "text-accent" : "text-text-faint"}
+          />
+          <span className="sr-only">Добавить фото</span>
+        </>
+      )}
       {fileInput}
     </label>
   );

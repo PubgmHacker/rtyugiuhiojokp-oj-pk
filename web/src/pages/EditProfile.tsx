@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ChevronLeft, MapPin } from "lucide-react";
+import { Check, ChevronLeft, MapPin, Plus } from "lucide-react";
 import { updateMyProfile, getMyProfile, type UserProfile } from "../lib/api";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { getCurrentPosition } from "../lib/native";
 import { setClosingConfirmation } from "../lib/telegram";
-import { Button, Chip, ScreenHeader, Spinner } from "../components/ui";
+import { Button, Card, Chip, ScreenHeader, Spinner } from "../components/ui";
+import { заполненность } from "../lib/completeness";
 import PhotoGrid, { usePhotoSlots } from "../components/PhotoGrid";
 import VideoGrid, { useVideoSlots } from "../components/VideoGrid";
 import InterestsPicker from "../components/InterestsPicker";
@@ -163,6 +165,27 @@ function EditForm({ base }: { base: UserProfile }) {
     coords,
   ]);
 
+  /* ── Заполненность считаем на живом состоянии, а не на base ──
+     Тот же список пунктов, что на «Профиле» (lib/completeness.ts), но
+     собранный из полей формы: шкала обязана двигаться, пока человек печатает,
+     иначе она врёт ровно на том экране, где её и правят. */
+  const живая = useMemo<UserProfile>(
+    () => ({
+      ...base,
+      display_name: name.trim(),
+      city: city.trim(),
+      bio: bio.trim(),
+      interests,
+      goal,
+      subculture,
+      mbti,
+      height_cm: height.trim() ? Number(height) : null,
+      photos: photos.filter((s) => s.url).map((s) => s.url as string),
+    }),
+    [base, name, city, bio, interests, goal, subculture, mbti, height, photos]
+  );
+  const { percent, missing } = заполненность(живая);
+
   const dirty = Object.keys(patch).length > 0;
   const uploading =
     photos.some((s) => s.uploading) || videos.some((s) => s.uploading);
@@ -186,23 +209,32 @@ function EditForm({ base }: { base: UserProfile }) {
 
   /* ── Фокус из nudge: ?focus=height прокручивает к полю ────── */
   const [highlight, setHighlight] = useState<string | null>(null);
+
+  /** Проскроллить к разделу и подсветить его на пару секунд.
+   *  Один путь на два входа: ссылка ?focus=… из nudge и чипы «осталось» —
+   *  вторая копия этих четырёх строк разошлась бы с первой на первом же фиксе. */
+  const кРазделу = useCallback((key: string) => {
+    const el = document.getElementById(`edit-${key}`);
+    if (!el) return null;
+    el.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    setHighlight(key);
+    return window.setTimeout(() => setHighlight(null), 2400);
+  }, []);
+
   useEffect(() => {
     const raw = new URLSearchParams(search).get("focus");
     if (!raw) return;
     const key = АЛИАСЫ_ФОКУСА[raw] ?? raw;
-    const el = document.getElementById(`edit-${key}`);
-    if (!el) return;
-    // Даём layout отрисоваться, затем скроллим; подсветку держим пару секунд
+    // Даём layout отрисоваться, затем скроллим
+    let снять: number | null = null;
     const t = setTimeout(() => {
-      el.scrollIntoView?.({ behavior: "smooth", block: "center" });
-      setHighlight(key);
+      снять = кРазделу(key);
     }, 80);
-    const t2 = setTimeout(() => setHighlight(null), 2400);
     return () => {
       clearTimeout(t);
-      clearTimeout(t2);
+      if (снять) clearTimeout(снять);
     };
-  }, [search]);
+  }, [search, кРазделу]);
 
   // Несохранённые правки — подтверждение закрытия мини-аппа, как в онбординге
   useEffect(() => {
@@ -262,6 +294,8 @@ function EditForm({ base }: { base: UserProfile }) {
       />
 
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-5 pt-4 pb-6">
+        <Готовность percent={percent} missing={missing} onJump={кРазделу} />
+
         <Section
           id="photos"
           title="Фото"
@@ -531,12 +565,106 @@ function EditForm({ base }: { base: UserProfile }) {
             <Spinner size={20} />
           ) : uploading ? (
             "Фото загружается…"
-          ) : (
+          ) : dirty ? (
             "Сохранить"
+          ) : (
+            // Выключенное «Сохранить» внизу каждого захода читалось поломкой.
+            // Кнопка называет своё состояние, раз действия у неё сейчас нет.
+            "Изменений нет"
           )}
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Живая шкала заполненности анкеты — первое, что видно в форме.
+ *
+ *  На «Профиле» такая же шкала работает уговором: «дозаполните». Здесь человек
+ *  уже внутри редактора, и уговор бессмысленен — нужен прибор. Поэтому проценты
+ *  считаются на текущем состоянии полей и двигаются, пока печатают, а
+ *  недостающие пункты — не перечисление в строку, а кнопки: тап уводит ровно в
+ *  тот раздел, которого не хватает. Полную анкету не прячем, в отличие от
+ *  «Профиля»: там шкала — напоминание и при 100 % лишняя, здесь — показание
+ *  прибора, и исчезнуть в момент победы она не имеет права.
+ */
+function Готовность({
+  percent,
+  missing,
+  onJump,
+}: {
+  percent: number;
+  missing: { key: string; label: string }[];
+  onJump: (key: string) => void;
+}) {
+  const готово = !missing.length;
+
+  return (
+    <Card className="p-4 mb-7">
+      <div className="flex items-baseline justify-between mb-2.5">
+        <span className="text-[15px] font-semibold">
+          {готово ? "Анкета заполнена целиком" : "Анкета заполнена"}
+        </span>
+        <span
+          className={`text-[19px] font-extrabold tabular-nums ${
+            готово ? "text-success" : "text-accent"
+          }`}
+        >
+          {percent}%
+        </span>
+      </div>
+
+      <div
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Заполненность анкеты"
+        className="h-2 rounded-full bg-surface-3 overflow-hidden"
+      >
+        <motion.div
+          initial={false}
+          animate={{ width: `${percent}%` }}
+          transition={{ type: "spring", stiffness: 140, damping: 22 }}
+          className={`h-full rounded-full ${готово ? "bg-success" : "bg-accent"}`}
+        />
+      </div>
+
+      {готово ? (
+        <p className="mt-3 flex items-center gap-1.5 text-caption text-success">
+          <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+          Все поля на месте — так анкету видят в ленте
+        </p>
+      ) : (
+        <>
+          {/* Три ближайших пункта кнопками, а не строкой перечисления: список
+              недостатков угнетает, а три двери — это три действия на один тап.
+              Порядок — вес пункта, то есть сколько процентов он вернёт. */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {missing.slice(0, 3).map((m) => (
+              <button
+                key={`${m.key}-${m.label}`}
+                type="button"
+                onClick={() => onJump(m.key)}
+                className="flex items-center gap-1.5 rounded-full border border-accent/35
+                           bg-accent/12 pl-2 pr-3 py-1.5 text-[12.5px] font-medium
+                           text-text transition-colors active:bg-accent/22"
+              >
+                <Plus size={13} strokeWidth={2.6} aria-hidden="true" className="text-accent" />
+                {m.label}
+              </button>
+            ))}
+          </div>
+          {/* Серый по цветной подложке уходит в 2.4:1 — на карточке
+              вторичный текст берут из её же светлого конца */}
+          {missing.length > 3 && (
+            <p className="mt-2 text-caption text-text-secondary">
+              И ещё {missing.length - 3} — ниже по форме
+            </p>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -561,7 +689,12 @@ function Section({
         highlight ? "ring-2 ring-accent ring-offset-4 ring-offset-bg" : ""
       }`}
     >
-      <p className="text-caption text-text-muted mb-2">{title}</p>
+      {/* Вес заголовку: четырнадцать одинаковых бледных подписей подряд
+          складывались в ровный столбец без единой ступени — глазу не за что
+          было зацепиться при прокрутке. Тише заголовка звучит подсказка. */}
+      <p className="mb-2.5 text-[13.5px] font-semibold tracking-[-0.01em] text-text-secondary">
+        {title}
+      </p>
       {children}
       {hint && <p className="mt-2 text-caption text-text-faint">{hint}</p>}
     </section>

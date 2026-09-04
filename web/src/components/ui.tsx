@@ -54,9 +54,13 @@ export function Button({
   const isDisabled = disabled || loading;
   // Disabled primary: отдельный muted-стиль. opacity на --gradient-torch
   // даёт «грязный» коричнево-красный и серый текст — как сломанная кнопка.
+  // Заливка при этом тоже врала: surface-3 — насыщенная фиолетовая плита, и
+  // выключенная кнопка читалась не «пока рано», а «нажали, и не сработало».
+  // Тихий контур по hairline — тот же язык, которым в анкете помечены пустые
+  // слоты: место занято, работа ещё не сделана.
   const surface =
     isDisabled && variant === "primary"
-      ? "bg-surface-3 text-text-faint border border-hairline"
+      ? "bg-surface-2/70 text-text-faint border border-hairline"
       : VARIANT_CLASS[variant];
 
   return (
