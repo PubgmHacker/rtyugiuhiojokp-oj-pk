@@ -16,6 +16,13 @@ export interface NoteShape {
   title: string;
   /** SVG path в системе координат 0..100. */
   d: string;
+  /**
+   * Куда внутри фигуры класть плашку со звуком и временем (проценты стороны).
+   * У круга это просто «низ», у звезды и ёлки низ — остриё, и плашка вылезла бы
+   * за контур: точка подобрана по ширине фигуры на этой высоте с запасом на
+   * высоту самой плашки.
+   */
+  anchor: { x: number; y: number };
 }
 
 function polygon(points: Array<[number, number]>): string {
@@ -62,25 +69,33 @@ function flower(): string {
 }
 
 export const NOTE_SHAPES: NoteShape[] = [
-  { code: "circle", title: "Круг", d: "M50 0A50 50 0 1 1 50 100A50 50 0 1 1 50 0Z" },
+  {
+    code: "circle",
+    title: "Круг",
+    d: "M50 0A50 50 0 1 1 50 100A50 50 0 1 1 50 0Z",
+    anchor: { x: 50, y: 85 },
+  },
   {
     code: "squircle",
     title: "Квадрат",
     d: "M50 0C88 0 100 12 100 50C100 88 88 100 50 100C12 100 0 88 0 50C0 12 12 0 50 0Z",
+    anchor: { x: 50, y: 86 },
   },
   {
     code: "heart",
     title: "Сердце",
     d: "M50 96C22 74 2 56 2 33C2 17 14 6 27 6C37 6 45 12 50 20C55 12 63 6 73 6C86 6 98 17 98 33C98 56 78 74 50 96Z",
+    anchor: { x: 50, y: 66 },
   },
-  { code: "star", title: "Звезда", d: star() },
-  { code: "hexagon", title: "Шестигранник", d: hexagon() },
+  { code: "star", title: "Звезда", d: star(), anchor: { x: 50, y: 66 } },
+  { code: "hexagon", title: "Шестигранник", d: hexagon(), anchor: { x: 50, y: 81 } },
   {
     code: "tree",
     title: "Ёлка",
     d: "M50 2L72 30H62L82 58H70L94 86H58V98H42V86H6L30 58H18L38 30H28Z",
+    anchor: { x: 50, y: 78 },
   },
-  { code: "flower", title: "Цветок", d: flower() },
+  { code: "flower", title: "Цветок", d: flower(), anchor: { x: 50, y: 75 } },
 ];
 
 export const DEFAULT_NOTE_SHAPE = "circle";

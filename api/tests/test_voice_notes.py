@@ -358,22 +358,36 @@ async def test_кружок_не_видео_и_без_кадров(клиент,
 
 
 def test_миграция_медиа_идёт_за_текущей_головой():
-    """Новая ревизия обязана продолжать цепочку, а не ветвить её."""
+    """Голова у цепочки ровно одна, и медиа-ревизия лежит внутри неё.
+
+    Имя головы здесь НЕ зашито намеренно: оно меняется с каждой новой
+    миграцией, и зашитое значение превращало бы этот сторож в пункт
+    ручного обслуживания — его правили бы не думая. Ветвление ловится
+    самим фактом второй головы, а «медиа доедет до прода» — тем, что
+    ревизия media лежит на пути от головы к корню.
+    """
     import re
     from pathlib import Path
 
     versions = Path(__file__).resolve().parents[1] / "migrations" / "versions"
-    revs, downs = {}, set()
+    revs, вниз = {}, {}
     for f in versions.glob("*.py"):
         t = f.read_text(encoding="utf-8")
         r = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([0-9a-f]+)['\"]", t, re.M)
         d = re.search(r"^down_revision[^=]*=\s*['\"]?([0-9a-f]+|None)", t, re.M)
         if r:
             revs[r.group(1)] = f.name
-        if d and d.group(1) != "None":
-            downs.add(d.group(1))
-    heads = [r for r in revs if r not in downs]
-    assert heads == ["d7a1c4e92b58"], heads
+            вниз[r.group(1)] = d.group(1) if d and d.group(1) != "None" else None
+    heads = [r for r in revs if r not in set(вниз.values())]
+    assert len(heads) == 1, f"цепочка разветвилась: {heads}"
+
+    цепочка, узел = [], heads[0]
+    while узел:
+        assert узел in revs, f"ревизия {узел} потеряна, а на неё ссылаются"
+        цепочка.append(узел)
+        узел = вниз[узел]
+    assert len(цепочка) == len(revs), "не все ревизии на одной линии"
+    assert "d7a1c4e92b58" in цепочка, "медиа-ревизия выпала из цепочки"
 
 
 def test_у_сообщения_есть_поля_медиа():

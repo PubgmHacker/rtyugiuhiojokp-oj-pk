@@ -4,6 +4,7 @@
  */
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { WifiOff } from "lucide-react";
+import { useId } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { haptic, type HapticKind } from "../lib/haptics";
 
@@ -255,30 +256,101 @@ export function Toggle({ on }: { on: boolean }) {
 
 /* ── Бейдж верификации ──────────────────────────────────────── */
 
-export function VerifiedBadge({ size = 18 }: { size?: number }) {
+/* Силуэт печати построен генератором: 12 лепестков, квадратичная Безье
+   на каждый лепесток с контролем C = 2P − (V0+V1)/2, поэтому кривая
+   проходит ровно через вершину, а множество точек совпадает со своим
+   зеркалом x → 24−x. Прежний путь был набран руками: точка (9.6, 20.2)
+   вместо (9.6, 18.2) — левая половина висела на 2 px ниже, отсюда «кривая
+   галочка». Глиф отцентрован по bbox в (12, 12). */
+const ПЕЧАТЬ =
+  "M14.21 3.74Q12 -0.84 9.79 3.74Q5.58 0.88 5.95 5.95Q0.88 5.58 3.74 9.79" +
+  "Q-0.84 12 3.74 14.21Q0.88 18.42 5.95 18.05Q5.58 23.12 9.79 20.26" +
+  "Q12 24.84 14.21 20.26Q18.42 23.12 18.05 18.05Q23.12 18.42 20.26 14.21" +
+  "Q24.84 12 20.26 9.79Q23.12 5.58 18.05 5.95Q18.42 0.88 14.21 3.74Z";
+
+export function VerifiedBadge({
+  size = 18,
+  title = "Профиль верифицирован",
+}: {
+  size?: number;
+  title?: string;
+}) {
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
       fill="none"
-      aria-label="Профиль верифицирован"
+      aria-label={title}
       role="img"
       className="shrink-0"
     >
+      <path d={ПЕЧАТЬ} fill="var(--color-verified)" />
       <path
-        d="M12 2l2.4 1.8 3-.3 1 2.8 2.4 1.8-1 2.9 1 2.9-2.4 1.8-1 2.8-3-.3L12 22l-2.4-1.8-3 .3-1-2.8L3.2 15.9l1-2.9-1-2.9 2.4-1.8 1-2.8 3 .3L12 2z"
-        fill="var(--color-verified)"
-      />
-      <path
-        d="M8.5 12.2l2.3 2.3 4.7-4.7"
+        d="M8.72 12.28L10.88 14.48L15.27 9.53"
         stroke="#fff"
-        strokeWidth="2.1"
+        strokeWidth="2.15"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
   );
+}
+
+/* ── Бейдж команды ──────────────────────────────────────────────
+   Тот же силуэт печати, но золотой и с искрой вместо галочки: рядом
+   с синей верификацией читается как другой класс, а не как её вариант.
+   Искра — тот же генератор, 4 острых луча, боковины впалые (контроль
+   у центра), симметрия по обеим осям. */
+const ИСКРА =
+  "M12 5.9Q11.05 11.05 5.9 12Q11.05 12.95 12 18.1Q12.95 12.95 18.1 12" +
+  "Q12.95 11.05 12 5.9Z";
+
+export function OfficialBadge({
+  size = 18,
+  title = "Аккаунт команды Симпа",
+}: {
+  size?: number;
+  title?: string;
+}) {
+  const uid = useId();
+  const grad = `official-${uid}`;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-label={title}
+      role="img"
+      className="shrink-0"
+    >
+      <defs>
+        <linearGradient id={grad} x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="var(--color-official-hi)" />
+          <stop offset="1" stopColor="var(--color-official)" />
+        </linearGradient>
+      </defs>
+      <path d={ПЕЧАТЬ} fill={`url(#${grad})`} />
+      <path d={ИСКРА} fill="#fff" />
+    </svg>
+  );
+}
+
+/* Один знак на человека, а не два. Золото сильнее синего: «мы» важнее,
+   чем «лицо проверено», а два бейджа подряд на 14 px превращаются в кашу.
+   Все экраны зовут именно этот компонент, поэтому правило живёт в одном
+   месте и не расходится между чатом, декой и анкетой. */
+export function IdentityBadge({
+  profile,
+  size = 18,
+}: {
+  profile: { is_verified?: boolean | null; is_official?: boolean | null };
+  size?: number;
+}) {
+  if (profile.is_official) return <OfficialBadge size={size} />;
+  if (profile.is_verified) return <VerifiedBadge size={size} />;
+  return null;
 }
 
 /* ── Скелетон ───────────────────────────────────────────────── */

@@ -30,7 +30,7 @@ from sqlalchemy import and_, select
 from sqlalchemy import text as sa_text
 
 from database.connection import async_session_factory
-from models.models import Match, Message, Profile, Reel
+from models.models import Match, Message, MessageReaction, Profile, Reel
 from services.analytics import EVENT_FIRST_MESSAGE, track
 from services.direct_messages import (
     DirectDenied,
@@ -39,6 +39,7 @@ from services.direct_messages import (
 )
 from services.media_notes import MAX_MEDIA_SECONDS, VIDEO_NOTE_SHAPES
 from services.public_profile import наша_картинка
+from services.reactions import REACTION_KEYS, нормализовать_реакцию
 from services.push import is_configured, notify_new_message
 from services.realtime import get_redis, publish_bot_event
 from services.streaks import touch_streak_for_message
@@ -76,6 +77,21 @@ MEDIA_FALLBACK_TEXT = {
 #: Столбиков волны в голосовом — цифр 0–9 в строке. Больше не нужно: пузырь
 #: шириной 200px не покажет и этого.
 MAX_WAVEFORM_LEN = 64
+
+#: Сколько букв цитаты уезжает клиенту. Полоска над ответом — одна строка,
+#: длиннее её всё равно не видно, а таскать двухкилобайтный текст в каждом
+#: ответе на него — платить трафиком за невидимое.
+REPLY_PREVIEW_LEN = 140
+
+#: Реакций в минуту от одного человека. Отдельно от сообщений (20/мин):
+#: реакция — это UPDATE одной строки без AI-модерации и без пуша, и она
+#: законно идёт очередями, когда человек разбирает накопившуюся переписку.
+#: Общий с сообщениями счётчик наказывал бы за это молчанием чата.
+REACTION_FLOOD_PER_MINUTE = 60
+
+DENIED_REACTION_FLOOD = DirectDenied(
+    "reaction_flood", "Слишком много реакций подряд — подождите минуту"
+)
 
 
 class ДоставкаОтклонена(Exception):
@@ -127,18 +143,34 @@ async def check_chat_flood(sender_id: str) -> None:
     минуты и истекает сам. При сбое Redis пропускаем: личка — не перебор
     кодов, минута без антифлуда лучше чата, лежащего вместе с кешем.
     """
+    await _минутное_окно(
+        f"dating:chatflood:{sender_id}", CHAT_FLOOD_PER_MINUTE, DENIED_FLOOD
+    )
+
+
+async def check_reaction_flood(user_id: str) -> None:
+    """Антифлуд реакций — своё окно, вдвое шире сообщений (см. константу)."""
+    await _минутное_окно(
+        f"dating:reactflood:{user_id}",
+        REACTION_FLOOD_PER_MINUTE,
+        DENIED_REACTION_FLOOD,
+    )
+
+
+async def _минутное_окно(префикс: str, лимит: int, отказ: DirectDenied) -> None:
+    """Счётчик в Redis на текущую минуту. Сбой кеша — пропускаем."""
     try:
         r = await get_redis()
         bucket = int(time.time()) // 60
-        key = f"dating:chatflood:{sender_id}:{bucket}"
+        key = f"{префикс}:{bucket}"
         used = await r.incr(key)
         if used == 1:
             await r.expire(key, 60)
     except Exception as e:
-        logger.error(f"Chat flood check failed ({sender_id}): {e}")
+        logger.error(f"Flood check failed ({префикс}): {e}")
         return
-    if used > CHAT_FLOOD_PER_MINUTE:
-        raise ДоставкаОтклонена(DENIED_FLOOD)
+    if used > лимит:
+        raise ДоставкаОтклонена(отказ)
 
 
 def наше_медиа(url: str | None, sender_id: str) -> bool:
@@ -223,6 +255,128 @@ def media_preview(m: Message) -> dict | None:
     }
 
 
+def вид_сообщения(m: Message) -> str:
+    """Чем сообщение было: text | photo | reel | voice | video_note."""
+    if m.media_kind:
+        return m.media_kind
+    if m.reel_id:
+        return "reel"
+    if m.image_url:
+        return "photo"
+    return "text"
+
+
+def превью_ответа(m: Message | None) -> dict | None:
+    """Цитата над ответом — единая форма для REST и для WebSocket.
+
+    Имя автора не кладём: в личке собеседников двое, и клиент знает обоих по
+    `sender_id`. Лишний JOIN к профилям на каждое сообщение страницы стоил бы
+    дороже, чем экономит.
+
+    Кадр и форма кружка — ради ответа кружком на кружок: без них цитата на
+    видеосообщение выглядит как ответ на пустоту, потому что текста там нет.
+    """
+    if m is None:
+        return None
+    вид = вид_сообщения(m)
+    return {
+        "id": m.id,
+        "sender_id": m.sender_id,
+        "text": (m.text or "")[:REPLY_PREVIEW_LEN],
+        "kind": вид,
+        "shape": m.media_shape if вид == "video_note" else None,
+        "poster": m.media_poster_url if вид == "video_note" else None,
+        "image_url": m.image_url if вид == "photo" else None,
+        "duration": (m.media_duration or 0) if m.media_kind else 0,
+    }
+
+
+def свод_реакций(строки) -> list[dict]:
+    """Реакции сообщения → [{key, users}] в порядке REACTION_KEYS.
+
+    Отдаём не «моя/чужая», а список авторов: одно и то же событие уходит
+    обоим собеседникам, и «моя» у них разная. Считать её на сервере значило
+    бы слать два разных кадра в один чат — самый простой способ развести
+    состояние клиентов. Клиент смотрит, есть ли он в списке.
+    """
+    по_ключу: dict[str, list[str]] = {}
+    for r in строки:
+        по_ключу.setdefault(r.key, []).append(r.user_id)
+    return [
+        {"key": k, "users": по_ключу[k]} for k in REACTION_KEYS if k in по_ключу
+    ]
+
+
+async def реакции_страницы(session, message_ids: list[str]) -> dict[str, list[dict]]:
+    """Реакции для пачки сообщений одним запросом, а не по запросу на каждое."""
+    if not message_ids:
+        return {}
+    result = await session.execute(
+        select(MessageReaction).where(MessageReaction.message_id.in_(message_ids))
+    )
+    по_сообщению: dict[str, list] = {}
+    for r in result.scalars().all():
+        по_сообщению.setdefault(r.message_id, []).append(r)
+    return {mid: свод_реакций(строки) for mid, строки in по_сообщению.items()}
+
+
+async def set_reaction(
+    match_id: str, message_id: str, user_id: str, raw_key: object
+) -> Optional[dict]:
+    """Поставить, сменить или снять реакцию. None — сообщения нет в этом чате.
+
+    Повторное нажатие того же кода снимает реакцию: это ожидание из всех
+    мессенджеров, и без него единственный способ передумать — искать
+    крестик. Другой код заменяет строку, потому что реакция одна на человека.
+
+    Проверка «сообщение из ЭТОГО мэтча» обязательна: id сообщения угадать
+    нельзя, но подставить чужой из другой своей переписки — можно, и тогда
+    реакция ушла бы в чат, где её никто не ждёт.
+    """
+    ключ = нормализовать_реакцию(raw_key)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(Message).where(and_(
+                    Message.id == message_id, Message.match_id == match_id
+                ))
+            )
+            if result.scalar_one_or_none() is None:
+                return None
+
+            result = await session.execute(
+                select(MessageReaction).where(and_(
+                    MessageReaction.message_id == message_id,
+                    MessageReaction.user_id == user_id,
+                ))
+            )
+            своя = result.scalar_one_or_none()
+
+            if ключ is None or (своя is not None and своя.key == ключ):
+                if своя is not None:
+                    await session.delete(своя)
+            elif своя is not None:
+                своя.key = ключ
+            else:
+                session.add(MessageReaction(
+                    message_id=message_id, user_id=user_id, key=ключ
+                ))
+            await session.flush()
+
+            result = await session.execute(
+                select(MessageReaction).where(
+                    MessageReaction.message_id == message_id
+                )
+            )
+            return {
+                "type": "reaction",
+                "match_id": match_id,
+                "message_id": message_id,
+                "reactions": свод_реакций(result.scalars().all()),
+            }
+
+
 def notify_text_for(text: str, image_url: str | None, media: dict | None) -> str:
     """Чем подписать сообщение там, где его нельзя показать целиком."""
     if text:
@@ -268,6 +422,7 @@ async def save_message(
     image_url: Optional[str] = None,
     reel_id: Optional[str] = None,
     media: Optional[dict] = None,
+    reply_to_id: Optional[str] = None,
 ) -> Optional[dict]:
     """Сохранить сообщение и собрать payload события. None — мэтч уже неактивен.
 
@@ -311,6 +466,19 @@ async def save_message(
             if denied:
                 raise ДоставкаОтклонена(denied)
 
+            # Цитата: сообщение обязано быть из ЭТОЙ переписки. Чужой id не
+            # ошибка запроса, а попытка процитировать чужой чат, и молчаливое
+            # обнуление тут правильнее отказа: ответ на реплику, которую уже
+            # удалили, всё равно должен уйти — просто без цитаты.
+            цель = None
+            if reply_to_id:
+                result = await session.execute(
+                    select(Message).where(and_(
+                        Message.id == reply_to_id, Message.match_id == match_id
+                    ))
+                )
+                цель = result.scalar_one_or_none()
+
             # Флаг «ответили» ставится тут же: он снимает лимит с отправителя,
             # и разъехаться с фактом сообщения не должен ни на одном пути
             await mark_answered_if_needed(match, sender_id)
@@ -332,6 +500,7 @@ async def save_message(
                 media_shape=media["shape"] if media else None,
                 media_waveform=media["waveform"] if media else None,
                 media_poster_url=media.get("poster") if media else None,
+                reply_to_id=цель.id if цель is not None else None,
             )
             session.add(message)
             await session.flush()
@@ -357,6 +526,11 @@ async def save_message(
                 # пришлось бы рисовать пересланный ролик двумя разными ветками
                 "reel": preview,
                 "media": media_preview(message),
+                "reply_to": превью_ответа(цель),
+                # Свежее сообщение реакций не имеет — но поле должно быть
+                # всегда: клиент не должен различать «нет реакций» и «поле
+                # из другой ветки кода»
+                "reactions": [],
                 "created_at": message.created_at.isoformat() if message.created_at else None,
             }
 

@@ -329,6 +329,7 @@ describe("зашитых форматов не осталось", () => {
     "web/src/pages/Chat.tsx",
     "web/src/pages/Matches.tsx",
     "web/src/components/LimitSheet.tsx",
+    "web/src/components/AttachmentsSheet.tsx",
     "web/src/App.tsx",
   ];
 

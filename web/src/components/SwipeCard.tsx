@@ -11,7 +11,7 @@ import { Flag, MapPin, Sparkles } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
 import { letterAvatarStyle } from "../lib/aura";
 import { haptic } from "../lib/haptics";
-import { VerifiedBadge } from "./ui";
+import { IdentityBadge } from "./ui";
 import { GOALS, RELATION_TYPES, SUBCULTURES, optionLabel } from "../lib/profileOptions";
 import { decorStyle } from "../lib/decor";
 
@@ -326,7 +326,7 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
               {/* Галочка живой проверки: человек в анкете — реальный.
                   «В сети» незнакомцу не показываем: по нему можно следить за
                   чужим расписанием; статус остаётся только внутри мэтча */}
-              {profile.is_verified && <VerifiedBadge size={20} />}
+              <IdentityBadge profile={profile} size={20} />
             </div>
 
             {(profile.city || profile.distance != null || profile.height_cm != null) && (

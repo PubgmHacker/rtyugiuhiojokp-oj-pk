@@ -15,7 +15,7 @@ from services.plans import deck_priority, tier_from_plan
 from services.public_profile import буст_активен, возраст_из_даты, публичный_возраст
 from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
-from utils import as_list, public_photos, public_videos
+from utils import as_list, официальный, public_photos, public_videos
 
 settings = get_settings()
 
@@ -362,17 +362,21 @@ async def get_deck_profiles(
     # Галочка — одним запросом на всю деку: обращаться за этим на каждую
     # карточку значило бы N+1 на самом горячем экране
     верифицированные: set[str] = set()
+    # Бейдж команды — из той же строки, что галочка
+    команда: set[str] = set()
     # Буст новичка: доля свежести 0..1 по каждому кандидату моложе суток.
     # Едет тем же запросом, что галочка, — не N+1
     свежесть_по_id: dict[str, float] = {}
     if candidate_ids:
         result = await session.execute(
-            select(User.id, User.is_verified, User.created_at)
+            select(User.id, User.is_verified, User.role, User.created_at)
             .where(User.id.in_(candidate_ids))
         )
-        for uid, is_verified, created_at in result.all():
+        for uid, is_verified, role, created_at in result.all():
             if is_verified:
                 верифицированные.add(uid)
+            if официальный(role):
+                команда.add(uid)
             доля = _свежесть(created_at)
             if доля > 0:
                 свежесть_по_id[uid] = доля
@@ -484,6 +488,7 @@ async def get_deck_profiles(
             # согласились общаться. Поле в схеме живёт ради совместимости
             is_online=False,
             is_verified=(profile.user_id in верифицированные),
+            is_official=(profile.user_id in команда),
         ))
 
     # Умная сортировка вместо рандома: общие интересы, город, близость,

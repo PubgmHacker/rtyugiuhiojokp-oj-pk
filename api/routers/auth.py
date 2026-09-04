@@ -33,7 +33,7 @@ from services.email_recovery import (
 from services.mailer import отправить_код
 from services.link_codes import redeem_code
 from services.token_revocation import revoke_all_for_user, revoke_token
-from utils import as_list
+from utils import as_list, официальный
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -54,6 +54,7 @@ def _user_to_profile(user: User, profile: Profile | None) -> UserProfile:
         role=user.role,
         is_banned=user.is_banned,
         is_verified=user.is_verified,
+        is_official=официальный(user.role),
         created_at=user.created_at,
         display_name=profile.display_name if profile else "",
         bio=profile.bio if profile else "",

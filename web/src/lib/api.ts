@@ -70,6 +70,10 @@ export interface UserProfile {
   role?: string;
   is_banned?: boolean;
   is_verified?: boolean;
+  /** Аккаунт команды Симпа: сервер считает его из роли (utils.официальный).
+      Клиент рисует золотой бейдж — чтобы «поддержку» нельзя было сыграть
+      одним именем. */
+  is_official?: boolean;
   display_name: string;
   bio: string;
   gender: string;
@@ -167,6 +171,8 @@ export interface DeckProfile {
   decor?: string | null;
   /** Профиль прошёл живую проверку лица — галочка на карточке. */
   is_verified?: boolean;
+  /** Аккаунт команды Симпа — золотой бейдж вместо синей галочки. */
+  is_official?: boolean;
 }
 
 export interface MatchResponse {
@@ -221,6 +227,34 @@ export interface ChatMedia {
   poster?: string | null;
 }
 
+/**
+ * Цитата над ответом. Имени автора здесь нет намеренно: в личке двое, и
+ * клиент знает обоих по sender_id — лишний JOIN на каждое сообщение
+ * страницы стоил бы дороже, чем экономит.
+ */
+export interface MessageQuote {
+  id: string;
+  sender_id: string;
+  text: string;
+  kind: "text" | "photo" | "reel" | "voice" | "video_note";
+  /** Форма и кадр — только у видеокружка: без них цитата выглядит пустой. */
+  shape?: string | null;
+  poster?: string | null;
+  image_url?: string | null;
+  duration: number;
+}
+
+/**
+ * Реакция на сообщение. Сервер отдаёт список авторов, а не пару
+ * {count, mine}: одно и то же событие уходит обоим собеседникам, и «моя»
+ * у них разная — считать её на сервере значило бы слать два разных кадра
+ * в один чат. Счётчик и «моя» выводит клиент.
+ */
+export interface MessageReaction {
+  key: string;
+  users: string[];
+}
+
 export interface ChatMessage {
   id: string;
   match_id: string;
@@ -229,6 +263,8 @@ export interface ChatMessage {
   image_url?: string | null;
   reel?: ReelPreview | null;
   media?: ChatMedia | null;
+  reply_to?: MessageQuote | null;
+  reactions?: MessageReaction[];
   read_at?: string | null;
   created_at: string;
 }
@@ -437,8 +473,41 @@ export async function likeProfile(
   return data;
 }
 
-export async function getMessages(matchId: string): Promise<ChatMessage[]> {
-  const { data } = await api.get(`/matches/${matchId}/messages`);
+/** Как просить страницу переписки: хвост, назад по времени или вокруг сообщения. */
+export interface MessagesQuery {
+  /**
+   * Курсор прокрутки вверх — время самого старого загруженного сообщения.
+   * Именно время, а не смещение: пришедшее за это время новое сообщение
+   * сдвигает окно offset и одна и та же строка приезжает дважды.
+   */
+  before?: string;
+  /** Страница вокруг сообщения — прыжок из витрины вложений и из цитаты. */
+  around?: string;
+  limit?: number;
+}
+
+export async function getMessages(
+  matchId: string,
+  query: MessagesQuery = {},
+): Promise<ChatMessage[]> {
+  const { data } = await api.get(`/matches/${matchId}/messages`, { params: query });
+  return data;
+}
+
+/**
+ * Поставить, сменить или снять реакцию. Тот же код второй раз — снятие,
+ * это решает сервер: клиент не должен угадывать, что там сейчас лежит,
+ * иначе два быстрых нажатия разъезжаются с базой.
+ */
+export async function putReaction(
+  matchId: string,
+  messageId: string,
+  key: string | null,
+): Promise<{ message_id: string; reactions: MessageReaction[] }> {
+  const { data } = await api.put(
+    `/matches/${matchId}/messages/${messageId}/reaction`,
+    { key },
+  );
   return data;
 }
 
@@ -620,6 +689,42 @@ export async function unmatch(matchId: string): Promise<void> {
 export async function getIcebreakers(matchId: string): Promise<string[]> {
   const { data } = await api.get(`/matches/${matchId}/icebreakers`);
   return data.icebreakers ?? [];
+}
+
+/** Одно вложение переписки. Форма одна на все пять видов — см. API. */
+export interface ChatAttachment {
+  /** По нему витрина прыгает к сообщению, а не открывает файл в отрыве. */
+  message_id: string;
+  kind: "photo" | "reel" | "video_note" | "voice" | "link";
+  url: string;
+  /** Кадр кружка или обложка ролика; у фото совпадает с url. */
+  poster: string;
+  /** Фигура кружка (circle, heart, star…) — витрина рисует ту же. */
+  shape: string;
+  duration: number | null;
+  waveform: string;
+  /** Домен ссылки — заголовок строки. */
+  host: string;
+  from_me: boolean;
+  created_at: string | null;
+}
+
+/** Что переслали друг другу за переписку: счётчики по всей, списки — страницей. */
+export interface ChatAttachments {
+  photos: number;
+  reels: number;
+  video_notes: number;
+  voices: number;
+  voice_seconds: number;
+  links: number;
+  media: ChatAttachment[];
+  voice: ChatAttachment[];
+  link: ChatAttachment[];
+}
+
+export async function getChatAttachments(matchId: string): Promise<ChatAttachments> {
+  const { data } = await api.get(`/matches/${matchId}/attachments`);
+  return data;
 }
 
 /**

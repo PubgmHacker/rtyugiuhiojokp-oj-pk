@@ -54,7 +54,7 @@ import { appearanceByKey, loadAppearance } from "../lib/appearance";
 import { haptic } from "../lib/haptics";
 import { legalUrl } from "../lib/legal";
 import { getCurrentPosition, openExternal } from "../lib/native";
-import { Button, Card, Chip, LoadError, Skeleton, Toggle, VerifiedBadge, Spinner } from "../components/ui";
+import { Button, Card, Chip, LoadError, Skeleton, Toggle, Spinner } from "../components/ui";
 import EmailRecovery from "../components/EmailRecovery";
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "simpmatchbot";

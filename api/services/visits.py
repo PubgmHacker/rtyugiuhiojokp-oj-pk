@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.models import Block, Profile, ProfileVisit, User
+from utils import официальный
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ async def list_visitors(
     hidden |= {row[0] for row in result.all()}
 
     query = (
-        select(ProfileVisit, Profile, User.is_verified)
+        select(ProfileVisit, Profile, User.is_verified, User.role)
         .join(User, ProfileVisit.visitor_id == User.id)
         .outerjoin(Profile, Profile.user_id == ProfileVisit.visitor_id)
         .where(and_(
@@ -114,11 +115,11 @@ async def list_visitors(
     result = await session.execute(query)
 
     out = []
-    for visit, profile, is_verified in result.all():
+    for visit, profile, is_verified, role in result.all():
         if visit.visitor_id in hidden:
             continue
         out.append((
             profile, visit.visitor_id, visit.visits, visit.last_seen_at,
-            bool(is_verified),
+            bool(is_verified), официальный(role),
         ))
     return out

@@ -74,6 +74,11 @@
   --color-warn: #f0b429;
   --color-info: #58a6ff;
   --color-verified: #58a6ff;
+  /* Бейдж команды. Золото, а не второй синий: сотрудник и
+     верифицированный человек — разные вещи, и на аватарке их
+     различают по цвету раньше, чем по глифу. */
+  --color-official: #d99a22;
+  --color-official-hi: #ffd77a;
 
   /* Совместимость с экранами, ещё не переведёнными на новые токены */
   --color-bg-secondary: #100c26;
@@ -1445,79 +1450,51 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   УЗОРЫ ФОНА ЧАТА
+   ОБОИ ПЕРЕПИСКИ
 
-   Рисуем градиентами, а не картинками: сеть в дейтинге дорогая, а
-   узор — украшение, за которое незачем платить запросом.
+   Плоская заливка под сообщениями — самый заметный признак дешёвого
+   мессенджера: и в Telegram, и во ВКонтакте под пузырями лежит мягкий
+   градиент из нескольких цветных пятен, а сверху — необязательный
+   узор очень низкой интенсивности.
+
+   Сами слои собирает src/lib/chatWallpaper.ts и отдаёт инлайновым
+   стилем: пятна ВЫВОДЯТСЯ из базового цвета поворотом тона, поэтому
+   у каждой схемы оформления и у каждой пользовательской темы обои
+   получаются свои — без единой новой колонки в базе и без картинок
+   с сервера (сеть в дейтинге дорогая).
+
+   Здесь остаётся только каркас. Ни `::before`, ни `z-index` детям:
+   псевдоэлемент с z-index:0 красится ПОВЕРХ потоковых блоков, а
+   `> * { z-index: 1 }` делал из группы сообщений контекст наложения
+   и запирал поднятый пузырь под затемнением меню.
    ═══════════════════════════════════════════════════════════════ */
 
 .chat-surface {
   position: relative;
-  background: var(--chat-bg, var(--color-bg));
+  background-color: var(--color-bg);
 }
 
-.chat-surface > * {
-  position: relative;
-  z-index: 1;
-}
-
-.chat-surface[data-pattern]:not([data-pattern="none"])::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.5;
-}
-
-.chat-surface[data-pattern="dots"]::before {
-  background-image: radial-gradient(
-    currentColor 1.2px,
-    transparent 1.3px
+/* Дата и «непрочитанные» лежат прямо на обоях, поэтому им нужна своя
+   подложка с размытием — иначе надпись садится на пятно градиента и
+   теряет контраст. Плашка светлеет от чернил фона, а не от акцента:
+   разделитель дня не событие. */
+.chat-divider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--chat-ink, var(--color-text)) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--chat-ink, var(--color-text)) 10%,
+    transparent
   );
-  background-size: 18px 18px;
-  color: var(--chat-ink, var(--color-text));
-  opacity: 0.08;
-}
-
-.chat-surface[data-pattern="grid"]::before {
-  background-image:
-    linear-gradient(to right, currentColor 1px, transparent 1px),
-    linear-gradient(to bottom, currentColor 1px, transparent 1px);
-  background-size: 26px 26px;
-  color: var(--chat-ink, var(--color-text));
-  opacity: 0.06;
-}
-
-.chat-surface[data-pattern="waves"]::before {
-  background-image: repeating-radial-gradient(
-    circle at 50% 120%,
-    transparent 0 16px,
-    currentColor 16px 17px
-  );
-  background-size: 120px 60px;
-  color: var(--chat-ink, var(--color-text));
-  opacity: 0.05;
-}
-
-.chat-surface[data-pattern="stars"]::before {
-  background-image:
-    radial-gradient(currentColor 0.9px, transparent 1px),
-    radial-gradient(currentColor 0.7px, transparent 0.8px);
-  background-size: 54px 54px, 31px 31px;
-  background-position: 0 0, 17px 23px;
-  color: var(--chat-ink, var(--color-text));
-  opacity: 0.14;
-}
-
-.chat-surface[data-pattern="hearts"]::before {
-  background-image: radial-gradient(
-    circle at 30% 35%, currentColor 3px, transparent 3.4px
-  ),
-  radial-gradient(circle at 46% 35%, currentColor 3px, transparent 3.4px);
-  background-size: 44px 44px;
-  color: var(--chat-accent, var(--color-accent));
-  opacity: 0.1;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
 }
 
 /* ── Живые экраны: онбординг и стена входа ───────────────────

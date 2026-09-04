@@ -32,7 +32,7 @@ from services.premium import current_tier
 from services.plans import superlikes_for, tier_allows
 from services.quotas import likes_state, match_views_state
 from services.push import is_configured, notify_new_match
-from utils import as_list, public_photos, public_videos
+from utils import as_list, официальный, public_photos, public_videos
 
 router = APIRouter(prefix="/likes", tags=["likes"])
 settings = get_settings()
@@ -59,6 +59,7 @@ async def _profile_to_user(
     like_message: str = "",
     *,
     is_verified: bool = False,
+    is_official: bool = False,
 ) -> UserProfile:
     if not profile:
         return UserProfile(id=user_id, like_message=like_message)
@@ -90,6 +91,7 @@ async def _profile_to_user(
         like_message=like_message,
         tg_channel=tg_channel,
         is_verified=is_verified,
+        is_official=is_official,
         # «В сети» здесь не отдаём: кто лайкнул — ещё не мэтч, а по флагу
         # можно следить за чужим расписанием. Статус виден только внутри
         # мэтча (routers/matches.py), как и в деке (services/matching.py)
@@ -444,7 +446,7 @@ async def get_likes_received(
     my_rated = {row[0] for row in result.all()}
 
     result = await session.execute(
-        select(Like, User.is_verified)
+        select(Like, User.is_verified, User.role)
         .join(User, Like.liker_id == User.id)
         .where(and_(
             Like.liked_id == user.id,
@@ -476,7 +478,7 @@ async def get_likes_received(
     revealed = tier_allows(await current_tier(session, user.id), "see_who_liked")
 
     out: list[UserProfile] = []
-    for lk, verified in rows:
+    for lk, verified, role in rows:
         if lk.liker_id in my_rated:
             continue
         if not revealed:
@@ -487,5 +489,6 @@ async def get_likes_received(
         out.append(await _profile_to_user(
             session, profile, lk.liker_id, lk.message or "",
             is_verified=bool(verified),
+            is_official=официальный(role),
         ))
     return out

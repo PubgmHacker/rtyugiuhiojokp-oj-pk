@@ -16,7 +16,7 @@ import {
   EmptyState,
   Skeleton,
   Button,
-  VerifiedBadge,
+  IdentityBadge,
 } from "../components/ui";
 
 export default function Matches() {
@@ -249,7 +249,7 @@ export default function Matches() {
                           className="w-6 h-6 shrink-0 object-contain"
                         />
                       )}
-                      {m.partner.is_verified && <VerifiedBadge size={14} />}
+                      <IdentityBadge profile={m.partner} size={14} />
                       {/* Beседа без взаимного лайка — отличаем визуально: это
                           не мэтч, собеседник может ещё не ответить */}
                       {m.kind === "direct" && !m.locked && (
@@ -257,7 +257,7 @@ export default function Matches() {
                           className="px-1.5 py-[1px] rounded-full text-[10.5px] font-bold
                                      shrink-0 bg-accent/12 text-accent"
                         >
-                          {m.initiator_id === m.partner.id ? "написал(а) вам" : "письмо"}
+                          {m.initiator_id === m.partner.id ? "вам написали" : "ваше письмо"}
                         </span>
                       )}
                       {m.last_message_at && (

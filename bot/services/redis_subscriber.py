@@ -451,7 +451,7 @@ async def _notify_user_about_message(bot, receiver_id: str, sender_id: str, text
         preview = _html.escape(preview, quote=False)
         await bot.send_message(
             chat_id=receiver["telegram_id"],
-            text=f"💬 <b>{sender_name}</b> написал(а) вам:\n\n«{preview}»\n\n"
+            text=f"💬 <b>{sender_name}</b> — новое сообщение:\n\n«{preview}»\n\n"
                  f"Откройте «💕 Мои мэтчи», чтобы ответить.",
         )
     except Exception as e:

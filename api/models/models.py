@@ -398,6 +398,9 @@ class Message(Base):
     __table_args__ = (
         Index("ix_message_match_created", "match_id", "created_at"),
         Index("ix_dating_messages_reel", "reel_id"),
+        # По той же причине, что и reel_id: `SET NULL` при удалении реплики
+        # без индекса сканирует всю переписку в поисках ответов на неё
+        Index("ix_dating_messages_reply", "reply_to_id"),
         # Непрочитанное — самый частый COUNT продукта: бейдж таббара, счётчики
         # в списке чатов, отметка прочтения. Полный индекс дублировал бы всю
         # таблицу; частичный держит только непрочитанные строки (их на порядки
@@ -439,11 +442,57 @@ class Message(Base):
     #: Постер видеокружка — первый промодерированный кадр, лежит в R2 рядом с
     #: видео. Без него iOS показывает пустую фигуру до первого нажатия.
     media_poster_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Ответ на сообщение той же переписки. `SET NULL`, а не `CASCADE`: если
+    #: исходную реплику удалят, ответ остаётся в истории — просто перестаёт
+    #: показывать цитату. Связи-отношения на саму себя нет намеренно: цитаты
+    #: набираются одним `select(...).where(Message.id.in_(...))` на страницу,
+    #: иначе async-сессия ловит ленивую подгрузку на каждое сообщение.
+    reply_to_id: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("dating_messages.id", ondelete="SET NULL"), nullable=True
+    )
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     match: Mapped["Match"] = relationship(back_populates="messages")
     sender: Mapped["User"] = relationship(back_populates="messages")
+    reactions: Mapped[list["MessageReaction"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
+
+
+class MessageReaction(Base):
+    """Реакция на сообщение личной переписки — одна на человека.
+
+    Отдельная таблица, а не счётчики в `dating_messages`: набор реакций мы
+    ещё будем менять, а колонка на каждую превратила бы миграцию набора в
+    миграцию схемы. Плюс без строки на человека нельзя показать «моя» —
+    а без этого повторное нажатие не снимает реакцию.
+
+    Уникальность по паре (сообщение, человек): в мессенджерах одна реакция
+    на реплику. Смена реакции — UPDATE той же строки, поэтому гонка двух
+    вкладок не оставит человеку две.
+    """
+
+    __tablename__ = "dating_message_reactions"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_message_reaction_user"),
+        # Читаются всегда пачкой по сообщениям страницы переписки
+        Index("ix_message_reaction_message", "message_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    message_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_messages.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE")
+    )
+    #: Код из services.reactions.REACTION_KEYS — не эмодзи: интерфейс рисует
+    #: свои знаки, и юникодная картинка в базе привязала бы набор к шрифту.
+    key: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    message: Mapped["Message"] = relationship(back_populates="reactions")
 
 
 class Report(Base):

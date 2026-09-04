@@ -18,7 +18,7 @@ import { MapPin } from "lucide-react";
 import type { UserProfile } from "../lib/api";
 import { letterAvatarStyle } from "../lib/aura";
 import { decorStyle } from "../lib/decor";
-import { VerifiedBadge } from "./ui";
+import { IdentityBadge } from "./ui";
 
 interface Props {
   profile: UserProfile;
@@ -130,7 +130,7 @@ export default function PersonCard({
               {profile.age}
             </span>
           )}
-          {profile.is_verified && <VerifiedBadge size={mini ? 12 : 14} />}
+          <IdentityBadge profile={profile} size={mini ? 12 : 14} />
         </div>
 
         {profile.city && (

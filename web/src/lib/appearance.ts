@@ -10,6 +10,7 @@
  * бы показать вспышку чужой темы на старте.
  */
 
+import { СОБЫТИЕ_СХЕМЫ } from "./chatWallpaper";
 import { onTelegramThemeChange, syncTelegramChrome, telegramColorScheme } from "./telegram";
 
 export type AppearanceKey =
@@ -193,6 +194,11 @@ export function applyAppearance(
   // Мета-тег читают Safari и WKWebView, но не Telegram — его панели красятся
   // только через собственный API. Вне Telegram вызов ничего не делает.
   syncTelegramChrome();
+
+  // Обои переписки выводятся из --color-bg на JS (lib/chatWallpaper.ts) и
+  // сами о смене схемы не узнают: тему Telegram человек может переключить,
+  // не выходя из чата. Событие — дешевле наблюдателя за атрибутом.
+  window.dispatchEvent(new Event(СОБЫТИЕ_СХЕМЫ));
 }
 
 /** Плывут ли орбы фона на этом устройстве. */

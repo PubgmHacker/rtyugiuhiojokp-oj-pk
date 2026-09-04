@@ -1,4 +1,11 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { askConfirm } from "../lib/telegram";
@@ -7,6 +14,7 @@ import {
   ArrowLeft,
   Send,
   MoreVertical,
+  Paperclip,
   Palette,
   ListChecks,
   Sparkles,
@@ -20,6 +28,7 @@ import {
   Heart,
   Mic,
   Video,
+  ChevronDown,
 } from "lucide-react";
 import {
   getMessages,
@@ -32,8 +41,11 @@ import {
   unmatch,
   uploadVoice,
   uploadVideoNote,
+  putReaction,
   type ChatMessage,
   type ChatTheme,
+  type MessageQuote,
+  type MessageReaction,
   type DailyLimits,
   type MatchResponse,
 } from "../lib/api";
@@ -41,7 +53,7 @@ import { ChatWebSocket, type ConnectionStatus } from "../lib/websocket";
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { useIsMounted } from "../hooks/useSafeAsync";
-import { Button, Skeleton, Spinner, VerifiedBadge } from "../components/ui";
+import { Button, IdentityBadge, Skeleton, Spinner } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
 import VoiceBubble from "../components/VoiceBubble";
 import VideoNoteBubble from "../components/VideoNoteBubble";
@@ -49,7 +61,11 @@ import NoteRecorder from "../components/NoteRecorder";
 import { recordingSupported, type NoteKind, type Recording } from "../lib/recorder";
 import { ChatThemeSheet } from "../components/ChatThemeSheet";
 import { HabitsSheet } from "../components/HabitsSheet";
+import { AttachmentsSheet } from "../components/AttachmentsSheet";
 import ProfileSheet from "../components/ProfileSheet";
+import MessageRow from "../components/MessageRow";
+import MessageActions, { type Действие } from "../components/MessageActions";
+import { QuoteBlock, ReplyStrip } from "../components/MessageQuote";
 import { когдаСлот } from "../components/LimitSheet";
 import {
   useЯзык,
@@ -60,6 +76,10 @@ import {
 } from "../lib/i18n";
 import { REPORT_REASONS } from "../lib/profileOptions";
 import { readableOn } from "../lib/aura";
+import { useChatWallpaper } from "../lib/chatWallpaper";
+
+// Порция истории — столько же, сколько сервер отдаёт по умолчанию.
+const ПОРЦИЯ = 50;
 
 export default function Chat() {
   const { matchId } = useParams<{ matchId: string }>();
@@ -73,6 +93,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [историяНеЗагрузилась, setИсторияНеЗагрузилась] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [icebreakers, setIcebreakers] = useState<string[]>([]);
   const [loadingIce, setLoadingIce] = useState(false);
@@ -83,6 +104,9 @@ export default function Chat() {
   const [actionError, setActionError] = useState("");
   const [theme, setTheme] = useState<ChatTheme | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
+  //: Обои переписки: мягкий градиент из пятен плюс узор, выведенные из
+  //: цвета темы пары или, если своей темы нет, из палитры схемы.
+  const обоиЧата = useChatWallpaper(theme?.background_color, theme?.pattern_key);
   const [habitsOpen, setHabitsOpen] = useState(false);
   // Профиль собеседника по тапу на шапку: из чата анкету было не открыть
   // вообще (аудит, блок «Продукт»)
@@ -98,12 +122,57 @@ export default function Chat() {
   const [sendingNote, setSendingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
   const canRecord = useMemo(() => recordingSupported(), []);
+  // Ответ: держим само сообщение, а не id — полосе над полем нужны кадр
+  // кружка и подпись, а искать их заново в ленте пришлось бы уже после
+  // того, как сообщение уехало из окна.
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  // Панель долгого нажатия: вместе с сообщением держим прямоугольник пузыря —
+  // панель встаёт вплотную к нему, а не «где-то по центру экрана».
+  const [menuFor, setMenuFor] = useState<{ msg: ChatMessage; rect: DOMRect } | null>(null);
+  // Прыжок по цитате без подсветки читается как случайная прокрутка
+  const [подсвечено, setПодсвечено] = useState<string | null>(null);
+  const [тост, setТост] = useState("");
+
+  // Сколько новых сообщений пришло, пока человек читал переписку выше
+  const [новых, setНовых] = useState(0);
+  // Ушёл далеко вверх — показываем кнопку возврата, как в мессенджерах
+  const [далеко, setДалеко] = useState(false);
+  // Прокрутка назад по истории. Клиент всегда держал только последнюю
+  // страницу: переписка не листалась вообще, а прыжок к цитате или к
+  // вложению старше пятидесяти сообщений упирался в тупик.
+  const [подгрузка, setПодгрузка] = useState(false);
+  const [историяКончилась, setИсторияКончилась] = useState(false);
+  // Лента стоит на куске из середины переписки (прыжок к вложению или к
+  // цитате): «вниз» тогда значит «вернуться к свежим», а не «прокрутить».
+  const [вКонтексте, setВКонтексте] = useState(false);
 
   const wsRef = useRef<ChatWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const лентаRef = useRef<HTMLDivElement>(null);
+  // Человек у нижнего края (или в 120 px от него) — тогда лента едет за
+  // новыми сообщениями сама; выше — не едет, иначе чтение старого куска
+  // прерывается на каждом «привет»
+  const прижат = useRef(true);
+  const былоСообщений = useRef(0);
+  // Долив старых сообщений сверху удлиняет массив так же, как приход нового
+  // снизу. Без этой метки эффект автопрокрутки принимает долив за приход и
+  // либо уезжает вниз, либо врёт значком «+50 новых».
+  const историяПодгружена = useRef(false);
+  // Высота ленты до долива: после вставки сверху прокрутку надо вернуть на
+  // место, иначе кусок, который человек читал, уедет вниз за край экрана.
+  const восстановитьПрокрутку = useRef<number | null>(null);
+  // Запрос истории идёт — второй не нужен. Реф, а не состояние: обработчик
+  // прокрутки создан один раз и состояние в нём было бы вечно устаревшим.
+  const идётПодгрузка = useRef(false);
+  // Первое сообщение в ленте нужно обработчику прокрутки как курсор, а
+  // пересобирать обработчик на каждое сообщение — терять его в onScroll.
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  messagesRef.current = messages;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSent = useRef(0);
+  const тостТаймер = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const подсветкаТаймер = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const myId = useStore((s) => s.user?.id);
   const язык = useЯзык();
@@ -123,6 +192,12 @@ export default function Chat() {
     // перезапустится на новом matchId, его результат нельзя применять —
     // иначе он затрёт уже открытую переписку данными чужого матча.
     const requestedMatchId = matchId;
+    // Матч меняется без размонтирования: страницы истории прошлой переписки
+    // не должны считаться загруженными, а её курсор — действующим
+    setИсторияКончилась(false);
+    setВКонтексте(false);
+    идётПодгрузка.current = false;
+    восстановитьПрокрутку.current = null;
     const stillCurrent = () =>
       isMounted() && requestedMatchId === currentMatchIdRef.current;
 
@@ -139,6 +214,9 @@ export default function Chat() {
           return [...msgs, ...prev.filter((m) => !seen.has(m.id))];
         });
         setMatch(matchList.find((m) => m.id === requestedMatchId) ?? null);
+        // Страница короче порции — переписка целиком в ленте, и просить у
+        // сервера предыдущую при прокрутке вверх незачем
+        if (msgs.length < ПОРЦИЯ) setИсторияКончилась(true);
       } catch (e: any) {
         if (!stillCurrent()) return;
         if (e?.response?.status === 429) {
@@ -193,6 +271,15 @@ export default function Chat() {
             : "Сообщение не принято"
         );
         haptic("error");
+      } else if (data.type === "reaction") {
+        // Кадр приходит обоим — включая того, кто нажал: так две вкладки
+        // одного человека не разъезжаются, а оптимистичная догадка просто
+        // подтверждается тем же списком авторов.
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === data.message_id ? { ...m, reactions: data.reactions } : m
+          )
+        );
       } else if (data.type === "read") {
         const now = new Date().toISOString();
         const me = useStore.getState().user?.id;
@@ -233,9 +320,151 @@ export default function Chat() {
     };
   }, [matchId, token]);
 
+  // Лента едет вниз не на любое изменение массива: реакция, галочка
+  // «прочитано» и правка сообщения меняют его же, и прыжок к низу на
+  // реакцию по вчерашнему сообщению — то, за что мессенджеры ругают.
+  // Едем на: первую загрузку, своё сообщение, чужое при чтении у низа.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, partnerTyping]);
+    const стало = messages.length;
+    const было = былоСообщений.current;
+    былоСообщений.current = стало;
+    // Долив истории сверху или страница из середины: последнее сообщение
+    // то же самое, ехать некуда и «новых» не прибавилось
+    if (историяПодгружена.current) {
+      историяПодгружена.current = false;
+      return;
+    }
+    if (стало === 0) return;
+
+    if (было === 0) {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+      setНовых(0);
+      return;
+    }
+    if (стало <= было) return; // реакция/прочтение — лента стоит
+
+    const моё = messages[стало - 1]?.sender_id === myId;
+    if (моё || прижат.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      setНовых(0);
+    } else {
+      setНовых((n) => n + (стало - было));
+    }
+  }, [messages, myId]);
+
+  // «Печатает…» подрастает снизу и заслоняет последнее сообщение — но
+  // только если человек и так внизу
+  useEffect(() => {
+    if (partnerTyping && прижат.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [partnerTyping]);
+
+  // Прокрутку возвращаем до кадра: в useEffect прочитанный кусок успевает
+  // мигнуть вниз и вернуться — это видно глазом.
+  useLayoutEffect(() => {
+    const было = восстановитьПрокрутку.current;
+    if (было === null) return;
+    восстановитьПрокрутку.current = null;
+    const el = лентаRef.current;
+    if (!el) return;
+    el.scrollTop += el.scrollHeight - было;
+  }, [messages]);
+
+  const показатьТост = useCallback((текст: string) => {
+    setТост(текст);
+    if (тостТаймер.current) clearTimeout(тостТаймер.current);
+    тостТаймер.current = setTimeout(() => setТост(""), 1800);
+  }, []);
+
+  // Долив старой истории. Курсор — время самого раннего загруженного
+  // сообщения, а не offset: пока человек читает верх, снизу приходят новые,
+  // окно по offset сдвигается и отдаёт ту же страницу второй раз.
+  const подгрузитьСтарые = useCallback(async () => {
+    const матч = currentMatchIdRef.current;
+    if (!матч || идётПодгрузка.current || историяКончилась) return;
+    const самое = messagesRef.current[0];
+    if (!самое?.created_at) return;
+    const el = лентаRef.current;
+    идётПодгрузка.current = true;
+    setПодгрузка(true);
+    try {
+      const порция = await getMessages(матч, {
+        before: самое.created_at,
+        limit: ПОРЦИЯ,
+      });
+      if (!isMounted() || матч !== currentMatchIdRef.current) return;
+      // Короткая страница — значит начало переписки: больше не просим
+      if (порция.length < ПОРЦИЯ) setИсторияКончилась(true);
+      if (порция.length === 0) return;
+      историяПодгружена.current = true;
+      восстановитьПрокрутку.current = el ? el.scrollHeight : null;
+      setMessages((prev) => {
+        const есть = new Set(prev.map((m) => m.id));
+        const новые = порция.filter((m) => !есть.has(m.id));
+        return новые.length ? [...новые, ...prev] : prev;
+      });
+    } catch {
+      // Молча: подгрузка фоновая, и плашка сети поверх переписки назойливее
+      // самой пропажи. Верхний край остался — жест повторит запрос.
+    } finally {
+      if (isMounted()) setПодгрузка(false);
+      идётПодгрузка.current = false;
+    }
+  }, [историяКончилась, isMounted]);
+
+  // Возврат к концу переписки после прыжка в середину: ленту надо не
+  // прокрутить, а перезагрузить — свежих сообщений в ней сейчас нет.
+  const вернутьсяКСвежим = useCallback(async () => {
+    const матч = currentMatchIdRef.current;
+    if (!матч || идётПодгрузка.current) return;
+    идётПодгрузка.current = true;
+    setПодгрузка(true);
+    try {
+      const хвост = await getMessages(матч, { limit: ПОРЦИЯ });
+      if (!isMounted() || матч !== currentMatchIdRef.current) return;
+      историяПодгружена.current = true;
+      восстановитьПрокрутку.current = null;
+      setИсторияКончилась(false);
+      setВКонтексте(false);
+      прижат.current = true;
+      setMessages(хвост);
+      requestAnimationFrame(() =>
+        bottomRef.current?.scrollIntoView({ block: "end" })
+      );
+    } catch {
+      показатьТост("Не удалось вернуться к свежим сообщениям");
+    } finally {
+      if (isMounted()) setПодгрузка(false);
+      идётПодгрузка.current = false;
+    }
+  }, [isMounted, показатьТост]);
+
+  const кНовым = useCallback(() => {
+    setНовых(0);
+    прижат.current = true;
+    // Лента держит кусок из прошлого — «вниз» должно вернуть к свежим
+    // сообщениям, а не к концу этого куска
+    if (вКонтексте) {
+      void вернутьсяКСвежим();
+      return;
+    }
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [вКонтексте, вернутьсяКСвежим]);
+
+  const лентаПрокручена = useCallback(() => {
+    const el = лентаRef.current;
+    if (!el) return;
+    const хвост = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const внизу = хвост < 120;
+    прижат.current = внизу;
+    // «Далеко» считаем от НИЗА, а не от верха: кнопка возвращает к последним
+    setДалеко(хвост > 280);
+    if (внизу) setНовых(0);
+    // Верхний край близко — доливаем предыдущую страницу заранее, чтобы
+    // прокрутка не упиралась в пустоту и не ждала запроса
+    if (el.scrollTop < 200) void подгрузитьСтарые();
+  }, [подгрузитьСтарые]);
 
   /* ── Отправка ────────────────────────────────────────────── */
   // Тему тянем при входе и при возврате на вкладку: её мог поменять
@@ -278,7 +507,7 @@ export default function Chat() {
       const text = (override ?? input).trim();
       if (!text || !wsRef.current) return;
 
-      const sent = wsRef.current.send(text);
+      const sent = wsRef.current.send(text, undefined, undefined, replyTo?.id);
       if (!sent) {
         // Сокет мог отвалиться — текст не теряем
         if (override) setInput(override);
@@ -289,10 +518,11 @@ export default function Chat() {
       }
       setInput("");
       setIcebreakers([]);
+      setReplyTo(null);
       haptic("light");
       if (inputRef.current) inputRef.current.style.height = "auto";
     },
-    [input]
+    [input, replyTo]
   );
 
   const onInputChange = useCallback((value: string) => {
@@ -337,7 +567,7 @@ export default function Chat() {
           const poster = (uploaded as { poster?: string | null }).poster;
           if (poster) media.poster = poster;
         }
-        const sent = wsRef.current?.send("", undefined, media);
+        const sent = wsRef.current?.send("", undefined, media, replyTo?.id);
         if (!sent) {
           setNoteError("Запись не ушла — нет связи. Попробуйте ещё раз");
           haptic("error");
@@ -345,6 +575,7 @@ export default function Chat() {
         }
         haptic("light");
         setRecording(null);
+        setReplyTo(null);
       } catch (e: any) {
         haptic("error");
         const status = e?.response?.status;
@@ -361,7 +592,7 @@ export default function Chat() {
         setSendingNote(false);
       }
     },
-    []
+    [replyTo]
   );
 
   const startNote = useCallback((kind: NoteKind) => {
@@ -369,6 +600,166 @@ export default function Chat() {
     setRecording(kind);
     haptic("light");
   }, []);
+
+  /* ── Ответы, реакции, панель действий ────────────────────── */
+
+  useEffect(
+    () => () => {
+      if (тостТаймер.current) clearTimeout(тостТаймер.current);
+      if (подсветкаТаймер.current) clearTimeout(подсветкаТаймер.current);
+    },
+    []
+  );
+
+  const ответить = useCallback((m: ChatMessage) => {
+    setReplyTo(m);
+    setMenuFor(null);
+    haptic("light");
+    inputRef.current?.focus();
+  }, []);
+
+  // Прыжок к процитированному и к вложению из витрины. Сообщения может не
+  // быть на загруженной странице — тогда просим у сервера страницу вокруг
+  // него и встаём на неё. Раньше здесь была отписка «осталось выше», и любое
+  // фото старше пятидесяти сообщений было тупиком.
+  const прыгнутьК = useCallback(
+    async (id: string) => {
+      const подсветить = (el: HTMLElement) => {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        setПодсвечено(id);
+        if (подсветкаТаймер.current) clearTimeout(подсветкаТаймер.current);
+        подсветкаТаймер.current = setTimeout(() => setПодсвечено(null), 1500);
+      };
+
+      const рядом = document.getElementById(`msg-${id}`);
+      if (рядом) {
+        подсветить(рядом);
+        return;
+      }
+
+      const матч = currentMatchIdRef.current;
+      if (!матч || идётПодгрузка.current) return;
+      идётПодгрузка.current = true;
+      setПодгрузка(true);
+      try {
+        const страница = await getMessages(матч, { around: id, limit: ПОРЦИЯ * 2 });
+        if (!isMounted() || матч !== currentMatchIdRef.current) return;
+        if (страница.length === 0) {
+          показатьТост("Сообщение не найдено в переписке");
+          return;
+        }
+        // Страница из середины заменяет ленту целиком: склеить её с хвостом
+        // нельзя — между ними дыра, и разделители дней соврут о порядке.
+        историяПодгружена.current = true;
+        восстановитьПрокрутку.current = null;
+        setИсторияКончилась(false);
+        setВКонтексте(true);
+        прижат.current = false;
+        setMessages(страница);
+        // Два кадра: первый отдаёт React новую страницу в DOM, второй ждёт
+        // раскладку — иначе прыжок уходит по старым координатам.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const el = document.getElementById(`msg-${id}`);
+            if (el) подсветить(el);
+          })
+        );
+      } catch {
+        показатьТост("Не удалось открыть это место переписки");
+      } finally {
+        if (isMounted()) setПодгрузка(false);
+        идётПодгрузка.current = false;
+      }
+    },
+    [isMounted, показатьТост]
+  );
+
+  // Реакция встаёт сразу, не дожидаясь сервера: сетевая пауза на нажатии по
+  // своему же сообщению читается как «не нажалось». Сокет закрыт — тот же
+  // код уходит по REST, и ответ сервера всё равно перекрывает догадку.
+  const переключитьРеакцию = useCallback(
+    (msg: ChatMessage, key: string) => {
+      const me = myId;
+      if (!me) return;
+      haptic("light");
+      setMenuFor(null);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id ? { ...m, reactions: свестиРеакции(m.reactions, key, me) } : m
+        )
+      );
+      if (wsRef.current?.sendReaction(msg.id, key)) return;
+      if (!matchId) return;
+      putReaction(matchId, msg.id, key)
+        .then((r) =>
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...m, reactions: r.reactions } : m))
+          )
+        )
+        .catch(() => {
+          setNoteError("Реакция не ушла — нет связи");
+          haptic("error");
+        });
+    },
+    [myId, matchId]
+  );
+
+  const открытьМеню = useCallback((msg: ChatMessage, rect: DOMRect) => {
+    setMenuFor({ msg, rect });
+  }, []);
+
+  // Имя над цитатой. Сервер имён в цитате не шлёт намеренно — в личке двое,
+  // и оба известны клиенту по sender_id.
+  const авторЦитаты = useCallback(
+    (id: string) =>
+      id === myId ? "Вы" : match?.partner.display_name || "Собеседник",
+    [myId, match]
+  );
+
+  const действия = useMemo<Действие[]>(() => {
+    const m = menuFor?.msg;
+    if (!m) return [];
+    const список: Действие[] = [
+      { key: "reply", label: "Ответить", icon: "reply", onPick: () => ответить(m) },
+    ];
+    // Кружок в ответ на голосовое или кружок: разговор голосом не должен
+    // обрываться о клавиатуру — камера открывается сразу, с цитатой.
+    if (m.media && canRecord) {
+      список.push({
+        key: "note",
+        label: "Ответить кружком",
+        icon: "note",
+        onPick: () => {
+          setReplyTo(m);
+          setMenuFor(null);
+          startNote("video_note");
+        },
+      });
+    }
+    if (m.text) {
+      список.push({
+        key: "copy",
+        label: "Копировать",
+        icon: "copy",
+        onPick: () => {
+          setMenuFor(null);
+          navigator.clipboard
+            ?.writeText(m.text)
+            .then(() => показатьТост("Скопировано"))
+            .catch(() => показатьТост("Не удалось скопировать"));
+        },
+      });
+    }
+    return список;
+  }, [menuFor, ответить, startNote, показатьТост, canRecord]);
+
+  // Моя реакция берётся из живой ленты, а не из снимка в menuFor: пока панель
+  // открыта, кадр от собеседника мог поменять список.
+  const менюАктив = useMemo(() => {
+    if (!menuFor || !myId) return null;
+    const живое = messages.find((x) => x.id === menuFor.msg.id) ?? menuFor.msg;
+    return живое.reactions?.find((r) => r.users.includes(myId))?.key ?? null;
+  }, [menuFor, messages, myId]);
 
   const loadIcebreakers = useCallback(async () => {
     if (!matchId || loadingIce) return;
@@ -569,7 +960,7 @@ export default function Chat() {
               className="flex items-center gap-1.5 min-w-0 max-w-full text-left"
             >
               <span className="font-semibold text-[15px] truncate">{partnerName}</span>
-              {match?.partner.is_verified && <VerifiedBadge size={14} />}
+              {match?.partner && <IdentityBadge profile={match.partner} size={14} />}
             </button>
             {/* Канал показывает сервер только если у собеседника открыта эта
                 фича по тарифу — здесь просто собираем ссылку из username */}
@@ -643,10 +1034,22 @@ export default function Chat() {
                     <button
                       onClick={() => {
                         setMenuOpen(false);
-                        setReportOpen(true);
+                        setAttachOpen(true);
                       }}
                       className="w-full flex items-center gap-2.5 px-4 py-3 text-left
                                  text-[14.5px] active:bg-surface transition-colors"
+                    >
+                      <Paperclip size={16} className="text-text-secondary" />
+                      Вложения
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setReportOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-3 text-left
+                                 text-[14.5px] border-t border-hairline
+                                 active:bg-surface transition-colors"
                     >
                       <Flag size={16} className="text-warn" />
                       Пожаловаться
@@ -693,15 +1096,16 @@ export default function Chat() {
 
       {/* ── Лента сообщений ─────────────────────────────────── */}
       <div
+        ref={лентаRef}
+        onScroll={лентаПрокручена}
         role="log"
         aria-live="polite"
         aria-relevant="additions"
         aria-label="Переписка"
         className="chat-surface flex-1 min-h-0 overflow-y-auto overscroll-contain
                    no-scrollbar px-3 py-3"
-        data-pattern={theme?.pattern_key || "none"}
         style={{
-          ["--chat-bg" as any]: theme?.background_color || undefined,
+          ...обоиЧата,
           ["--chat-ink" as any]: theme?.background_color
             ? readableOn(theme.background_color)
             : undefined,
@@ -773,15 +1177,26 @@ export default function Chat() {
           </div>
         ) : (
           <>
+            {/* Верх ленты: полоса ожидания, пока едет предыдущая страница.
+                «Начало переписки» — только если человек действительно
+                пролистал историю, иначе подпись висит над тремя фразами */}
+            {подгрузка ? (
+              <div className="flex justify-center py-3" aria-live="polite">
+                <Spinner size={18} />
+              </div>
+            ) : историяКончилась && messages.length >= ПОРЦИЯ ? (
+              <p className="text-center text-[12px] text-text-muted py-3">
+                Начало переписки
+              </p>
+            ) : null}
+
             {groups.map((group) => {
               const last = group.messages[group.messages.length - 1];
               return (
                 <div key={group.key}>
                   {group.dateLabel && (
                     <div className="flex justify-center my-4">
-                      <span className="px-3 py-1 rounded-full bg-surface text-[11.5px] text-text-muted">
-                        {group.dateLabel}
-                      </span>
+                      <span className="chat-divider">{group.dateLabel}</span>
                     </div>
                   )}
 
@@ -792,28 +1207,90 @@ export default function Chat() {
                   >
                     {group.messages.map((m, i) => {
                       const isLast = i === group.messages.length - 1;
+                      const время = formatTime(m.created_at, язык);
                       if (m.media?.kind === "video_note") {
                         // Кружок сам себе пузырь: подложка под звездой или
                         // ёлкой превратила бы форму в «картинку в рамке»
+                        const цитата = m.reply_to;
                         return (
-                          <motion.div
+                          <MessageRow
                             key={m.id}
-                            initial={{ opacity: 0, scale: 0.92 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                            className="py-0.5"
+                            m={m}
+                            mine={group.mine}
+                            myId={myId}
+                            подсвечено={подсвечено === m.id}
+                            поднято={menuFor?.msg.id === m.id}
+                            onReply={ответить}
+                            onMenu={открытьМеню}
+                            onToggleReaction={переключитьРеакцию}
                           >
-                            <VideoNoteBubble media={m.media} mine={group.mine} />
-                          </motion.div>
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.92 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                              className={`py-0.5 flex flex-col ${
+                                group.mine ? "items-end" : "items-start"
+                              }`}
+                            >
+                              {цитата && (
+                                <div className="w-[200px] max-w-full -mb-0.5">
+                                  <QuoteBlock
+                                    quote={цитата}
+                                    author={авторЦитаты(цитата.sender_id)}
+                                    mine={false}
+                                    onJump={() => прыгнутьК(цитата.id)}
+                                  />
+                                </div>
+                              )}
+                              {/* Время стоит рядом с формой, а не под ней: под
+                                  звездой оно висело само по себе и читалось
+                                  как подпись к следующему сообщению */}
+                              <div
+                                className={`flex items-end gap-1.5 ${
+                                  group.mine ? "flex-row-reverse" : ""
+                                }`}
+                              >
+                                <VideoNoteBubble media={m.media} mine={group.mine} />
+                                <span className="pb-1.5">
+                                  <МетаСообщения
+                                    время={время}
+                                    mine={group.mine}
+                                    прочитано={!!m.read_at}
+                                    наФоне
+                                    цветФона={theme?.background_color}
+                                  />
+                                </span>
+                              </div>
+                            </motion.div>
+                          </MessageRow>
                         );
                       }
+
+                      // Время с галочками — внутри пузыря, как в мессенджерах.
+                      // Снаружи оно отрывалось от сообщения и в группе стояло
+                      // одно на всех. Пустая распорка в конце текста бронирует
+                      // ему место в последней строке: иначе оно легло бы
+                      // поверх слов, а перенос строки ради времени — расточительство.
+                      const надМедиа = !m.text && !!(m.image_url || m.reel);
+                      const распорка = group.mine ? 54 : 38;
+
                       return (
-                        <motion.div
+                        <MessageRow
                           key={m.id}
+                          m={m}
+                          mine={group.mine}
+                          myId={myId}
+                          подсвечено={подсвечено === m.id}
+                          поднято={menuFor?.msg.id === m.id}
+                          onReply={ответить}
+                          onMenu={открытьМеню}
+                          onToggleReaction={переключитьРеакцию}
+                        >
+                        <motion.div
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                          className={`max-w-[78%] text-[15px] leading-snug
+                          className={`relative max-w-[78%] text-[15px] leading-snug
                                       break-words selectable ${
                                         m.media?.kind === "voice"
                                           ? "px-2 py-1.5"
@@ -846,6 +1323,14 @@ export default function Chat() {
                                 : undefined,
                           }}
                         >
+                          {m.reply_to && (
+                            <QuoteBlock
+                              quote={m.reply_to}
+                              author={авторЦитаты(m.reply_to.sender_id)}
+                              mine={group.mine}
+                              onJump={() => прыгнутьК(m.reply_to!.id)}
+                            />
+                          )}
                           {m.reel && <ReelBubble reel={m.reel} mine={group.mine} />}
                           {m.media?.kind === "voice" && (
                             <VoiceBubble media={m.media} mine={group.mine} />
@@ -858,32 +1343,42 @@ export default function Chat() {
                             />
                           )}
                           {m.text}
+                          {!!m.text && (
+                            <span
+                              aria-hidden="true"
+                              className="inline-block h-0 align-baseline"
+                              style={{ width: распорка }}
+                            />
+                          )}
+                          <span
+                            className={`absolute pointer-events-none ${
+                              надМедиа
+                                ? "px-1.5 py-[2px] rounded-full text-white"
+                                : ""
+                            }`}
+                            style={
+                              надМедиа
+                                ? {
+                                    right: 12,
+                                    bottom: 10,
+                                    background: "rgba(0,0,0,0.45)",
+                                    backdropFilter: "blur(6px)",
+                                    WebkitBackdropFilter: "blur(6px)",
+                                  }
+                                : { right: 12, bottom: 5 }
+                            }
+                          >
+                            <МетаСообщения
+                              время={время}
+                              mine={group.mine}
+                              прочитано={!!m.read_at}
+                              светлая={надМедиа}
+                            />
+                          </span>
                         </motion.div>
+                        </MessageRow>
                       );
                     })}
-
-                    <div className="flex items-center gap-1 px-1 mt-0.5">
-                      <span
-                        className="text-[10.5px] text-text-faint"
-                        style={{
-                          // `text-faint` — фиксированный цвет под базовый фон.
-                          // Тема красит фон произвольным, и время на нём
-                          // пропадало: берём читаемый по фону.
-                          color: theme?.background_color
-                            ? readableOn(theme.background_color)
-                            : undefined,
-                          opacity: theme?.background_color ? 0.6 : undefined,
-                        }}
-                      >
-                        {formatTime(last.created_at, язык)}
-                      </span>
-                      {group.mine &&
-                        (last.read_at ? (
-                          <CheckCheck size={13} className="text-info" />
-                        ) : (
-                          <Check size={13} className="text-text-faint" />
-                        ))}
-                    </div>
                   </div>
                 </div>
               );
@@ -915,7 +1410,43 @@ export default function Chat() {
       </div>
 
       {/* ── Поле ввода ──────────────────────────────────────── */}
-      <div className="shrink-0 chrome border-t border-hairline/70 px-3 pt-2.5 pb-2 safe-bottom">
+      <div className="relative shrink-0 chrome border-t border-hairline/70 px-3 pt-2.5 pb-2 safe-bottom">
+        {/* Возврат к последним сообщениям: висит над полем, как в Telegram,
+            и носит счётчик пропущенного, чтобы не гадать, стоит ли ехать */}
+        <AnimatePresence>
+          {(далеко || новых > 0 || вКонтексте) && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, scale: 0.7, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.7, y: 8 }}
+              transition={{ type: "spring", stiffness: 520, damping: 30 }}
+              onClick={кНовым}
+              aria-label={
+                новых > 0
+                  ? `К новым сообщениям, ${новых}`
+                  : вКонтексте
+                    ? "Вернуться к свежим сообщениям"
+                    : "К последним сообщениям"
+              }
+              className="absolute right-3 -top-[54px] w-11 h-11 rounded-full liquid
+                         flex items-center justify-center text-text-secondary
+                         float-shadow active:scale-95 transition-transform"
+            >
+              <ChevronDown size={20} />
+              {новых > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1.5 rounded-full
+                             bg-accent text-white text-[11px] font-bold tabular-nums
+                             flex items-center justify-center"
+                >
+                  {новых > 99 ? "99+" : новых}
+                </span>
+              )}
+            </motion.button>
+          )}
+        </AnimatePresence>
+
         {sendError && (
           <p className="text-[12px] text-danger text-center mb-2">
             Сообщение не ушло — нет связи. Попробуйте ещё раз.
@@ -942,6 +1473,29 @@ export default function Chat() {
           </button>
         )}
 
+        <AnimatePresence>
+          {тост && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mx-auto mb-2 w-fit px-3.5 py-1.5 rounded-full
+                         bg-surface-3 text-[13px] text-text-secondary"
+            >
+              {тост}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {replyTo && (
+          <ReplyStrip
+            quote={цитатаИз(replyTo)}
+            author={авторЦитаты(replyTo.sender_id)}
+            onCancel={() => setReplyTo(null)}
+            onJump={() => прыгнутьК(replyTo.id)}
+          />
+        )}
+
         {recording ? (
           <NoteRecorder
             kind={recording}
@@ -955,21 +1509,42 @@ export default function Chat() {
             }}
           />
         ) : (
+          // Камера живёт в поле, как скрепка у мессенджеров, а справа стоит
+          // ровно одна круглая кнопка: две крупные кнопки подряд читались как
+          // панель инструментов, а не как строка сообщения. Переключателя
+          // «микрофон/камера» по тапу нет намеренно — второй тап там регулярно
+          // уходит в запись не того, что хотели.
           <div className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => onInputChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder="Сообщение…"
-              rows={1}
-              className="field flex-1 max-h-[120px] px-4 py-2.5 rounded-[22px] resize-none text-[15px] no-scrollbar"
-            />
+            <div className="relative flex-1 min-w-0">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => onInputChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder="Сообщение…"
+                rows={1}
+                className={`field w-full max-h-[120px] py-2.5 pl-4 rounded-[22px]
+                            resize-none text-[15px] no-scrollbar ${
+                              canRecord ? "pr-11" : "pr-4"
+                            }`}
+              />
+              {canRecord && (
+                <button
+                  aria-label="Записать видеосообщение"
+                  onClick={() => startNote("video_note")}
+                  className="absolute right-1.5 bottom-[5px] w-9 h-9 rounded-full
+                             flex items-center justify-center text-text-muted
+                             active:scale-90 transition-transform"
+                >
+                  <Video size={19} />
+                </button>
+              )}
+            </div>
             {input.trim() || !canRecord ? (
               <button
                 aria-label="Отправить"
@@ -982,29 +1557,15 @@ export default function Chat() {
                 <Send size={18} />
               </button>
             ) : (
-              // Пустое поле — на месте «Отправить» запись: голос и кружок.
-              // Две кнопки, а не переключатель по тапу как в Telegram: второй
-              // тап «чтобы сменить режим» там регулярно уходит в запись
-              <>
-                <button
-                  aria-label="Записать видеосообщение"
-                  onClick={() => startNote("video_note")}
-                  className="w-11 h-11 rounded-full chip text-text shrink-0
-                             flex items-center justify-center
-                             active:scale-95 transition-transform"
-                >
-                  <Video size={19} />
-                </button>
-                <button
-                  aria-label="Записать голосовое"
-                  onClick={() => startNote("voice")}
-                  className="w-11 h-11 rounded-full liquid-primary shrink-0
-                             flex items-center justify-center
-                             active:scale-95 transition-transform"
-                >
-                  <Mic size={19} />
-                </button>
-              </>
+              <button
+                aria-label="Записать голосовое"
+                onClick={() => startNote("voice")}
+                className="w-11 h-11 rounded-full liquid-primary shrink-0
+                           flex items-center justify-center
+                           active:scale-95 transition-transform"
+              >
+                <Mic size={19} />
+              </button>
             )}
           </div>
         )}
@@ -1032,12 +1593,142 @@ export default function Chat() {
         }}
       />
 
+      <AnimatePresence>
+        {menuFor && (
+          <MessageActions
+            anchor={menuFor.rect}
+            mine={menuFor.msg.sender_id === myId}
+            active={менюАктив}
+            actions={действия}
+            onPick={(k) => переключитьРеакцию(menuFor.msg, k)}
+            onClose={() => setMenuFor(null)}
+          />
+        )}
+      </AnimatePresence>
+
       <HabitsSheet open={habitsOpen} onClose={() => setHabitsOpen(false)} />
+
+      {matchId && (
+        <AttachmentsSheet
+          open={attachOpen}
+          onClose={() => setAttachOpen(false)}
+          matchId={matchId}
+          partnerName={match?.partner?.display_name || "собеседник"}
+          onJump={прыгнутьК}
+        />
+      )}
       <ProfileSheet
         profile={profileOpen ? match?.partner ?? null : null}
         onClose={() => setProfileOpen(false)}
       />
     </div>
+  );
+}
+
+/* ── Ответы и реакции: чистые помощники ─────────────────────── */
+
+/**
+ * Что станет с реакциями сообщения, если этот человек нажмёт этот код.
+ *
+ * Повторяет правило сервера (`api/services/chat_delivery.py: set_reaction`):
+ * одна реакция на человека, повторное нажатие снимает, другой код заменяет.
+ * Догадка живёт до ответа сокета и должна совпадать с ним, иначе список
+ * дёрнется на глазах.
+ */
+function свестиРеакции(
+  было: MessageReaction[] | null | undefined,
+  key: string,
+  myId: string
+): MessageReaction[] {
+  const своя = (было ?? []).find((r) => r.users.includes(myId));
+  const снимаем = своя?.key === key;
+  const без = (было ?? [])
+    .map((r) => ({ key: r.key, users: r.users.filter((u) => u !== myId) }))
+    .filter((r) => r.users.length > 0);
+  if (снимаем) return без;
+  const есть = без.find((r) => r.key === key);
+  if (есть) return без.map((r) => (r.key === key ? { ...r, users: [...r.users, myId] } : r));
+  return [...без, { key, users: [myId] }];
+}
+
+/**
+ * Сообщение ленты → цитата в том же виде, в каком её отдаёт сервер.
+ *
+ * Нужна, пока ответ не ушёл: полоса над полем ввода рисуется тем же
+ * компонентом, что и цитата внутри пузыря, и подсовывать ей второй формат
+ * значило бы держать два описания одного и того же.
+ */
+function цитатаИз(m: ChatMessage): MessageQuote {
+  const kind: MessageQuote["kind"] =
+    m.media?.kind === "voice"
+      ? "voice"
+      : m.media?.kind === "video_note"
+        ? "video_note"
+        : m.reel
+          ? "reel"
+          : m.image_url
+            ? "photo"
+            : "text";
+  return {
+    id: m.id,
+    sender_id: m.sender_id,
+    text: m.text,
+    kind,
+    shape: m.media?.shape ?? null,
+    poster: m.media?.poster ?? null,
+    image_url: m.image_url ?? null,
+    duration: m.media?.duration ?? 0,
+  };
+}
+
+/* ── Время и галочки ────────────────────────────────────────── */
+
+/**
+ * Метка под сообщением: время, а у своих — галочки доставки.
+ *
+ * Внутри пузыря берёт его цвет (`currentColor`) и гасится прозрачностью —
+ * так она читается и на акцентном фоне, и на любой пользовательской теме,
+ * где фиксированный «серый» пропадал. На холсте (у видеокружка) цвет считаем
+ * от фона темы.
+ */
+function МетаСообщения({
+  время,
+  mine,
+  прочитано,
+  наФоне,
+  цветФона,
+  светлая,
+}: {
+  время: string;
+  mine: boolean;
+  прочитано: boolean;
+  /** Метка стоит на фоне чата, а не в пузыре. */
+  наФоне?: boolean;
+  цветФона?: string | null;
+  /** Метка лежит поверх картинки — белая по тёмной подложке. */
+  светлая?: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-[3px] text-[10.5px] leading-none
+                  tabular-nums ${наФоне ? "text-text-faint" : ""}`}
+      style={
+        наФоне
+          ? {
+              color: цветФона ? readableOn(цветФона) : undefined,
+              opacity: цветФона ? 0.6 : undefined,
+            }
+          : { opacity: светлая ? 0.92 : 0.68 }
+      }
+    >
+      {время}
+      {mine &&
+        (прочитано ? (
+          <CheckCheck size={13} className={наФоне ? "text-info" : undefined} />
+        ) : (
+          <Check size={13} />
+        ))}
+    </span>
   );
 }
 

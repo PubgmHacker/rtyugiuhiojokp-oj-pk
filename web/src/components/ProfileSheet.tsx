@@ -20,7 +20,7 @@ import { letterAvatarStyle } from "../lib/aura";
 import { haptic } from "../lib/haptics";
 import { decorStyle } from "../lib/decor";
 import { GOALS, RELATION_TYPES, SUBCULTURES, optionLabel } from "../lib/profileOptions";
-import { VerifiedBadge } from "./ui";
+import { IdentityBadge } from "./ui";
 
 interface Props {
   profile: UserProfile | null;
@@ -212,7 +212,7 @@ function Просмотр({
                 {profile.age}
               </span>
             )}
-            {profile.is_verified && <VerifiedBadge size={18} />}
+            <IdentityBadge profile={profile} size={18} />
           </div>
         </div>
       </div>

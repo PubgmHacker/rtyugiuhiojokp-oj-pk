@@ -16,7 +16,7 @@ import { Crown, Paintbrush, Pencil } from "lucide-react";
 import type { UserProfile } from "../lib/api";
 import { coverBackground, coverForProfile } from "../lib/cover";
 import { letterAvatarStyle } from "../lib/aura";
-import { VerifiedBadge } from "./ui";
+import { IdentityBadge } from "./ui";
 
 /** Геометрия лица — цифры Plink (pt → px 1:1). */
 export const ЛИЦО = {
@@ -173,7 +173,7 @@ export default function ProfileFace({
           <h1 className="text-[22px] font-extrabold tracking-[-0.02em] truncate">
             {profile.display_name || "Без имени"}
           </h1>
-          {profile.is_verified && <VerifiedBadge size={19} />}
+          <IdentityBadge profile={profile} size={19} />
           {profile.is_premium && (
             <span
               className="shrink-0 inline-flex items-center gap-1 px-2 h-[18px] rounded-full

@@ -1,23 +1,26 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy import and_, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_session
 from middleware.auth import get_current_user
 from models.models import User, Profile, Like, Match, Message, Reel
 from models.schemas import (
-    DirectMessageRequest, DirectMessageResponse, DirectQuotaOut, MatchResponse, UserProfile,
+    ChatAttachment, ChatAttachments, DirectMessageRequest, DirectMessageResponse,
+    DirectQuotaOut, MatchResponse, UserProfile,
 )
 from services.ai_matchmaker import generate_icebreakers
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import enforce_text_verdict
 from services.chat_delivery import (
-    ДоставкаОтклонена, check_chat_flood, fan_out, media_preview, notify_text_for,
-    нормализовать_медиа, превью_сообщения, reel_preview, save_message,
+    ДоставкаОтклонена, check_chat_flood, check_reaction_flood, fan_out,
+    media_preview, notify_text_for, нормализовать_медиа, превью_ответа,
+    превью_сообщения, reel_preview, реакции_страницы, save_message, set_reaction,
 )
 from services.streaks import (
     can_revive as стрик_оживим, revive_streak, streak_emoji, get_streaks_bulk,
@@ -34,10 +37,23 @@ from services.premium import current_tier
 from services.quotas import match_views_state, open_match, opened_match_ids
 from services.public_profile import публичный_возраст
 from services.stickers import картинка_наклейки
+from services.ws_manager import manager
 from services.decor import безопасный_код
-from utils import as_list, public_photos, public_videos
+from utils import as_list, официальный, public_photos, public_videos
 
 router = APIRouter(prefix="/matches", tags=["matches"])
+
+#: Ссылки из текста сообщений. Ловим http(s) и два частых голых вида
+#: (www., t.me/) — витрине нужен домен и переход, а не полноценный парсер
+#: URL: строгий разбор здесь только терял бы живые ссылки из чата.
+ССЫЛКА_В_ТЕКСТЕ = re.compile(r"https?://[^\s<>\"\']+|(?:www\.|t\.me/)[^\s<>\"\']+", re.I)
+#: Сколько строк отдаём в одну вкладку витрины. Счётчики сверху считаются
+#: отдельным агрегатом по всей переписке и от этого лимита не зависят.
+ВЛОЖЕНИЙ_НА_ВКЛАДКУ = 120
+#: Ссылки приходится искать регуляркой по тексту — базе такой индекс не
+#: построить. Берём последние сообщения с признаком ссылки: переписка, где
+#: их больше, существует только в теории.
+СООБЩЕНИЙ_СО_ССЫЛКАМИ = 400
 
 
 async def _get_own_match(session: AsyncSession, match_id: str, user_id: str) -> Match:
@@ -140,15 +156,18 @@ async def get_matches(
     # (ОНЛАЙН_МИНУТ), чтобы сосед по экрану не спорил с декой.
     недавно = datetime.now(timezone.utc) - timedelta(minutes=ОНЛАЙН_МИНУТ)
     верифицированные: set[str] = set()
+    команда: set[str] = set()
     онлайн: set[str] = set()
     result = await session.execute(
-        select(User.id, User.is_verified, User.last_seen_at).where(
+        select(User.id, User.is_verified, User.role, User.last_seen_at).where(
             User.id.in_(partner_ids)
         )
     )
-    for uid, verified, last_seen in result.all():
+    for uid, verified, role, last_seen in result.all():
         if verified:
             верифицированные.add(uid)
+        if официальный(role):
+            команда.add(uid)
         if last_seen is not None and last_seen.tzinfo is None:
             last_seen = last_seen.replace(tzinfo=timezone.utc)
         if last_seen is not None and last_seen >= недавно:
@@ -230,6 +249,7 @@ async def get_matches(
                 sticker=картинка_наклейки(profile.sticker if profile else None),
                 decor=безопасный_код(profile.decor if profile else None),
                 is_verified=partner_id in верифицированные,
+                is_official=partner_id in команда,
                 is_online=partner_id in онлайн,
             )
 
@@ -280,21 +300,67 @@ async def get_matches(
     return responses
 
 
+async def _страница_вокруг(
+    session: AsyncSession, match_id: str, message_id: str, limit: int,
+) -> list[Message]:
+    """Страница, в центре которой заданное сообщение.
+
+    Витрина вложений прыгает к фотографии из середины переписки, и почти
+    всегда та старше последней страницы. Без этого запроса прыжок упирается
+    в «сообщение осталось выше» — тупик, из которого человеку некуда идти.
+    Листать назад по странице тут нельзя: до трёхнедельного фото это восемь
+    запросов подряд, то есть секунды ожидания на ровном месте.
+    """
+    опора = await session.get(Message, message_id)
+    if опора is None or опора.match_id != match_id:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+
+    половина = max(1, limit // 2)
+    # `>=`, а не `>`: опора должна попасть в страницу — к ней и прыгают.
+    result = await session.execute(
+        select(Message)
+        .where(and_(Message.match_id == match_id, Message.created_at >= опора.created_at))
+        .order_by(Message.created_at)
+        .limit(половина)
+    )
+    новее = list(result.scalars().all())
+    result = await session.execute(
+        select(Message)
+        .where(and_(Message.match_id == match_id, Message.created_at < опора.created_at))
+        .order_by(desc(Message.created_at))
+        .limit(половина)
+    )
+    return list(reversed(result.scalars().all())) + новее
+
+
 @router.get("/{match_id}/messages")
 async def get_messages(
     match_id: str, offset: int = 0, limit: int = 50,
+    before: str | None = None, around: str | None = None,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_own_match(session, match_id, user.id)
     await _открыть_мэтч(session, match_id, user.id)
 
-    # Последние `limit` сообщений (desc + reverse), не первые
-    result = await session.execute(
-        select(Message).where(Message.match_id == match_id)
-        .order_by(desc(Message.created_at)).offset(offset).limit(limit)
-    )
-    messages = list(reversed(result.scalars().all()))
+    if around:
+        messages = await _страница_вокруг(session, match_id, around, limit)
+    else:
+        # Последние `limit` сообщений (desc + reverse), не первые.
+        # `before` — курсор прокрутки вверх: по времени, а не по offset,
+        # потому что пришедшее за это время новое сообщение сдвигает окно
+        # offset на единицу и страница отдаёт то же сообщение дважды.
+        условия = [Message.match_id == match_id]
+        if before:
+            try:
+                условия.append(Message.created_at < datetime.fromisoformat(before))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Некорректный параметр before")
+        result = await session.execute(
+            select(Message).where(and_(*условия))
+            .order_by(desc(Message.created_at)).offset(offset).limit(limit)
+        )
+        messages = list(reversed(result.scalars().all()))
 
     # Превью пересланных роликов: без него получатель видит пустое сообщение.
     # Одним запросом на всю страницу, а не по ролику на сообщение
@@ -304,11 +370,23 @@ async def get_messages(
         result = await session.execute(select(Reel).where(Reel.id.in_(reel_ids)))
         reels = {r.id: r for r in result.scalars().all()}
 
+    # Цитаты: процитированное сообщение может быть старше страницы, поэтому
+    # догружаем недостающие одним запросом, а не по запросу на ответ
+    цитаты: dict[str, Message] = {m.id: m for m in messages}
+    нужны = {m.reply_to_id for m in messages if m.reply_to_id} - set(цитаты)
+    if нужны:
+        result = await session.execute(select(Message).where(Message.id.in_(нужны)))
+        цитаты.update({m.id: m for m in result.scalars().all()})
+
+    реакции = await реакции_страницы(session, [m.id for m in messages])
+
     return [
         {"id": m.id, "sender_id": m.sender_id, "text": m.text,
          "image_url": m.image_url,
          "reel": reel_preview(reels.get(m.reel_id)) if m.reel_id else None,
          "media": media_preview(m),
+         "reply_to": превью_ответа(цитаты.get(m.reply_to_id)) if m.reply_to_id else None,
+         "reactions": реакции.get(m.id, []),
          "read_at": m.read_at.isoformat() if m.read_at else None,
          "created_at": m.created_at.isoformat() if m.created_at else None}
         for m in messages
@@ -366,7 +444,10 @@ async def post_message(
     await session.commit()
 
     try:
-        payload = await save_message(match_id, user.id, text, image_url, media=media)
+        payload = await save_message(
+            match_id, user.id, text, image_url, media=media,
+            reply_to_id=str(data.get("reply_to_id") or "") or None,
+        )
     except ДоставкаОтклонена as отказ:
         # Чужая ссылка — ошибка запроса, остальное — запрет по правилам чата
         код = 400 if отказ.code in ("foreign_image", "foreign_media", "bad_media") else 403
@@ -378,6 +459,41 @@ async def post_message(
         payload, match_id, user.id, partner_id, notify_text_for(text, image_url, media)
     )
     return payload
+
+
+@router.put("/{match_id}/messages/{message_id}/reaction")
+async def put_reaction(
+    match_id: str,
+    message_id: str,
+    data: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Поставить, сменить или снять реакцию на сообщение.
+
+    HTTP-двойник кадра `{"type": "reaction"}` из сокета — по той же причине,
+    что и `POST /messages`: сокет может быть закрыт (плохая сеть, свёрнутое
+    приложение), а нажатие не должно пропадать. Обе точки зовут один
+    `set_reaction`, поэтому разъехаться правилам негде.
+
+    Код вне набора и пустое значение значат «снять» — см. services/reactions.
+    """
+    # Только чтобы убедиться, что чат наш: 404/403 отсюда
+    await _get_own_match(session, match_id, user.id)
+
+    try:
+        await check_reaction_flood(user.id)
+    except ДоставкаОтклонена as отказ:
+        raise HTTPException(status_code=429, detail=отказ.detail)
+
+    свод = await set_reaction(match_id, message_id, user.id, data.get("key"))
+    if свод is None:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+
+    # Собеседнику — тем же кадром, что из сокета. Пуша нет намеренно:
+    # реакция не будит телефон, иначе её перестанут ставить
+    await manager.publish(match_id, свод)
+    return свод
 
 
 @router.get("/direct/quota", response_model=DirectQuotaOut)
@@ -484,6 +600,178 @@ async def get_icebreakers(
     partner_id = match.user2_id if match.user1_id == user.id else match.user1_id
     icebreakers = await generate_icebreakers(session, user.id, partner_id)
     return {"icebreakers": icebreakers}
+
+
+def _домен(url: str) -> str:
+    """Домен ссылки для заголовка строки: без схемы, без www, без пути."""
+    хвост = re.sub(r"^https?://", "", url, flags=re.I)
+    хвост = хвост.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    return re.sub(r"^www\.", "", хвост, flags=re.I).lower()
+
+
+@router.get("/{match_id}/attachments", response_model=ChatAttachments)
+async def get_attachments(
+    match_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Вложения переписки: сколько и какие — как «Вложения» в Telegram.
+
+    Одна ручка на все пять видов вместо пяти: витрина открывается одним
+    нажатием, и было бы странно, если бы вкладки грузились по очереди.
+    """
+    await _get_own_match(session, match_id, user.id)
+    await _открыть_мэтч(session, match_id, user.id)
+
+    # Счётчики — одним агрегатом. CASE, а не FILTER: тестовая база SQLite
+    # и Postgres должны считать одинаково
+    def сколько(условие):
+        return func.coalesce(func.sum(case((условие, 1), else_=0)), 0)
+
+    итог = (
+        await session.execute(
+            select(
+                сколько(Message.image_url.is_not(None)),
+                сколько(Message.reel_id.is_not(None)),
+                сколько(Message.media_kind == "video_note"),
+                сколько(Message.media_kind == "voice"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Message.media_kind == "voice", Message.media_duration),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            ).where(Message.match_id == match_id)
+        )
+    ).one()
+    фото, ролики, кружки, голосовые, секунды = (int(v or 0) for v in итог)
+
+    # ── Медиа: фото, ролики и кружки одной лентой ────────────────
+    result = await session.execute(
+        select(Message)
+        .where(
+            and_(
+                Message.match_id == match_id,
+                or_(
+                    Message.image_url.is_not(None),
+                    Message.reel_id.is_not(None),
+                    Message.media_kind == "video_note",
+                ),
+            )
+        )
+        .order_by(desc(Message.created_at))
+        .limit(ВЛОЖЕНИЙ_НА_ВКЛАДКУ)
+    )
+    строки_медиа = list(result.scalars().all())
+
+    reels: dict[str, Reel] = {}
+    reel_ids = {m.reel_id for m in строки_медиа if m.reel_id}
+    if reel_ids:
+        r = await session.execute(select(Reel).where(Reel.id.in_(reel_ids)))
+        reels = {x.id: x for x in r.scalars().all()}
+
+    медиа: list[ChatAttachment] = []
+    for m in строки_медиа:
+        общее = {
+            "message_id": m.id,
+            "from_me": m.sender_id == user.id,
+            "created_at": m.created_at,
+        }
+        if m.media_kind == "video_note" and m.media_url:
+            медиа.append(ChatAttachment(
+                kind="video_note",
+                url=m.media_url,
+                poster=m.media_poster_url or "",
+                shape=m.media_shape or "circle",
+                duration=m.media_duration,
+                **общее,
+            ))
+        elif m.reel_id:
+            # Снятый модерацией ролик не показываем даже в старой витрине —
+            # та же доктрина, что у reel_preview в самой переписке
+            превью = reel_preview(reels.get(m.reel_id))
+            if превью:
+                медиа.append(ChatAttachment(
+                    kind="reel",
+                    url=превью["video_url"] or "",
+                    poster=превью["cover_url"] or "",
+                    **общее,
+                ))
+        elif m.image_url:
+            медиа.append(ChatAttachment(
+                kind="photo", url=m.image_url, poster=m.image_url, **общее,
+            ))
+
+    # ── Голосовые ────────────────────────────────────────────────
+    result = await session.execute(
+        select(Message)
+        .where(and_(Message.match_id == match_id, Message.media_kind == "voice"))
+        .order_by(desc(Message.created_at))
+        .limit(ВЛОЖЕНИЙ_НА_ВКЛАДКУ)
+    )
+    голос = [
+        ChatAttachment(
+            message_id=m.id,
+            kind="voice",
+            url=m.media_url or "",
+            duration=m.media_duration,
+            waveform=m.media_waveform or "",
+            from_me=m.sender_id == user.id,
+            created_at=m.created_at,
+        )
+        for m in result.scalars().all()
+        if m.media_url
+    ]
+
+    # ── Ссылки ───────────────────────────────────────────────────
+    result = await session.execute(
+        select(Message.id, Message.sender_id, Message.text, Message.created_at)
+        .where(
+            and_(
+                Message.match_id == match_id,
+                or_(
+                    Message.text.ilike("%http%"),
+                    Message.text.ilike("%www.%"),
+                    Message.text.ilike("%t.me/%"),
+                ),
+            )
+        )
+        .order_by(desc(Message.created_at))
+        .limit(СООБЩЕНИЙ_СО_ССЫЛКАМИ)
+    )
+    ссылки: list[ChatAttachment] = []
+    всего_ссылок = 0
+    for mid, sender_id, text, created_at in result.all():
+        for найдена in ССЫЛКА_В_ТЕКСТЕ.findall(text or ""):
+            # Знаки препинания в конце фразы — не часть ссылки
+            найдена = найдена.rstrip(".,;:!?)»\"'")
+            if not найдена:
+                continue
+            всего_ссылок += 1
+            if len(ссылки) < ВЛОЖЕНИЙ_НА_ВКЛАДКУ:
+                ссылки.append(ChatAttachment(
+                    message_id=mid,
+                    kind="link",
+                    url=найдена if "://" in найдена else f"https://{найдена}",
+                    host=_домен(найдена),
+                    from_me=sender_id == user.id,
+                    created_at=created_at,
+                ))
+
+    return ChatAttachments(
+        photos=фото,
+        reels=ролики,
+        video_notes=кружки,
+        voices=голосовые,
+        voice_seconds=секунды,
+        links=всего_ссылок,
+        media=медиа,
+        voice=голос,
+        link=ссылки,
+    )
 
 
 @router.post("/{match_id}/revive-streak")

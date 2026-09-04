@@ -59,7 +59,7 @@ from services.stickers import картинка_наклейки
 from services.decor import безопасный_код
 from services.push import register_device
 from services.visits import count_visits, list_visitors, record_visit
-from utils import as_list, public_photos, public_videos
+from utils import as_list, официальный, public_photos, public_videos
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ async def _deck_like_profile(
     user_id: str,
     *,
     is_verified: bool = False,
+    is_official: bool = False,
 ) -> UserProfile:
     """Публичная часть чужой анкеты — то же, что видно на карточке в деке."""
     if not profile:
@@ -106,6 +107,7 @@ async def _deck_like_profile(
         # Хелпер уже получает is_verified, но раньше не клал его в ответ — тот
         # же разнобой «в одном месте из трёх», которым болел hide_age.
         is_verified=is_verified,
+        is_official=is_official,
     )
 
 
@@ -309,12 +311,13 @@ async def get_my_visitors(
     visitors = [
         VisitorOut(
             profile=await _deck_like_profile(
-                session, profile, visitor_id, is_verified=is_verified
+                session, profile, visitor_id,
+                is_verified=is_verified, is_official=is_official,
             ),
             visits=visits,
             last_seen_at=last_seen,
         )
-        for profile, visitor_id, visits, last_seen, is_verified in await list_visitors(
+        for profile, visitor_id, visits, last_seen, is_verified, is_official in await list_visitors(
             session, user.id, since=since
         )
     ]
@@ -371,6 +374,7 @@ async def get_my_profile(
         role=user.role,
         is_banned=user.is_banned,
         is_verified=user.is_verified,
+        is_official=официальный(user.role),
         created_at=user.created_at,
         display_name=profile.display_name if profile else "",
         bio=profile.bio if profile else "",
@@ -837,6 +841,7 @@ async def update_my_profile(
         role=user.role,
         is_banned=user.is_banned,
         is_verified=user.is_verified,
+        is_official=официальный(user.role),
         created_at=user.created_at,
         display_name=profile.display_name,
         bio=profile.bio,

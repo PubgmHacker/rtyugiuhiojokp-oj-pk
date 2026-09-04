@@ -274,6 +274,7 @@ class Message(Base):
     __table_args__ = (
         Index("ix_message_match_created", "match_id", "created_at"),
         Index("ix_dating_messages_reel", "reel_id"),
+        Index("ix_dating_messages_reply", "reply_to_id"),
         # Частичный индекс непрочитанных — зеркало api/models/models.py
         Index(
             "ix_message_unread", "match_id", "sender_id",
@@ -300,6 +301,11 @@ class Message(Base):
     media_shape: Mapped[str | None] = mapped_column(String(16), nullable=True)
     media_waveform: Mapped[str | None] = mapped_column(String(64), nullable=True)
     media_poster_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: Ответ на сообщение — зеркало api/models/models.py. `SET NULL`, чтобы
+    #: удаление исходной реплики не уносило ответ вместе с ней.
+    reply_to_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("dating_messages.id", ondelete="SET NULL"), nullable=True
+    )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -311,6 +317,31 @@ class Message(Base):
 # поэтому таблицы должны быть объявлены здесь один в один с api,
 # иначе при старте бота "первым" на пустой БД эти таблицы не создадутся.
 # ─────────────────────────────────────────────────────────────────
+
+
+class MessageReaction(Base):
+    """Реакция на сообщение личной переписки — зеркало api/models/models.py.
+
+    Бот реакции не ставит, но таблица обязана быть объявлена и здесь: на
+    пустой базе create_all() бота может отработать первым, и тогда API
+    начнёт писать в несуществующую таблицу.
+    """
+
+    __tablename__ = "dating_message_reactions"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_message_reaction_user"),
+        Index("ix_message_reaction_message", "message_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    message_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_messages.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("dating_users.id", ondelete="CASCADE")
+    )
+    key: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Report(Base):

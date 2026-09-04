@@ -184,8 +184,27 @@ export class ChatWebSocket {
   }
 
   /** @returns true, если сообщение реально ушло в сокет */
-  send(text: string, imageUrl?: string, media?: Record<string, unknown>): boolean {
-    return this.sendRaw({ type: "message", text, image_url: imageUrl, media });
+  send(
+    text: string,
+    imageUrl?: string,
+    media?: Record<string, unknown>,
+    replyToId?: string | null,
+  ): boolean {
+    return this.sendRaw({
+      type: "message", text, image_url: imageUrl, media,
+      reply_to_id: replyToId || undefined,
+    });
+  }
+
+  /**
+   * Реакция. Уходит в сокет, а не по HTTP, когда он открыт: ряд под
+   * сообщением обязан появиться у обоих сразу, а не через круг запроса.
+   * Тот же код второй раз сервер трактует как снятие — клиент не решает.
+   *
+   * @returns true, если кадр ушёл; false — надо доложить по HTTP
+   */
+  sendReaction(messageId: string, key: string | null): boolean {
+    return this.sendRaw({ type: "reaction", message_id: messageId, key });
   }
 
   sendRaw(payload: Record<string, unknown>): boolean {

@@ -14,8 +14,8 @@ from services.ws_manager import manager
 from services.ai_moderation import log_moderation, moderate_text
 from services.enforcement import TEXT_BAN_REASONS, register_text_strike
 from services.chat_delivery import (
-    ДоставкаОтклонена, check_chat_flood, fan_out, notify_text_for,
-    нормализовать_медиа, save_message,
+    ДоставкаОтклонена, check_chat_flood, check_reaction_flood, fan_out,
+    notify_text_for, нормализовать_медиа, save_message, set_reaction,
 )
 from services.token_revocation import is_revoked
 from services.quotas import open_match
@@ -136,6 +136,32 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
                 )
                 continue
 
+            # Реакция на сообщение — не сообщение: ни модерации (код из
+            # закрытого набора), ни пуша (звенеть на каждое нажатие сердца
+            # значит выучить человека выключать уведомления), ни доставки в
+            # Telegram. Только запись и оба клиента.
+            if msg_type == "reaction":
+                message_id = str(data.get("message_id") or "")
+                if not message_id:
+                    continue
+                try:
+                    await check_reaction_flood(user_id)
+                except ДоставкаОтклонена as отказ:
+                    await websocket.send_json(
+                        {"type": "rejected", "reason": отказ.detail}
+                    )
+                    continue
+                свод = await set_reaction(
+                    match_id, message_id, user_id, data.get("key")
+                )
+                if свод is None:
+                    continue
+                # Без exclude: отправителю нужен тот же кадр, что и
+                # собеседнику. Иначе две вкладки одного человека разъедутся,
+                # а оптимистичное состояние некому будет поправить
+                await manager.publish(match_id, свод)
+                continue
+
             if msg_type == "read":
                 await _mark_read(match_id, user_id)
                 await manager.publish(
@@ -226,7 +252,8 @@ async def websocket_chat(websocket: WebSocket, match_id: str):
             # второй кадр из того же соединения
             try:
                 payload = await save_message(
-                    match_id, user_id, text, image_url, media=media
+                    match_id, user_id, text, image_url, media=media,
+                    reply_to_id=str(data.get("reply_to_id") or "") or None,
                 )
             except ДоставкаОтклонена as отказ:
                 await websocket.send_json({"type": "rejected", "reason": отказ.detail})

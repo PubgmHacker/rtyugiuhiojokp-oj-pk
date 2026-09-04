@@ -255,7 +255,7 @@ async def chat_hint(callback: CallbackQuery):
         hint = (
             f"⚡ У вас общие интересы: <b>{escape(', '.join(common[:3]))}</b>.\n\n"
             f"Попробуйте начать с вопроса про «{escape(common[0])}» — например, "
-            f"как {escape(partner.get('display_name', 'собеседник'))} к этому пришёл(ла)."
+            f"с чего это началось у {escape(partner.get('display_name', 'собеседника'))}."
         )
     elif partner and partner.get("bio"):
         hint = (
@@ -265,8 +265,8 @@ async def chat_hint(callback: CallbackQuery):
         )
     else:
         hint = (
-            "⚡ Начните с открытого вопроса: «Как бы ты провёл(а) идеальный "
-            "выходной?» — отвечать на такое интереснее, чем на «привет»."
+            "⚡ Начните с конкретного вопроса: «Спорим, угадаю, что у тебя в "
+            "наушниках прямо сейчас?» — на такое отвечают, в отличие от «привет»."
         )
 
     await callback.answer()

@@ -96,15 +96,17 @@ def _profile(uid: str, **over):
     return SimpleNamespace(**поля)
 
 
-def _входящий_лайк(лайк, *, verified: bool = False):
+def _входящий_лайк(лайк, *, verified: bool = False, role: str = "user"):
     """Строка выборки «кто меня лайкнул».
 
-    Роутер читает из запроса пару `(Like, is_verified)`: галочку он отдаёт тем
-    же ответом, что и саму карточку. Признака «в сети» в этой выборке нет
-    намеренно — по нему можно следить за расписанием человека, который ещё
-    не мэтч; статус виден только внутри мэтча (routers/matches.py).
+    Роутер читает из запроса тройку `(Like, is_verified, role)`: оба бейджа он
+    отдаёт тем же ответом, что и саму карточку, а роль превращает в флаг
+    `is_official` (utils.официальный) — наружу уходит «команда», а не «админ».
+    Признака «в сети» в этой выборке нет намеренно — по нему можно следить за
+    расписанием человека, который ещё не мэтч; статус виден только внутри
+    мэтча (routers/matches.py).
     """
-    return (лайк, verified)
+    return (лайк, verified, role)
 
 
 class _Result:
@@ -318,7 +320,10 @@ async def test_гости_с_ultra_раскрываются(app, monkeypatch):
         profiles,
         "list_visitors",
         _async_return(
-            [(_profile("u-guest"), "u-guest", 3, datetime.now(timezone.utc), True)]
+            [
+                (_profile("u-guest"), "u-guest", 3, datetime.now(timezone.utc), True, False),
+                (_profile("u-staff"), "u-staff", 1, datetime.now(timezone.utc), False, True),
+            ]
         ),
     )
 
@@ -331,10 +336,16 @@ async def test_гости_с_ultra_раскрываются(app, monkeypatch):
     assert данные["revealed"] is True
     assert данные["visitors"][0]["profile"]["display_name"] == "Имя-u-guest"
     assert данные["visitors"][0]["visits"] == 3
-    # Галочка должна доходить и до раздела «Гости», а не только до деки и
-    # списка лайков: list_visitors отдаёт is_verified пятым полем строки.
+    # Оба бейджа должны доходить и до раздела «Гости», а не только до деки и
+    # списка лайков: list_visitors отдаёт is_verified пятым полем строки, а
+    # признак команды — шестым. Раздел собран копипастой от деки, и именно
+    # здесь бейдж терялся раньше.
     assert данные["visitors"][0]["profile"]["is_verified"] is True, (
         "галочка гостя потерялась — is_verified не дошёл до карточки"
+    )
+    assert данные["visitors"][0]["profile"]["is_official"] is False
+    assert данные["visitors"][1]["profile"]["is_official"] is True, (
+        "золотой бейдж команды потерялся — is_official не дошёл до карточки гостя"
     )
 
 
