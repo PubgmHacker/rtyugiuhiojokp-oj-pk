@@ -58,6 +58,28 @@ const VIDEO_MIMES = [
   "video/mp4",
 ];
 
+const KIND_KEY = "sd_note_kind";
+
+/**
+ * Чем записывали в прошлый раз. Кнопка в чате одна и общая: она поднимается
+ * в том режиме, в котором её оставили, — как микрофон/камера в Telegram.
+ */
+export function readPreferredKind(): NoteKind {
+  try {
+    return localStorage.getItem(KIND_KEY) === "video_note" ? "video_note" : "voice";
+  } catch {
+    return "voice";
+  }
+}
+
+export function savePreferredKind(kind: NoteKind): void {
+  try {
+    localStorage.setItem(KIND_KEY, kind);
+  } catch {
+    /* приватный режим — просто не запомним */
+  }
+}
+
 export function recordingSupported(): boolean {
   return (
     typeof MediaRecorder !== "undefined" &&

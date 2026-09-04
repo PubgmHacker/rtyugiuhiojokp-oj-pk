@@ -1,16 +1,22 @@
 /**
  * Панель записи голосового или видеокружка — встаёт на место поля ввода.
  *
- * Тап, а не удержание: в WebView Telegram долгое нажатие перехватывается
- * системным меню, и половина записей обрывалась бы на первой секунде. Поэтому
- * запись идёт до «Отправить» или до минуты, «Отмена» выбрасывает её.
+ * Кнопки «Отправить» здесь нет намеренно: запись начинается удержанием той же
+ * общей кнопки справа, что и в Telegram, и палец с неё не уходит — отправляет
+ * и закрепляет её родитель через {@link NoteControls}. Пока держат (locked
+ * false) панель показывает, куда вести палец; закрепили — появляется корзина,
+ * а общая кнопка становится «Отправить».
+ *
+ * Про долгое нажатие в WebView: системное меню ловит его на тексте и картинках,
+ * поэтому кнопка-курок — «немая» (без выделения и вызова меню), а перехваченный
+ * жест (pointercancel) не теряет дубль — родитель закрепляет запись.
  *
  * Для видео здесь же выбирают форму кружка — она едет с сообщением, и
  * получатель видит ту же звезду. Выбор запоминается на устройстве.
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Send, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import {
   MAX_NOTE_SECONDS,
   describeRecorderError,
@@ -28,8 +34,31 @@ import {
 import { haptic } from "../lib/haptics";
 import { formatClock } from "./VoiceBubble";
 
+/** Чем закончилось отпускание пальца. */
+export type NoteStopResult =
+  /** Ушла в отправку. */
+  | "sent"
+  /** Меньше секунды — выбросили, записывать нечего. */
+  | "short"
+  /** Микрофон/камера ещё поднимались: запись живёт, её надо закрепить. */
+  | "cold";
+
+export interface NoteControls {
+  stop: () => NoteStopResult;
+  cancel: () => void;
+}
+
+/** Меньше этого держать бессмысленно — в Telegram такой дубль тоже улетает. */
+const MIN_NOTE_MS = 900;
+
 interface Props {
   kind: NoteKind;
+  /** Палец отпустили, запись продолжается сама: корзина и «Отправить» живут. */
+  locked?: boolean;
+  /** Отдаёт родителю «отправить»/«отменить»: курок — его кнопка. */
+  onControls?: (controls: NoteControls | null) => void;
+  /** Микрофон/камера поднялись — родитель разблокирует «Отправить». */
+  onReady?: () => void;
   /** Запись готова: файл, длительность, волна/кадры и форма кружка. */
   onDone: (rec: Recording, shape: string, kind: NoteKind) => void;
   onCancel: () => void;
@@ -41,10 +70,20 @@ interface Props {
 
 const LIVE_BARS = 32;
 
-export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: Props) {
+export default function NoteRecorder({
+  kind,
+  locked = true,
+  onControls,
+  onReady,
+  onDone,
+  onCancel,
+  onError,
+  busy,
+}: Props) {
   const handleRef = useRef<RecorderHandle | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
   const finishedRef = useRef(false);
+  const startedAtRef = useRef(0);
   const [seconds, setSeconds] = useState(0);
   const [ready, setReady] = useState(false);
   const [levels, setLevels] = useState<number[]>(() => Array(LIVE_BARS).fill(0));
@@ -52,8 +91,8 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
 
   // Родительские колбэки — через реф: эффект записи стартует один раз,
   // а замыкания родителя меняются каждый рендер
-  const cbs = useRef({ onDone, onCancel, onError });
-  cbs.current = { onDone, onCancel, onError };
+  const cbs = useRef({ onDone, onCancel, onError, onControls, onReady });
+  cbs.current = { onDone, onCancel, onError, onControls, onReady };
   const shapeRef = useRef(shape);
   shapeRef.current = shape;
 
@@ -70,6 +109,7 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
           return;
         }
         handleRef.current = h;
+        startedAtRef.current = Date.now();
         if (kind === "video_note" && previewRef.current) h.attachPreview(previewRef.current);
         offLevel = h.onLevel((l) =>
           setLevels((cur) => [...cur.slice(1), l])
@@ -81,6 +121,7 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
           if (s >= MAX_NOTE_SECONDS) void finish();
         }, 250);
         setReady(true);
+        cbs.current.onReady?.();
         haptic("medium");
       } catch (e) {
         if (!alive) return;
@@ -119,6 +160,27 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
     cbs.current.onCancel();
   };
 
+  // Палец отпустили над общей кнопкой. Родитель не знает ни про хэндл, ни про
+  // секунды — решаем здесь и отвечаем, что стало с дублем.
+  const stop = (): NoteStopResult => {
+    if (finishedRef.current) return "sent";
+    if (!handleRef.current || !startedAtRef.current) return "cold";
+    if (Date.now() - startedAtRef.current < MIN_NOTE_MS) {
+      cancel();
+      return "short";
+    }
+    void finish();
+    return "sent";
+  };
+
+  // Курок отдаём один раз на монтирование: замыкания читают рефы, устареть
+  // им нечем, а пересоздание пары каждый рендер сбивало бы жест родителя.
+  useEffect(() => {
+    cbs.current.onControls?.({ stop, cancel });
+    return () => cbs.current.onControls?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const pickShape = (code: string) => {
     setShape(code);
     savePreferredShape(code);
@@ -128,7 +190,11 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
   const left = MAX_NOTE_SECONDS - seconds;
 
   return (
-    <div role="group" aria-label={kind === "voice" ? "Запись голосового" : "Запись видеосообщения"}>
+    <div
+      className="flex-1 min-w-0"
+      role="group"
+      aria-label={kind === "voice" ? "Запись голосового" : "Запись видеосообщения"}
+    >
       {kind === "video_note" && (
         <div className="flex flex-col items-center gap-3 pb-3">
           <div className="relative w-[168px] h-[168px]">
@@ -153,6 +219,7 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
           </div>
 
           <div
+            hidden={!locked}
             role="radiogroup"
             aria-label="Форма кружка"
             className="flex gap-1.5 overflow-x-auto no-scrollbar max-w-full px-1"
@@ -183,24 +250,30 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
       )}
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-label="Отменить запись"
-          onClick={cancel}
-          disabled={busy}
-          className="w-11 h-11 rounded-full chip text-danger shrink-0
-                     flex items-center justify-center active:scale-95 transition-transform
-                     disabled:opacity-40"
-        >
-          <Trash2 size={18} />
-        </button>
+        {locked && (
+          <button
+            type="button"
+            aria-label="Отменить запись"
+            onClick={cancel}
+            disabled={busy}
+            className="w-11 h-11 rounded-full chip text-danger shrink-0
+                       flex items-center justify-center active:scale-95 transition-transform
+                       disabled:opacity-40"
+          >
+            <Trash2 size={18} />
+          </button>
+        )}
 
         <div className="flex-1 min-w-0 h-11 rounded-[22px] field flex items-center gap-2.5 px-3.5">
           <span className="rec-dot shrink-0" aria-hidden="true" />
           <span className="text-[14px] tabular-nums font-semibold shrink-0" aria-live="off">
             {formatClock(seconds)}
           </span>
-          {kind === "voice" ? (
+          {!locked ? (
+            <span className="flex-1 min-w-0 text-right text-[12.5px] text-text-muted truncate">
+              ← отмена · ↑ закрепить
+            </span>
+          ) : kind === "voice" ? (
             <div className="flex-1 flex items-center gap-[2px] h-6" aria-hidden="true">
               {levels.map((l, i) => (
                 <span
@@ -223,18 +296,6 @@ export default function NoteRecorder({ kind, onDone, onCancel, onError, busy }: 
             <span className="text-[11.5px] text-warn tabular-nums shrink-0">−{left}</span>
           )}
         </div>
-
-        <button
-          type="button"
-          aria-label="Отправить запись"
-          onClick={() => void finish()}
-          disabled={!ready || busy || seconds < 1}
-          className="w-11 h-11 rounded-full liquid-primary shrink-0 rec-halo
-                     flex items-center justify-center disabled:opacity-40
-                     active:scale-95 transition-transform"
-        >
-          <Send size={18} />
-        </button>
       </div>
     </div>
   );

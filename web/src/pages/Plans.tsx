@@ -501,25 +501,35 @@ function PlanRow({
             нельзя, а срок и так в заголовке, выгода — в бейдже */}
         {!storePrice && (
           <p className="text-caption text-text-muted">
-            {plan.price_per_month} ₽ в месяц
+            {`${plan.price_per_month}\u00A0₽ в месяц`}
             {/* Цена за день — на длинных сроках она и продаёт: «4 ₽ в день»
                 читается как мелочь, а «1290 ₽» как крупная трата. У месячного
-                плана не показываем: там это не выгода, а лишний шум */}
-            {plan.months > 1 && ` · ${plan.price_per_day} ₽ в день`}
+                плана не показываем: там это не выгода, а лишний шум.
+                Неразрывный пробел перед «₽» — чтобы перенос не оставлял
+                строку «17» и строку «₽ в день» по отдельности */}
+            {plan.months > 1 && ` · ${plan.price_per_day}\u00A0₽ в день`}
           </p>
         )}
       </div>
 
-      {saving > 0 && (
-        <span className="px-2 py-0.5 rounded-full bg-success/15 text-success
-                         text-[12px] font-bold shrink-0">
-          −{saving}%
+      {/* Цена и выгода — одной колонкой справа, а не двумя ячейками в строке.
+          На 320 px бейдж между текстом и ценой отбирал у названия 61 px, и
+          «Aurora на 12 мес.» ломалось на две строки, а раскладка — на три
+          (замер: названию нужно 130 px, раскладке 165, оставалось 123).
+          Колонка возвращает эти пиксели тексту: под него уходит 184 px,
+          обе строки влезают целиком, а цена и процент читаются вместе —
+          именно их и сравнивают между сроками */}
+      <div className="shrink-0 flex flex-col items-end gap-0.5">
+        <span className="font-bold text-[16px]">
+          {busy ? <Spinner size={16} /> : storePrice ?? `${plan.price_rub} ₽`}
         </span>
-      )}
-
-      <span className="font-bold text-[16px] shrink-0">
-        {busy ? <Spinner size={16} /> : storePrice ?? `${plan.price_rub} ₽`}
-      </span>
+        {saving > 0 && (
+          <span className="px-2 py-0.5 rounded-full bg-success/15 text-success
+                           text-[12px] font-bold">
+            −{saving}%
+          </span>
+        )}
+      </div>
     </button>
   );
 }

@@ -6,8 +6,9 @@
  *    Серая кнопка «play» посреди лица — признак встроенного плеера, а не
  *    сообщения: в переписке первым делом смотрят на человека, а не на элемент
  *    управления. Поэтому центр чист;
- *  · тап включает звук с начала, повторный — возвращает немой цикл. Один
- *    звук на весь экран (playbackFocus);
+ *  · в покое кружок компактный. Тап разворачивает его и включает звук с
+ *    начала, повторный — сворачивает обратно в немой цикл. Один звук на весь
+ *    экран (playbackFocus), поэтому развёрнут всегда ровно один кружок;
  *  · время и динамик живут ВНУТРИ фигуры, у её нижнего края (anchor у каждой
  *    формы свой — у звезды и ёлки низ это остриё). Плашка под кружком делала
  *    из сообщения «видео с подписью»;
@@ -31,9 +32,12 @@ import { formatClock } from "./VoiceBubble";
 interface Props {
   media: ChatMedia;
   mine: boolean;
-  /** Сторона кружка, px. */
+  /** Сторона кружка в покое, px. Со звуком он вырастает сам. */
   size?: number;
 }
+
+/** Сторона развёрнутого кружка: узкие экраны режут по ширине колонки. */
+const РАЗВЁРНУТЫЙ = "min(70vw, 244px)";
 
 /** Точек контура для перемотки: 1.5° шага хватает даже на лучах звезды. */
 const SAMPLES = 240;
@@ -52,7 +56,7 @@ function бережноеДвижение(): boolean {
   }
 }
 
-export default function VideoNoteBubble({ media, mine, size = 200 }: Props) {
+export default function VideoNoteBubble({ media, mine, size = 148 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const releaseRef = useRef<(() => void) | null>(null);
@@ -292,8 +296,8 @@ export default function VideoNoteBubble({ media, mine, size = 200 }: Props) {
         failed
           ? "Видеосообщение не открылось"
           : sound
-            ? "Выключить звук видеосообщения"
-            : `Видеосообщение со звуком, ${shape.title.toLowerCase()}, ${formatClock(duration)}`
+            ? "Свернуть видеосообщение"
+            : `Видеосообщение, ${shape.title.toLowerCase()}, ${formatClock(duration)} — развернуть и включить звук`
       }
       onClick={переключить}
       onKeyDown={(e) => {
@@ -311,10 +315,12 @@ export default function VideoNoteBubble({ media, mine, size = 200 }: Props) {
       data-scrub="radial"
       className="relative block select-none cursor-pointer touch-none"
       style={{
-        width: size,
-        height: size,
-        transform: sound ? "scale(1.015)" : "scale(1)",
-        transition: "transform 220ms cubic-bezier(0.22,1,0.36,1)",
+        // В покое кружок компактный, со звуком — вырастает, как в Telegram:
+        // в переписке он один из многих, а смотрят всегда один. Свернётся
+        // сам — по концу записи и когда звук заберёт соседнее сообщение.
+        width: sound ? РАЗВЁРНУТЫЙ : size,
+        aspectRatio: "1 / 1",
+        transition: "width 280ms cubic-bezier(0.22,1,0.36,1)",
       }}
     >
       <div

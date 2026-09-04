@@ -103,20 +103,34 @@ interface IconButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
   tone?: "primary" | "neutral" | "danger" | "success" | "warn" | "info" | "premium";
 }
 
+// Тушь тона. У primary и premium её задаёт сам рецепт стекла (см. СТЕКЛО),
+// поэтому здесь пусто; нейтральная тоже без своего цвета — стекло берёт
+// --liquid-ink темы, а text-text-secondary спорил бы с ним.
 const TONE_CLASS: Record<NonNullable<IconButtonProps["tone"]>, string> = {
-  // Главное действие деки: перелив факела в стекле (liquid-primary), цвет
-  // туши даёт сам рецепт. Нейтральная тоже без своего цвета: на фото тушь
-  // белая из liquid-photo, а text-text-secondary в светлой теме темнел бы
-  // на снимке.
   primary: "",
   neutral: "",
+  premium: "",
   danger: "text-danger",
   success: "text-success",
   warn: "text-warn",
   info: "text-info",
-  // Премиум-действия (буст, подарок, рулетка) — мягкое золото, в стороне
-  // от акцента, чтобы не спорить с лайком.
-  premium: "text-warn",
+};
+
+/* Рецепт стекла под тон. Кнопки деки стоят на фоне страницы, а не поверх
+   фото, поэтому базовый liquid берёт цвета темы; модификатор liquid-photo
+   нужен только тому, кто действительно лежит на снимке — его передают
+   через className.
+   Главное действие — перелив факела; премиум (суперлайк, буст, подарок) —
+   мягкое золото в кромке и туши, в стороне от акцента, чтобы не спорить
+   с лайком. */
+const СТЕКЛО: Record<NonNullable<IconButtonProps["tone"]>, string> = {
+  primary: "liquid-primary",
+  premium: "liquid liquid-gold",
+  neutral: "liquid",
+  danger: "liquid",
+  success: "liquid",
+  warn: "liquid",
+  info: "liquid",
 };
 
 export function IconButton({
@@ -142,7 +156,7 @@ export function IconButton({
       }}
       style={{ width: size, height: size }}
       className={`
-        ${tone === "primary" ? "liquid-primary" : "liquid liquid-photo"} ${TONE_CLASS[tone]}
+        ${СТЕКЛО[tone]} ${TONE_CLASS[tone]}
         rounded-full flex items-center justify-center
         disabled:opacity-30 disabled:pointer-events-none
         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent

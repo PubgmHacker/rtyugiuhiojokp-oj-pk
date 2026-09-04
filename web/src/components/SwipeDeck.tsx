@@ -9,7 +9,12 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
-import type { DeckProfile, MatchResponse, DailyLimits } from "../lib/api";
+import type {
+  DeckProfile,
+  MatchResponse,
+  DailyLimits,
+  UserProfile,
+} from "../lib/api";
 import {
   likeProfile,
   getDeck,
@@ -27,6 +32,7 @@ import MatchModal from "./MatchModal";
 import DirectMessageSheet from "./DirectMessageSheet";
 import LimitSheet from "./LimitSheet";
 import SafetySheet from "./SafetySheet";
+import ProfileSheet from "./ProfileSheet";
 import { Button, IconButton, EmptyState, LoadError, Skeleton } from "./ui";
 
 interface MatchData {
@@ -64,6 +70,11 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   const [directFor, setDirectFor] = useState<DeckProfile | null>(null);
   // Жалоба/блокировка с карточки — обязательный вход безопасности из деки
   const [safetyFor, setSafetyFor] = useState<DeckProfile | null>(null);
+  // «ещё N» на карточке открывает полную анкету: в строку меток влезает
+  // не всё, а решение по субкультуре или интересам человек принимает
+  // осознанно. Решения (лайк/нет) остаются на кнопках деки — шторка тут
+  // только для чтения
+  const [полная, setПолная] = useState<DeckProfile | null>(null);
   /* Последнее решение — для возврата карточки.
    *
    * Один шаг назад, а не история: промах бывает ровно на той анкете, которая
@@ -324,17 +335,16 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
   /* ── Первая загрузка ───────────────────────────────────────── */
   if (isLoading && deck.length === 0) {
     return (
-      <div className="flex-1 flex flex-col px-4 pt-2 pb-3 max-w-[440px] mx-auto w-full min-h-0">
-        {/* Скелетон повторяет реальную раскладку: карточка во всю высоту и
-            столбец кнопок справа. Прежний ряд кружков снизу обещал другой
-            экран, и интерфейс «прыгал» после загрузки */}
+      <div className="flex-1 flex flex-col px-4 pt-2 pb-6 max-w-[440px] mx-auto w-full min-h-0">
+        {/* Скелетон повторяет реальную раскладку до пикселя: карточка и ряд
+            решений под ней. Иначе интерфейс «прыгает» после загрузки */}
         <div className="relative flex-1 min-h-0">
           <Skeleton className="absolute inset-0 rounded-[var(--radius-card)]" />
-          <div className="absolute right-3 bottom-24 flex flex-col items-center gap-2.5">
-            {[52, 68, 52, 52].map((s, i) => (
-              <Skeleton key={i} className="rounded-full" style={{ width: s, height: s }} />
-            ))}
-          </div>
+        </div>
+        <div className="mt-3 shrink-0 flex items-center justify-center gap-3.5">
+          {[56, 56, 72, 56].map((s, i) => (
+            <Skeleton key={i} className="rounded-full" style={{ width: s, height: s }} />
+          ))}
         </div>
       </div>
     );
@@ -399,7 +409,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
     limits && !безлимит(limits.likes_total) ? limits.likes_left : null;
 
   return (
-    <div className="flex-1 flex flex-col px-4 pt-2 pb-3 max-w-[440px] mx-auto w-full min-h-0">
+    <div className="flex-1 flex flex-col px-4 pt-2 pb-6 max-w-[440px] mx-auto w-full min-h-0">
       {/* Стек карточек */}
       <div className="relative flex-1 min-h-0">
         <AnimatePresence initial={false}>
@@ -417,6 +427,7 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
                   isTop={idx === 0}
                   index={idx}
                   onFlag={setSafetyFor}
+                  onOpenProfile={setПолная}
                 />
               );
             })}
@@ -463,136 +474,131 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
           )}
         </AnimatePresence>
 
-        {/* Действия — вертикальным столбцом поверх карточки: так до них
-            дотягивается большой палец, и фото остаётся во всю высоту.
-            pointer-events-none на контейнере, чтобы свайп проходил насквозь
-            между кнопками */}
-        <div
-          className="absolute right-3 bottom-24 z-30 flex flex-col items-center gap-2.5
-                     pointer-events-none"
+      </div>
+
+      {/* Решения — рядом под карточкой, а не столбцом поверх фото. Столбец
+          закрывал лицо и наклейку, а четыре одинаковых серых кружка на
+          снимке читались дёшево: стекло на фото теряет и кромку, и блик.
+          Внизу кнопки стоят на фоне страницы, поэтому стекло берёт цвета
+          темы; заливка одна на весь ряд — у лайка, золото одно — у
+          суперлайка. Порядок слева направо по силе намерения: нет → письмо
+          → лайк → суперлайк, причём «нет» и «лайк» намеренно не соседи:
+          промах пальцем стоил бы анкеты.
+          Буста здесь нет: он действует на СВОЮ анкету, а не на человека с
+          карточки, и живёт в шапке рядом с фильтрами. */}
+      <div className="mt-3 shrink-0 flex items-center justify-center gap-3.5">
+        <IconButton
+          label="Пропустить"
+          onClick={() => handleButton("left")}
+          size={56}
         >
-          {/* Буста здесь больше нет: он действует на СВОЮ анкету, а не на
-              человека с карточки, поэтому живёт в шапке рядом с фильтрами —
-              все кнопки рейла действуют на того, кто сейчас на фото */}
-          <div className="relative pointer-events-auto">
-            <IconButton
-              label={
-                superlikesLeft === 0
-                  ? "Суперлайки закончились"
-                  : superlikesLeft === null
-                    ? "Суперлайк"
-                    : `Суперлайк, осталось ${superlikesLeft}`
-              }
-              onClick={() => handleButton("up")}
-              disabled={superlikesLeft === 0}
-              size={52}
-            >
-              <Star size={20} fill="currentColor" />
-            </IconButton>
-            {superlikesLeft !== null && superlikesLeft > 0 && (
-              <span
-                aria-hidden
-                className="absolute -top-0.5 -right-0.5 liquid-badge"
-              >
-                {superlikesLeft}
-              </span>
-            )}
-          </div>
+          <X size={24} strokeWidth={2.6} />
+        </IconButton>
 
-          {/* Лайк крупнее остальных — главное действие экрана.
-              Короткий тап = лайк, удержание ≈450 мс = лайк с сообщением.
-              Так на рейле не стоят два «написать» рядом.
-              Кнопку не гасим на нуле: тап открывает шторку с подпиской —
-              это и есть момент продажи, а серая кнопка ничего не объясняет */}
-          <div className="relative pointer-events-auto">
-            <IconButton
-              label={
-                лайковОсталось === null
-                  ? "Лайк. Удерживайте, чтобы добавить сообщение"
-                  : лайковОсталось > 0
-                    ? `Лайк, осталось ${лайковОсталось} на сегодня. Удерживайте, чтобы добавить сообщение`
-                    : "Лайки на сегодня закончились"
+        {/* Письмо без взаимного лайка — платный крючок на самом частом
+            экране. Гейт по тарифу и лимиту показывает сама шторка */}
+        <IconButton
+          label="Написать без мэтча"
+          onClick={() => {
+            const top = deck[0];
+            if (!top) return;
+            haptic("light");
+            setDirectFor(top);
+          }}
+          disabled={!deck.length}
+          size={56}
+        >
+          <MessageCircleHeart size={23} />
+        </IconButton>
+
+        {/* Лайк крупнее остальных — главное действие экрана.
+            Короткий тап = лайк, удержание ≈450 мс = лайк с сообщением.
+            Так в ряду не стоят два «написать» рядом.
+            Кнопку не гасим на нуле: тап открывает шторку с подпиской —
+            это и есть момент продажи, а серая кнопка ничего не объясняет */}
+        <div className="relative">
+          <IconButton
+            label={
+              лайковОсталось === null
+                ? "Лайк. Удерживайте, чтобы добавить сообщение"
+                : лайковОсталось > 0
+                  ? `Лайк, осталось ${лайковОсталось} на сегодня. Удерживайте, чтобы добавить сообщение`
+                  : "Лайки на сегодня закончились"
+            }
+            onPointerDown={() => {
+              const top = deck[0];
+              if (!top) return;
+              // На исчерпанном лимите удержание не открывает ввод
+              // сообщения: написали бы текст, который некуда отправить
+              if (лайковОсталось !== null && лайковОсталось <= 0) return;
+              likeNoteOpenedRef.current = false;
+              if (likeHoldRef.current) clearTimeout(likeHoldRef.current);
+              likeHoldRef.current = setTimeout(() => {
+                likeNoteOpenedRef.current = true;
+                haptic("medium");
+                setNoteFor(top);
+              }, 450);
+            }}
+            onPointerUp={() => {
+              if (likeHoldRef.current) {
+                clearTimeout(likeHoldRef.current);
+                likeHoldRef.current = null;
               }
-              onPointerDown={() => {
-                const top = deck[0];
-                if (!top) return;
-                // На исчерпанном лимите удержание не открывает ввод
-                // сообщения: написали бы текст, который некуда отправить
-                if (лайковОсталось !== null && лайковОсталось <= 0) return;
+            }}
+            onPointerLeave={() => {
+              if (likeHoldRef.current) {
+                clearTimeout(likeHoldRef.current);
+                likeHoldRef.current = null;
+              }
+            }}
+            onClick={() => {
+              if (likeNoteOpenedRef.current) {
                 likeNoteOpenedRef.current = false;
-                if (likeHoldRef.current) clearTimeout(likeHoldRef.current);
-                likeHoldRef.current = setTimeout(() => {
-                  likeNoteOpenedRef.current = true;
-                  haptic("medium");
-                  setNoteFor(top);
-                }, 450);
-              }}
-              onPointerUp={() => {
-                if (likeHoldRef.current) {
-                  clearTimeout(likeHoldRef.current);
-                  likeHoldRef.current = null;
-                }
-              }}
-              onPointerLeave={() => {
-                if (likeHoldRef.current) {
-                  clearTimeout(likeHoldRef.current);
-                  likeHoldRef.current = null;
-                }
-              }}
-              onClick={() => {
-                if (likeNoteOpenedRef.current) {
-                  likeNoteOpenedRef.current = false;
-                  return;
-                }
-                handleButton("right");
-              }}
-              size={68}
-              tone="primary"
+                return;
+              }
+              handleButton("right");
+            }}
+            size={72}
+            tone="primary"
+          >
+            <Heart size={30} fill="currentColor" />
+          </IconButton>
+          {/* Счётчик показываем, когда лайки на исходе (≤5) или кончились:
+              полный запас «20» на каждой карточке был шумом, а точное число
+              всегда есть в подписи кнопки для читалки */}
+          {лайковОсталось !== null && лайковОсталось <= 5 && (
+            <span
+              aria-hidden
+              className={`absolute top-0.5 right-0.5 liquid-badge ${
+                лайковОсталось > 0 ? "" : "liquid-badge-alert"
+              }`}
             >
-              <Heart size={28} fill="currentColor" />
-            </IconButton>
-            {/* Счётчик показываем, когда лайки на исходе (≤5) или кончились:
-                полный запас «20» на каждой карточке был шумом, а точное число
-                всегда есть в подписи кнопки для читалки */}
-            {лайковОсталось !== null && лайковОсталось <= 5 && (
-              <span
-                aria-hidden
-                className={`absolute -top-0.5 -right-0.5 liquid-badge ${
-                  лайковОсталось > 0 ? "" : "liquid-badge-alert"
-                }`}
-              >
-                {лайковОсталось}
-              </span>
-            )}
-          </div>
+              {лайковОсталось}
+            </span>
+          )}
+        </div>
 
-          {/* Письмо без взаимного лайка — платный крючок на самом частом
-              экране. Гейт по тарифу и лимиту показывает сама шторка */}
-          <div className="pointer-events-auto">
-            <IconButton
-              label="Написать без мэтча"
-              onClick={() => {
-                const top = deck[0];
-                if (!top) return;
-                haptic("light");
-                setDirectFor(top);
-              }}
-              disabled={!deck.length}
-              size={52}
-            >
-              <MessageCircleHeart size={20} />
-            </IconButton>
-          </div>
-
-          <div className="pointer-events-auto">
-            <IconButton
-              label="Пропустить"
-              onClick={() => handleButton("left")}
-              size={52}
-            >
-              <X size={22} strokeWidth={2.6} />
-            </IconButton>
-          </div>
+        <div className="relative">
+          <IconButton
+            label={
+              superlikesLeft === 0
+                ? "Суперлайки закончились"
+                : superlikesLeft === null
+                  ? "Суперлайк"
+                  : `Суперлайк, осталось ${superlikesLeft}`
+            }
+            onClick={() => handleButton("up")}
+            disabled={superlikesLeft === 0}
+            size={56}
+            tone="premium"
+          >
+            <Star size={22} fill="currentColor" />
+          </IconButton>
+          {superlikesLeft !== null && superlikesLeft > 0 && (
+            <span aria-hidden className="absolute -top-0.5 -right-0.5 liquid-badge">
+              {superlikesLeft}
+            </span>
+          )}
         </div>
       </div>
 
@@ -653,6 +659,23 @@ export default function SwipeDeck({ onOpenFilters }: { onOpenFilters?: () => voi
         onDone={() => {
           if (safetyFor) removeDeckProfile(safetyFor.id);
         }}
+      />
+
+      {/* Полная анкета из «ещё N». Шторка ждёт UserProfile, дек отдаёт
+          карточку: недостающие поля служебные (пол, «кого ищет»,
+          инкогнито) и в просмотре не показываются */}
+      <ProfileSheet
+        profile={
+          полная
+            ? ({
+                ...полная,
+                gender: "",
+                looking_for: "",
+                is_incognito: false,
+              } satisfies UserProfile)
+            : null
+        }
+        onClose={() => setПолная(null)}
       />
     </div>
   );

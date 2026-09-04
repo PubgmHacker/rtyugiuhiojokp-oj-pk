@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Users, ChevronRight, Mic, Lock, WifiOff, MessageCircle, Flame,
+  Users, ChevronRight, Mic, Lock, WifiOff,
   Video, Image as ImageIcon, Film,
 } from "lucide-react";
 import type { DailyLimits, MatchResponse } from "../lib/api";
@@ -11,6 +11,7 @@ import { getMatches, getDailyLimits, ПОТОЛОК_ЧАТОВ } from "../lib/ap
 import { useStore } from "../lib/store";
 import { haptic } from "../lib/haptics";
 import { clearNotificationBadge } from "../lib/native";
+import BrandMark from "../components/BrandMark";
 import { StoriesRail } from "../components/StoriesRail";
 import LimitSheet from "../components/LimitSheet";
 import { useЯзык, перевести, форматВремени, форматДаты, type Язык } from "../lib/i18n";
@@ -81,6 +82,39 @@ function ПревьюЧата({ m }: { m: MatchResponse }) {
       )}
       <span className="truncate">{подпись}</span>
     </p>
+  );
+}
+
+/** Ряд-вход в соседний способ познакомиться. Один и тот же и в пустом
+ *  экране, и под списком чатов: это не украшение, а вторая дверь. */
+function Рельса({
+  to,
+  icon: Icon,
+  label,
+  hint,
+}: {
+  to: string;
+  icon: typeof Users;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      onClick={() => haptic("light")}
+      className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
+                 bg-surface-2 border border-hairline active:bg-surface
+                 transition-colors"
+    >
+      <Icon size={18} className="text-accent shrink-0" />
+      <span className="flex-1 min-w-0">
+        <span className="block text-[14.5px] font-semibold">{label}</span>
+        {hint && (
+          <span className="block text-[12.5px] text-text-muted">{hint}</span>
+        )}
+      </span>
+      <ChevronRight size={17} className="text-text-faint shrink-0" />
+    </Link>
   );
 }
 
@@ -190,17 +224,79 @@ export default function Matches() {
   }
 
   if (!matches.length) {
+    // Пустой экран здесь — не заглушка, а первый шаг. Иконка в кружке
+    // посреди пустоты ничего не объясняла и ничего не предлагала, кроме
+    // одной кнопки; вместо неё — как открывается чат (три шага, они же
+    // единственное правило продукта) и две живые двери, где можно
+    // заговорить с кем-то прямо сейчас, не дожидаясь совпадения.
     return (
       <div>
         <ScreenHeader title="Чаты" />
-        <EmptyState
-          icon={MessageCircle}
-          title="Пока пусто"
-          description="Когда вы понравитесь друг другу, здесь появится чат. Начните с поиска."
-          action={
-            <Button onClick={() => navigate("/discover")}>Смотреть анкеты</Button>
-          }
-        />
+        <div className="px-4 pt-1 pb-10">
+          <h2 className="text-[21px] font-bold leading-tight mb-1.5">
+            Здесь появятся переписки
+          </h2>
+          <p className="text-[14.5px] text-text-muted leading-relaxed max-w-[34ch]">
+            Чат открывается сам, когда симпатия взаимна. Никто не пишет
+            в пустоту — и вам тоже не напишут без вашего лайка.
+          </p>
+
+          <ol className="mt-6 mb-7 relative">
+            {/* Нить между шагами: она превращает три строки в путь.
+                Концы — ровно в центрах первого и последнего кружка
+                (py-2.5 = 10px плюс половина кружка 27px), иначе сверху и
+                снизу торчали хвостики в пустоту */}
+            <span
+              aria-hidden="true"
+              className="absolute left-[13px] top-[23.5px] bottom-[23.5px] w-px bg-hairline"
+            />
+            {[
+              ["Смотрите анкеты", "Лента подбирает людей рядом и по интересам"],
+              ["Ставите лайк", "Он уходит тихо — человек увидит его у себя"],
+              ["Совпали — открылся чат", "Голосовые, кружки и стикеры уже внутри"],
+            ].map(([заголовок, пояснение], i) => (
+              <li key={заголовок} className="relative flex gap-3.5 py-2.5">
+                <span
+                  className="relative z-[1] w-[27px] h-[27px] rounded-full shrink-0
+                             flex items-center justify-center text-[12.5px] font-bold
+                             bg-accent/14 text-accent ring-1 ring-accent/20"
+                >
+                  {i + 1}
+                </span>
+                <span className="min-w-0 pt-[3px]">
+                  <span className="block text-[14.5px] font-semibold leading-snug">
+                    {заголовок}
+                  </span>
+                  <span className="block text-[13px] text-text-muted leading-snug mt-0.5">
+                    {пояснение}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+
+          <Button fullWidth onClick={() => navigate("/discover")}>
+            Смотреть анкеты
+          </Button>
+
+          <p className="text-caption text-text-muted mt-8 mb-2.5">
+            Пока никого — говорят здесь
+          </p>
+          <div className="grid gap-2">
+            <Рельса
+              to="/rooms"
+              icon={Users}
+              label="Чаты по интересам"
+              hint="Общая комната: написать первым проще, чем в личку"
+            />
+            <Рельса
+              to="/voice"
+              icon={Mic}
+              label="Голосовая рулетка"
+              hint="Минута голосом говорит больше десяти сообщений"
+            />
+          </div>
+        </div>
       </div>
     );
   }
@@ -216,35 +312,12 @@ export default function Matches() {
           скрывается сама, когда ни у кого ничего нет */}
       <StoriesRail />
 
-      {/* Комнаты по интересам: в общий чат написать проще, чем первым в личку,
-          поэтому вход в них живёт рядом со списком переписок */}
-      <Link
-        to="/rooms"
-        onClick={() => haptic("light")}
-        className="mx-4 mt-3 flex items-center gap-3 px-4 py-3
-                   rounded-[var(--radius-tile)] bg-surface-2 border border-hairline"
-      >
-        <Users size={18} className="text-accent shrink-0" />
-        <span className="flex-1 text-[14.5px] font-semibold">
-          Чаты по интересам
-        </span>
-        <ChevronRight size={17} className="text-text-faint shrink-0" />
-      </Link>
-
-      {/* Голосом знакомиться проще, чем текстом: голос сразу говорит о
-          человеке больше, чем переписка */}
-      <Link
-        to="/voice"
-        onClick={() => haptic("light")}
-        className="mx-4 mt-2 flex items-center gap-3 px-4 py-3
-                   rounded-[var(--radius-tile)] bg-surface-2 border border-hairline"
-      >
-        <Mic size={18} className="text-accent shrink-0" />
-        <span className="flex-1 text-[14.5px] font-semibold">
-          Голосовая рулетка
-        </span>
-        <ChevronRight size={17} className="text-text-faint shrink-0" />
-      </Link>
+      {/* Комнаты и рулетка: в общий чат написать проще, чем первым в личку,
+          поэтому обе двери живут рядом со списком переписок */}
+      <div className="mx-4 mt-3 grid gap-2">
+        <Рельса to="/rooms" icon={Users} label="Чаты по интересам" />
+        <Рельса to="/voice" icon={Mic} label="Голосовая рулетка" />
+      </div>
 
       {/* ── Новые мэтчи ────────────────────────────────────── */}
       {fresh.length > 0 && (
@@ -330,23 +403,29 @@ export default function Matches() {
                           {m.initiator_id === m.partner.id ? "вам написали" : "ваше письмо"}
                         </span>
                       )}
+                      {/* Стрик: серия общения. Стоит вплотную к имени, как
+                           в TikTok — это свойство пары, а не отметка времени;
+                           у времени он читался как «сообщений в 04:40».
+                           Огонёк — наш собственный факел, знак марки: своя
+                           серия и должна гореть своим огнём. */}
+                      {!!m.streak_days && (
+                        <span
+                          className="flex items-center gap-[3px] shrink-0
+                                     pl-1 pr-1.5 py-[1px] rounded-full
+                                     bg-warn/12 text-text-primary text-[11.5px]
+                                     font-bold tabular-nums leading-none"
+                          aria-label={`Серия общения: ${m.streak_days} дн.`}
+                        >
+                          {/* Цвет держит только факел: золотая цифра рядом с
+                              оранжево-малиновым знаком давала два тёплых тона
+                              в одной плашке и читалась грязью */}
+                          <BrandMark size={14} solid />
+                          {m.streak_days}
+                        </span>
+                      )}
                       {m.last_message_at && (
                         <span className="ml-auto text-[11.5px] text-text-faint shrink-0">
                           {formatTime(m.last_message_at, язык)}
-                        </span>
-                      )}
-                      {/* Стрик: серия общения — эмбиент-индикатор. Рядом с
-                           именем, а не на карточке: выбранный эмоджи изменяется
-                           от длины серии, и это читается лучше номера. Огонёк —
-                           иконка, а не эмодзи сервера: эмодзи в интерфейсе нет. */}
-                      {!!m.streak_days && (
-                        <span
-                          className="flex items-center gap-1 text-[12px]
-                                     text-warn font-semibold shrink-0"
-                          aria-label={`Серия общения: ${m.streak_days} дн.`}
-                        >
-                          <Flame size={13} fill="currentColor" aria-hidden="true" />
-                          {m.streak_days}
                         </span>
                       )}
                     </div>

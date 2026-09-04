@@ -57,8 +57,14 @@ import { Button, IdentityBadge, Skeleton, Spinner } from "../components/ui";
 import ReelBubble from "../components/ReelBubble";
 import VoiceBubble from "../components/VoiceBubble";
 import VideoNoteBubble from "../components/VideoNoteBubble";
-import NoteRecorder from "../components/NoteRecorder";
-import { recordingSupported, type NoteKind, type Recording } from "../lib/recorder";
+import NoteRecorder, { type NoteControls } from "../components/NoteRecorder";
+import {
+  readPreferredKind,
+  recordingSupported,
+  savePreferredKind,
+  type NoteKind,
+  type Recording,
+} from "../lib/recorder";
 import { ChatThemeSheet } from "../components/ChatThemeSheet";
 import { HabitsSheet } from "../components/HabitsSheet";
 import { AttachmentsSheet } from "../components/AttachmentsSheet";
@@ -80,6 +86,26 @@ import { useChatWallpaper } from "../lib/chatWallpaper";
 
 // Порция истории — столько же, сколько сервер отдаёт по умолчанию.
 const ПОРЦИЯ = 50;
+
+/**
+ * Одна общая кнопка справа: тап меняет микрофон на камеру, удержание пишет.
+ * ДЕРЖУ_МС — граница между тапом и удержанием: ниже 200 мс обычный тап уже
+ * успевает поднять микрофон, выше 300 мс удержание кажется залипшим.
+ * ЗАКРЕПИТЬ_PX — подъём пальца, ОТМЕНА_PX — уход влево, как в Telegram.
+ */
+const ДЕРЖУ_МС = 240;
+const ЗАКРЕПИТЬ_PX = 44;
+const ОТМЕНА_PX = 64;
+
+interface Удержание {
+  id: number;
+  x: number;
+  y: number;
+  начали: boolean;
+  закрепили: boolean;
+  сорвали: boolean;
+  таймер: number;
+}
 
 export default function Chat() {
   const { matchId } = useParams<{ matchId: string }>();
@@ -122,6 +148,15 @@ export default function Chat() {
   const [sendingNote, setSendingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
   const canRecord = useMemo(() => recordingSupported(), []);
+  // Режим общей кнопки — тот же, каким её оставили в прошлый раз
+  const [noteKind, setNoteKind] = useState<NoteKind>(() => readPreferredKind());
+  // Палец убрали, а запись идёт: у панели появляется корзина, у кнопки — «Отправить»
+  const [noteLocked, setNoteLocked] = useState(true);
+  const [noteReady, setNoteReady] = useState(false);
+  const noteCtl = useRef<NoteControls | null>(null);
+  const удержание = useRef<Удержание | null>(null);
+  // Отпускание пальца рождает click: он не должен отправить запись второй раз
+  const неКликПослеЖеста = useRef(0);
   // Ответ: держим само сообщение, а не id — полосе над полем нужны кадр
   // кружка и подпись, а искать их заново в ленте пришлось бы уже после
   // того, как сообщение уехало из окна.
@@ -595,11 +630,136 @@ export default function Chat() {
     [replyTo]
   );
 
-  const startNote = useCallback((kind: NoteKind) => {
+  const startNote = useCallback((kind: NoteKind, держат = false) => {
     setNoteError("");
+    setNoteReady(false);
+    setNoteLocked(!держат);
     setRecording(kind);
     haptic("light");
   }, []);
+
+  /* ── Общая кнопка записи: тап переключает, удержание пишет ──── */
+
+  const переключитьРежим = () => {
+    const другой: NoteKind = noteKind === "voice" ? "video_note" : "voice";
+    setNoteKind(другой);
+    savePreferredKind(другой);
+    haptic("light");
+    показатьТост(
+      другой === "voice" ? "Голосовое · держите кнопку" : "Кружок · держите кнопку"
+    );
+  };
+
+  const начатьУдержание = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (recording || !canRecord || input.trim()) return;
+    // Захват пальца: пока он не отпущен, события идут этой кнопке, даже если
+    // палец сполз с неё на панель записи
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* мышь и старые движки живут без захвата */
+    }
+    const вид = noteKind;
+    const жест: Удержание = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      начали: false,
+      закрепили: false,
+      сорвали: false,
+      таймер: 0,
+    };
+    жест.таймер = window.setTimeout(() => {
+      жест.таймер = 0;
+      if (удержание.current !== жест) return;
+      жест.начали = true;
+      startNote(вид, true);
+    }, ДЕРЖУ_МС);
+    удержание.current = жест;
+  };
+
+  const вестиУдержание = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const жест = удержание.current;
+    if (!жест || жест.id !== e.pointerId || !жест.начали || жест.сорвали) return;
+    if (e.clientX - жест.x <= -ОТМЕНА_PX) {
+      жест.сорвали = true;
+      noteCtl.current?.cancel();
+      haptic("light");
+      показатьТост("Запись отменена");
+      return;
+    }
+    if (!жест.закрепили && жест.y - e.clientY >= ЗАКРЕПИТЬ_PX) {
+      жест.закрепили = true;
+      неКликПослеЖеста.current = Date.now();
+      setNoteLocked(true);
+      haptic("medium");
+    }
+  };
+
+  const отпуститьУдержание = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const жест = удержание.current;
+    if (!жест || жест.id !== e.pointerId) return;
+    if (жест.таймер) clearTimeout(жест.таймер);
+    удержание.current = null;
+    if (жест.сорвали || жест.закрепили) return;
+    if (!жест.начали) {
+      переключитьРежим();
+      return;
+    }
+    неКликПослеЖеста.current = Date.now();
+    const итог = noteCtl.current?.stop() ?? "cold";
+    if (итог === "short") показатьТост("Коротко — держите кнопку");
+    if (итог === "cold") {
+      setNoteLocked(true);
+      показатьТост("Ещё готовим — отправьте кнопкой");
+    }
+  };
+
+  const перехватУдержания = (e: React.PointerEvent<HTMLButtonElement>) => {
+    // Жест забрала система (в WebView это может быть её собственное меню).
+    // Дубль не теряем: закрепляем запись, палец для неё больше не нужен.
+    const жест = удержание.current;
+    if (!жест || жест.id !== e.pointerId) return;
+    if (жест.таймер) clearTimeout(жест.таймер);
+    удержание.current = null;
+    if (жест.сорвали || жест.закрепили || !жест.начали) return;
+    неКликПослеЖеста.current = Date.now();
+    setNoteLocked(true);
+    показатьТост("Запись закреплена");
+  };
+
+  const наКлавишеЗаписи = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    // С клавиатуры кнопку не подержишь — запись сразу закреплённая
+    e.preventDefault();
+    startNote(noteKind);
+  };
+
+  const отправитьЗапись = () => {
+    if (Date.now() - неКликПослеЖеста.current < 500) return;
+    noteCtl.current?.stop();
+  };
+
+  // Что сейчас за кнопка: набран текст → «Отправить», запись под пальцем →
+  // курок, закреплённая запись → «Отправить запись», покой → микрофон/камера
+  const правая: "text" | "note" | "hold" | "arm" = recording
+    ? noteLocked
+      ? "note"
+      : "hold"
+    : input.trim() || !canRecord
+      ? "text"
+      : "arm";
+  // Обработчики жеста нужны в обоих его состояниях: посреди удержания кнопка
+  // перерисовывается из «arm» в «hold», а палец с неё не уходит
+  const жест = правая === "arm" || правая === "hold";
+
+  useEffect(
+    () => () => {
+      const жест = удержание.current;
+      if (жест?.таймер) clearTimeout(жест.таймер);
+    },
+    []
+  );
 
   /* ── Ответы, реакции, панель действий ────────────────────── */
 
@@ -1502,25 +1662,36 @@ export default function Chat() {
           />
         )}
 
-        {recording ? (
-          <NoteRecorder
-            kind={recording}
-            busy={sendingNote}
-            onDone={sendNote}
-            onCancel={() => setRecording(null)}
-            onError={(msg) => {
-              setRecording(null);
-              setNoteError(msg);
-              haptic("error");
-            }}
-          />
-        ) : (
-          // Камера живёт в поле, как скрепка у мессенджеров, а справа стоит
-          // ровно одна круглая кнопка: две крупные кнопки подряд читались как
-          // панель инструментов, а не как строка сообщения. Переключателя
-          // «микрофон/камера» по тапу нет намеренно — второй тап там регулярно
-          // уходит в запись не того, что хотели.
-          <div className="flex items-end gap-2">
+        {/*
+          Справа ровно одна кнопка на все состояния — так же, как в Telegram и
+          ВК: микрофон меняется на камеру тапом по ней самой, а не второй
+          кнопкой в поле (камера в поле вечно стояла криво и читалась как
+          панель инструментов). Отдельная кнопка «Отправить запись» тоже не
+          нужна: палец и так стоит здесь.
+
+          Элемент кнопки один и тот же во всех четырёх состояниях намеренно —
+          при подмене button на span браузер терял захват пальца, и отпускание
+          посреди записи уже никуда не приходило.
+        */}
+        <div className="flex items-end gap-2">
+          {recording ? (
+            <NoteRecorder
+              kind={recording}
+              locked={noteLocked}
+              busy={sendingNote}
+              onControls={(c) => {
+                noteCtl.current = c;
+              }}
+              onReady={() => setNoteReady(true)}
+              onDone={sendNote}
+              onCancel={() => setRecording(null)}
+              onError={(msg) => {
+                setRecording(null);
+                setNoteError(msg);
+                haptic("error");
+              }}
+            />
+          ) : (
             <div className="relative flex-1 min-w-0">
               <textarea
                 ref={inputRef}
@@ -1534,47 +1705,96 @@ export default function Chat() {
                 }}
                 placeholder="Сообщение…"
                 rows={1}
-                className={`field w-full max-h-[120px] py-2.5 pl-4 rounded-[22px]
-                            resize-none text-[15px] no-scrollbar ${
-                              canRecord ? "pr-11" : "pr-4"
-                            }`}
+                className="field w-full max-h-[120px] py-2.5 px-4 rounded-[22px]
+                           resize-none text-[15px] no-scrollbar"
               />
-              {canRecord && (
-                <button
-                  aria-label="Записать видеосообщение"
-                  onClick={() => startNote("video_note")}
-                  className="absolute right-1.5 bottom-[5px] w-9 h-9 rounded-full
-                             flex items-center justify-center text-text-muted
-                             active:scale-90 transition-transform"
-                >
-                  <Video size={19} />
-                </button>
-              )}
             </div>
-            {input.trim() || !canRecord ? (
-              <button
-                aria-label="Отправить"
-                onClick={() => send()}
-                disabled={!input.trim()}
-                className="w-11 h-11 rounded-full liquid-primary shrink-0
-                           flex items-center justify-center
-                           disabled:opacity-30 active:scale-95 transition-transform"
-              >
-                <Send size={18} />
-              </button>
+          )}
+
+          <button
+            type="button"
+            aria-label={
+              правая === "text"
+                ? "Отправить"
+                : правая === "note"
+                  ? "Отправить запись"
+                  : правая === "hold"
+                    ? "Идёт запись — отпустите, чтобы отправить"
+                    : noteKind === "voice"
+                      ? "Голосовое: держите, чтобы записать, тап — камера"
+                      : "Кружок: держите, чтобы записать, тап — микрофон"
+            }
+            disabled={
+              правая === "text"
+                ? !input.trim()
+                : правая === "note"
+                  ? !noteReady || sendingNote
+                  : false
+            }
+            onClick={
+              правая === "text"
+                ? () => send()
+                : правая === "note"
+                  ? отправитьЗапись
+                  : undefined
+            }
+            onPointerDown={правая === "arm" ? начатьУдержание : undefined}
+            onPointerMove={жест ? вестиУдержание : undefined}
+            onPointerUp={жест ? отпуститьУдержание : undefined}
+            onPointerCancel={жест ? перехватУдержания : undefined}
+            onContextMenu={жест ? (e) => e.preventDefault() : undefined}
+            onKeyDown={правая === "arm" ? наКлавишеЗаписи : undefined}
+            style={{ WebkitTouchCallout: "none" }}
+            className={`relative w-11 h-11 rounded-full liquid-primary shrink-0
+                        flex items-center justify-center select-none
+                        disabled:opacity-30 transition-transform
+                        ${жест ? "touch-none" : ""}
+                        ${
+                          правая === "hold"
+                            ? "scale-[1.14] rec-halo"
+                            : "active:scale-95"
+                        }`}
+          >
+            {правая === "text" || правая === "note" ? (
+              <Send size={18} />
+            ) : правая === "hold" ? (
+              recording === "voice" ? (
+                <Mic size={20} />
+              ) : (
+                <Video size={20} />
+              )
             ) : (
-              <button
-                aria-label="Записать голосовое"
-                onClick={() => startNote("voice")}
-                className="w-11 h-11 rounded-full liquid-primary shrink-0
-                           flex items-center justify-center
-                           active:scale-95 transition-transform"
-              >
-                <Mic size={19} />
-              </button>
+              // Иконки не подменяются, а сменяются: микрофон уходит вниз-влево,
+              // камера приезжает ему на место — тап видно, даже не глядя на подсказку
+              // Размер чётный (20 в коробке 44): нечётные 19 сажали значок на
+              // половину пикселя и на 3× экране это читалось как перекос.
+              // Никаких доводочных сдвигов: на чётном размере габарит чернил
+              // камеры и микрофона совпадает с центром круга (замер по снимку).
+              <>
+                <span
+                  aria-hidden="true"
+                  className={`absolute flex transition-all duration-200 ease-out ${
+                    noteKind === "voice"
+                      ? "opacity-100 scale-100 rotate-0"
+                      : "opacity-0 scale-[.55] -rotate-45"
+                  }`}
+                >
+                  <Mic size={20} />
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={`absolute flex transition-all duration-200 ease-out ${
+                    noteKind === "video_note"
+                      ? "opacity-100 scale-100 rotate-0"
+                      : "opacity-0 scale-[.55] rotate-45"
+                  }`}
+                >
+                  <Video size={20} />
+                </span>
+              </>
             )}
-          </div>
-        )}
+          </button>
+        </div>
       </div>
 
       <ReportSheet

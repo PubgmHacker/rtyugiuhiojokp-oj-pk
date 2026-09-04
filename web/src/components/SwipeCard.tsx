@@ -1,4 +1,12 @@
-import { useState, useCallback, useEffect, memo } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  memo,
+} from "react";
 import {
   motion,
   useMotionValue,
@@ -7,7 +15,7 @@ import {
   type PanInfo,
   type MotionValue,
 } from "framer-motion";
-import { Flag, MapPin, Sparkles } from "lucide-react";
+import { ChevronRight, Flag, MapPin, Sparkles } from "lucide-react";
 import type { DeckProfile } from "../lib/api";
 import { letterAvatarStyle } from "../lib/aura";
 import { haptic } from "../lib/haptics";
@@ -25,6 +33,9 @@ interface SwipeCardProps {
   /** Пожаловаться/заблокировать прямо с карточки — обязательная точка входа
    *  безопасности на поверхности, где человек видит незнакомца (App Store 1.2). */
   onFlag?: (profile: DeckProfile) => void;
+  /** Открыть полную анкету: карточка показывает столько меток, сколько влезло
+   *  в одну строку, а весь список живёт в шторке профиля. */
+  onOpenProfile?: (profile: DeckProfile) => void;
 }
 
 /** Порог смещения и скорости, после которого жест считается свайпом. */
@@ -34,7 +45,14 @@ const VELOCITY_THRESHOLD = 420;
 /** Пружина, близкая к отклику нативного iOS. */
 const SPRING = { type: "spring" as const, stiffness: 380, damping: 34, mass: 0.9 };
 
-function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProps) {
+function SwipeCardImpl({
+  profile,
+  onSwipe,
+  isTop,
+  index,
+  onFlag,
+  onOpenProfile,
+}: SwipeCardProps) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [loadedPhotos, setLoadedPhotos] = useState<Record<number, boolean>>({});
 
@@ -65,6 +83,29 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
   ];
   const hasPhotos = photos.length > 0;
   const decor = decorStyle(profile.decor);
+
+  // Порядок меток — по убыванию важности для решения: с кем и зачем,
+  // потом «свой круг», тип и уже интересы. Что не влезло в строку,
+  // прячется за «ещё N» и открывается в анкете
+  const метки = useMemo(() => {
+    const список = [
+      profile.relation_type && optionLabel(RELATION_TYPES, profile.relation_type),
+      profile.goal && optionLabel(GOALS, profile.goal),
+      profile.subculture && optionLabel(SUBCULTURES, profile.subculture),
+      // MBTI показываем кодом: расшифровка «INFJ · Активист» в тесную
+      // карточку не влезает, а тем, кто ищет по типу, кода достаточно
+      profile.mbti,
+      ...(profile.interests ?? []),
+    ].filter((x): x is string => !!x);
+    // Интерес может повторить субкультуру («аниме») — второй раз не рисуем
+    return Array.from(new Set(список));
+  }, [
+    profile.relation_type,
+    profile.goal,
+    profile.subculture,
+    profile.mbti,
+    profile.interests,
+  ]);
 
   const handleDragEnd = useCallback(
     (_: unknown, info: PanInfo) => {
@@ -295,14 +336,14 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
         className="top-1/3 left-1/2 -translate-x-1/2"
       />
 
-      {/* Информация о профиле. Правый отступ — под столбец кнопок действий,
-          иначе длинное имя уезжает под них */}
-      <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 pr-[84px] z-20 pointer-events-none">
+      {/* Информация о профиле. Кнопки решений ушли под карточку, поэтому
+          блок держит всю ширину — резерв справа больше не нужен */}
+      <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 z-20 pointer-events-none">
         {/* Слева имя и город, справа — наклейка из кейса: она занимает пустой
-            угол между строкой роста и столбцом кнопок, где раньше ничего не
-            было. Одна и «наклеена» косо, как на крышку ноутбука: оформление
-            анкеты, а не ещё одна иконка в строке. Витрина всех наклеек
-            отвлекала бы от человека */}
+            угол над строкой меток, где раньше ничего не было. Одна и
+            «наклеена» косо, как на крышку ноутбука: оформление анкеты, а не
+            ещё одна иконка в строке. Витрина всех наклеек отвлекала бы от
+            человека */}
         <div className="flex items-end gap-3">
           <div className="min-w-0 flex-1">
             {profile.match_score != null && (
@@ -356,58 +397,137 @@ function SwipeCardImpl({ profile, onSwipe, isTop, index, onFlag }: SwipeCardProp
           )}
         </div>
 
-        {(profile.goal || profile.relation_type || profile.subculture || profile.mbti) && (
-          <div className="flex flex-wrap gap-1.5 mb-2.5">
-            {profile.relation_type && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
-                {optionLabel(RELATION_TYPES, profile.relation_type)}
-              </span>
-            )}
-            {profile.goal && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
-                {optionLabel(GOALS, profile.goal)}
-              </span>
-            )}
-            {profile.subculture && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
-                {optionLabel(SUBCULTURES, profile.subculture)}
-              </span>
-            )}
-            {/* MBTI показываем кодом: расшифровка «INFJ · Активист» в тесную
-                карточку не влезает, а тем, кто ищет по типу, кода достаточно */}
-            {profile.mbti && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
-                {profile.mbti}
-              </span>
-            )}
-          </div>
-        )}
-
         {profile.bio && (
-          <p className="text-[14px] leading-snug text-white/90 line-clamp-2 mb-3">
+          <p className="text-[14px] leading-snug text-white/90 line-clamp-2 mb-2.5">
             {profile.bio}
           </p>
         )}
 
-        {profile.interests?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {profile.interests.slice(0, 4).map((interest) => (
-              <span
-                key={interest}
-                className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium"
-              >
-                {interest}
-              </span>
-            ))}
-            {profile.interests.length > 4 && (
-              <span className="text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium">
-                +{profile.interests.length - 4}
-              </span>
-            )}
-          </div>
+        {/* Одна строка меток вместо двух блоков с переносами: сколько влезло,
+            столько и показываем, остальное — за «ещё N» */}
+        {метки.length > 0 && (
+          <ОдинРяд метки={метки} onMore={() => onOpenProfile?.(profile)} />
         )}
       </div>
     </motion.div>
+  );
+}
+
+/* ── Метки анкеты в одну строку ─────────────────────────────── */
+
+/** Зазор между метками — тот же, что был у flex-wrap (gap-1.5). */
+const ЗАЗОР = 6;
+/** Ширина, которую держим в резерве под кнопку «ещё N», px.
+ *  Считана по верхней границе: «ещё 99» на 12px полужирном, плюс padding
+ *  и шеврон. Занизить нельзя — тогда кнопка ужмёт строку и срежет метку. */
+const РЕЗЕРВ = 76;
+
+/**
+ * Тип связи, цель, субкультура, MBTI и интересы — одной строкой.
+ *
+ * Двумя блоками с flex-wrap это превращалось в кашу: у человека с
+ * субкультурой и десятком интересов плашки занимали треть карточки и
+ * закрывали фото. Теперь в строку входит ровно столько меток, сколько
+ * влезает по ширине, а хвост сворачивается в «ещё N» — она открывает
+ * анкету, где список показан целиком.
+ *
+ * Ширины снимаем один раз, пока в DOM ещё весь набор, и держим в ref:
+ * пересчёт по ResizeObserver идёт по сохранённым числам, поэтому строка
+ * не мигает и не зацикливается на самой себе.
+ */
+function ОдинРяд({
+  метки,
+  onMore,
+}: {
+  метки: string[];
+  onMore?: () => void;
+}) {
+  // Два узла: внешний держит всю доступную ширину (по нему считаем),
+  // внутренний ужимается по содержимому — иначе кнопка «ещё N» улетала
+  // к правому краю и повисала в пустоте
+  const ряд = useRef<HTMLDivElement>(null);
+  const коробка = useRef<HTMLDivElement>(null);
+  const ширины = useRef<number[]>([]);
+  const [влезло, setВлезло] = useState(метки.length);
+  const ключ = метки.join("|");
+
+  useLayoutEffect(() => {
+    const box = ряд.current;
+    const внутри = коробка.current;
+    if (!box || !внутри) return;
+    // Снимаем ширины только с полного набора: после сворачивания в DOM
+    // остаётся хвост, и мерить по нему нечего
+    if (ширины.current.length !== метки.length) {
+      ширины.current = Array.from(внутри.children).map(
+        (el) => (el as HTMLElement).offsetWidth
+      );
+    }
+
+    const считать = () => {
+      const доступно = box.clientWidth;
+      // jsdom и скрытая карточка отдают ноль — тогда показываем всё
+      if (!доступно) return;
+      const влез = (лимит: number) => {
+        let сумма = 0;
+        let n = 0;
+        for (const ш of ширины.current) {
+          const шаг = сумма + (n ? ЗАЗОР : 0) + ш;
+          if (шаг > лимит) break;
+          сумма = шаг;
+          n += 1;
+        }
+        return n;
+      };
+      let n = влез(доступно);
+      if (n < ширины.current.length) n = влез(доступно - ЗАЗОР - РЕЗЕРВ);
+      // Хотя бы одна метка: пустая строка выглядит как обрыв вёрстки
+      setВлезло(Math.max(1, n));
+    };
+
+    считать();
+    if (typeof ResizeObserver === "undefined") return;
+    const наблюдатель = new ResizeObserver(считать);
+    наблюдатель.observe(box);
+    return () => наблюдатель.disconnect();
+    // ключ, а не сам массив: у него новая ссылка на каждый рендер
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ключ]);
+
+  const скрыто = метки.length - влезло;
+
+  return (
+    <div ref={ряд} className="flex items-center gap-1.5">
+      <div ref={коробка} className="flex min-w-0 gap-1.5 overflow-hidden">
+        {метки.slice(0, влезло).map((метка) => (
+          <span
+            key={метка}
+            className="shrink-0 text-[12px] px-2.5 py-1 rounded-full liquid liquid-photo font-medium"
+          >
+            {метка}
+          </span>
+        ))}
+      </div>
+      {скрыто > 0 && (
+        <button
+          type="button"
+          aria-label={`Ещё ${скрыто} — открыть анкету`}
+          onPointerDownCapture={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            haptic("light");
+            onMore?.();
+          }}
+          className="shrink-0 pointer-events-auto inline-flex items-center gap-0.5
+                     text-[12px] pl-2.5 pr-1.5 py-1 rounded-full liquid liquid-photo
+                     font-semibold text-white/90 active:text-white transition-colors"
+        >
+          {/* Шеврон отличает кнопку от соседних плашек: без него «ещё 4»
+              читается как ещё один факт анкеты, а не как вход в неё */}
+          ещё {скрыто}
+          <ChevronRight size={13} className="opacity-70" />
+        </button>
+      )}
+    </div>
   );
 }
 
