@@ -276,7 +276,7 @@ export default function Reels() {
 
       {/* Шапка поверх ленты: название слева, звук и запись справа. Под ней
           вуаль: на светлом кадре белый заголовок исчезал вместе с кадром */}
-      <div className="absolute inset-x-0 top-0 z-30 safe-top pointer-events-none bg-scrim-top pb-4">
+      <div className="absolute inset-x-0 top-0 z-30 safe-top pointer-events-none bg-scrim-top pb-10">
         <div className="flex items-center justify-between px-4 pt-2">
           <h1 className="text-[20px] font-extrabold tracking-[-0.02em] reel-shadow">
             Видео
@@ -616,10 +616,19 @@ function ReelItem({
         </div>
       )}
 
+      {/* Виньетка под столбиком действий. Отдельным слоем и заведомо выше
+          самого столбика: градиент обязан дойти до нуля внутри своей
+          коробки, иначе её верхний край режет его прямой линией поперёк
+          кадра. Ниже содержимого по z — красит кадр, не значки */}
+      <div className="absolute right-0 bottom-0 w-[220px] h-[520px] z-10
+                      pointer-events-none bg-reel-column" />
+
       {/* Низ: слева автор и подпись, справа столбик действий. Оба стоят над
-          плавающим таб-баром — как в TikTok, где бар накрывает само видео */}
+          плавающим таб-баром — как в TikTok, где бар накрывает само видео.
+          Вуаль своя, не общая с фотокарточками: столбик действий выходит
+          выше плотной зоны обычного скрима и на белом кадре исчезал */}
       <div
-        className="absolute inset-x-0 bottom-0 z-20 bg-scrim pointer-events-none"
+        className="absolute inset-x-0 bottom-0 z-20 bg-scrim-reel pointer-events-none"
         style={{ paddingBottom: "calc(var(--nav-h) + 10px)" }}
       >
         <div className="flex items-end gap-3 px-4">
