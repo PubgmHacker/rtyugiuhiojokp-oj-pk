@@ -61,7 +61,7 @@ export default function EmailRecovery({
 
   if (email) {
     return (
-      <Card className="mb-4">
+      <Card className="p-4 mb-4">
         <div className="flex items-center gap-3">
           <Check size={17} className="text-[#4ade80] shrink-0" />
           <div className="flex-1 min-w-0">
@@ -77,7 +77,7 @@ export default function EmailRecovery({
   }
 
   return (
-    <Card className="mb-4">
+    <Card className="p-4 mb-4">
       <div className="flex items-center gap-3 mb-1">
         <Mail size={17} className="text-accent shrink-0" />
         <p className="text-[14px] font-semibold flex-1">Почта для входа</p>
@@ -99,7 +99,7 @@ export default function EmailRecovery({
             autoComplete="email"
             value={адрес}
             onChange={(e) => setАдрес(e.target.value)}
-            placeholder="почта@例.ru"
+            placeholder="почта@пример.ru"
             disabled={ждёмКод}
             className="field w-full px-3.5 py-2.5 rounded-[var(--radius-control)] text-[14px] disabled:opacity-60"
           />
