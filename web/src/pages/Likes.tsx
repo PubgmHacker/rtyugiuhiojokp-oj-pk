@@ -77,7 +77,7 @@ export default function Likes() {
               aria-pressed={tab === value}
               className={`flex-1 py-2 rounded-full text-[14px] font-semibold
                           transition-colors ${
-                            tab === value ? "bg-accent text-white" : "text-text-secondary"
+                            tab === value ? "bg-accent text-on-accent" : "text-text-secondary"
                           }`}
             >
               {label}

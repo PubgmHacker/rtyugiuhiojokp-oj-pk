@@ -47,7 +47,7 @@ export default function SectionsTable() {
             className={`px-3.5 py-1.5 rounded-full text-[13.5px] font-semibold
                         transition-colors ${
                           days === p
-                            ? "bg-accent text-white"
+                            ? "bg-accent text-on-accent"
                             : "chip text-text-secondary"
                         }`}
           >

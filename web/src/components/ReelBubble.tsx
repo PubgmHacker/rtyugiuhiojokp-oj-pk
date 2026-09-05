@@ -80,7 +80,7 @@ export default function ReelBubble({
       {reel.caption && (
         <p
           className={`mt-1 text-[12.5px] leading-snug line-clamp-2 ${
-            mine ? "text-white/80" : "text-text-muted"
+            mine ? "text-on-accent/80" : "text-text-muted"
           }`}
         >
           {reel.caption}

@@ -41,7 +41,7 @@ export default function ModerationLogsTable() {
             key={s}
             onClick={() => setFilter(s)}
             className={`px-3 py-1.5 rounded-full text-xs transition ${
-              filter === s ? "bg-accent text-white" : "bg-bg text-text-muted hover:text-text"
+              filter === s ? "bg-accent text-on-accent" : "bg-bg text-text-muted hover:text-text"
             }`}
           >
             {s === "all" ? "Все" : s === "blocked" ? "Заблокировано" : s === "warning" ? "Предупреждения" : "Безопасно"}

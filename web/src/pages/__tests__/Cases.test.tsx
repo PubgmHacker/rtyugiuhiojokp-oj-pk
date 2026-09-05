@@ -180,9 +180,12 @@ describe("Cases", () => {
     expect(within(хеллоуин).getByText(/Набор собран/)).toBeInTheDocument();
 
     expect(screen.getAllByRole("button", { name: /^Открыть кейс/ })).toHaveLength(3);
-    // Витрина наград одинакова для всех кейсов — расходников в ней нет
-    expect(screen.getByText("Наклейка набора")).toBeInTheDocument();
-    expect(screen.getByText("Обложка анкеты")).toBeInTheDocument();
+    // Шанс обложки — последним чипом на самой плитке, а не отдельной таблицей
+    // внизу экрана: чипы плитки в сумме дают 100%, и перемножать две таблицы
+    // процентов в уме человеку больше не нужно.
+    expect(within(керопи).getByText(/обложка/).parentElement).toHaveTextContent("20%");
+    expect(screen.queryByText("Наклейка набора")).toBeNull();
+    // Расходников в кейсах нет — только наклейки набора и обложки анкеты
     expect(screen.queryByText(/суперлайк/i)).toBeNull();
     expect(screen.queryByText(/буст/i)).toBeNull();
   });

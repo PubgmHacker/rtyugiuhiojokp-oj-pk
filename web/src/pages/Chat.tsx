@@ -1570,7 +1570,7 @@ export default function Chat() {
                                         theme?.bubble_theirs_color
                                           ? ""
                                           : group.mine
-                                            ? "bg-accent text-white"
+                                            ? "bg-accent text-on-accent"
                                             : "bg-surface-2 text-text"
                                       }`}
                           style={{
@@ -1721,7 +1721,7 @@ export default function Chat() {
               {новых > 0 && (
                 <span
                   className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1.5 rounded-full
-                             bg-accent text-white text-[11px] font-bold tabular-nums
+                             bg-accent text-on-accent text-[11px] font-bold tabular-nums
                              flex items-center justify-center"
                 >
                   {новых > 99 ? "99+" : новых}

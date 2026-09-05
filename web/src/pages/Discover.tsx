@@ -221,7 +221,7 @@ function BoostButton() {
           <span
             aria-hidden
             className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full
-                       bg-accent text-white text-[10px] font-bold leading-4
+                       bg-accent text-on-accent text-[10px] font-bold leading-4
                        text-center ring-2 ring-bg"
           >
             {boost.bonus}

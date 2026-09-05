@@ -68,7 +68,7 @@ export default function ReportsTable() {
             key={s}
             onClick={() => setFilter(s)}
             className={`px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
-              filter === s ? "bg-accent text-white" : "bg-bg text-text-muted hover:text-text"
+              filter === s ? "bg-accent text-on-accent" : "bg-bg text-text-muted hover:text-text"
             }`}
           >
             {s === "pending" ? "Новые" : s === "all" ? "Все" : s === "resolved" ? "Решённые" : "Отклонённые"}

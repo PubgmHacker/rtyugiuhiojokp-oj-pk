@@ -141,7 +141,7 @@ export default function AdminDashboard() {
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition ${
                   isActive
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-on-accent"
                     : "bg-surface text-text-muted hover:text-text"
                 }`}
               >

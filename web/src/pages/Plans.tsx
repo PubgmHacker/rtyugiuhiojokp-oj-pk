@@ -213,7 +213,7 @@ export default function Plans() {
                     className={`flex-1 py-2.5 rounded-full text-[15px] font-bold
                                 transition-colors ${
                       active
-                        ? "bg-accent text-white shadow"
+                        ? "bg-accent text-on-accent shadow"
                         : "text-text-secondary"
                     }`}
                   >
@@ -304,6 +304,19 @@ export default function Plans() {
                 />
               ))}
             </div>
+
+            {/* Куда ведёт нажатие. В вебе и в мини-аппе строка срока —
+                единственная кнопка покупки, но выглядит она как строка
+                прайса, и нажатие уводит из приложения в бота. Уводить молча
+                нельзя: человек на платёжном экране должен знать, что сейчас
+                откроется и чем там платят. В нативной сборке лист покупки
+                показывает Apple, и объяснять нечего. */}
+            {!isNative() && (
+              <p className="-mt-2 mb-4 px-1 text-[12.5px] text-text-muted leading-snug">
+                Нажмите на срок — оплата откроется в боте: Telegram Stars или
+                криптовалюта.
+              </p>
+            )}
 
             {/* Обязательный пункт для ревью: сменивший устройство должен
                 вернуть оплаченное без повторной оплаты */}

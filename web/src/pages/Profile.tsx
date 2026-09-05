@@ -262,6 +262,15 @@ export default function Profile() {
     ? `https://t.me/${BOT_USERNAME}?start=ref_${profile.id}`
     : "";
 
+  // Счётчик приглашений и порог буста считаем в одном месте. На сервере буст —
+  // это ровно «приглашено >= порога», поэтому если флаг в ответе не пришёл,
+  // выводим его из чисел, а не показываем «3 из 3» рядом с «пригласите 3
+  // друзей»: два утверждения об одном и том же на одной карточке, и одно из
+  // них ложное, читаются как сломанный экран.
+  const приглашено = profile?.invited_count ?? 0;
+  const цельПриглашений = profile?.referral_target ?? 3;
+  const бустПриглашений = profile?.referral_boost ?? приглашено >= цельПриглашений;
+
   const copyReferralLink = useCallback(async () => {
     haptic("light");
     try {
@@ -487,28 +496,28 @@ export default function Profile() {
           <span className="font-semibold text-[15px]">Приглашай друзей</span>
         </div>
 
-        {profile?.referral_boost ? (
+        {бустПриглашений ? (
           <p className="text-[14px] text-success mb-3.5">
             Буст активен: анкета выше на {profile.referral_boost_percent ?? 12}%
           </p>
         ) : (
           <>
             <p className="text-[14px] text-text-secondary mb-3">
-              Пригласите {profile?.referral_target ?? 3} друзей и получите буст
-              анкеты на {profile?.referral_boost_percent ?? 12}%
+              Пригласите {цельПриглашений} друзей и получите буст анкеты на{" "}
+              {profile?.referral_boost_percent ?? 12}%
             </p>
             <div className="flex gap-1.5 mb-1.5">
-              {Array.from({ length: profile?.referral_target ?? 3 }).map((_, i) => (
+              {Array.from({ length: цельПриглашений }).map((_, i) => (
                 <div
                   key={i}
                   className={`h-1.5 flex-1 rounded-full ${
-                    i < (profile?.invited_count ?? 0) ? "bg-accent" : "bg-surface-3"
+                    i < приглашено ? "bg-accent" : "bg-surface-3"
                   }`}
                 />
               ))}
             </div>
             <p className="text-caption text-text-muted mb-3.5">
-              {profile?.invited_count ?? 0} из {profile?.referral_target ?? 3}
+              {приглашено} из {цельПриглашений}
             </p>
           </>
         )}

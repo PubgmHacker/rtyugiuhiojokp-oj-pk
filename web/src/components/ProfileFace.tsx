@@ -6,7 +6,13 @@
  * (маска-круг 126 с зазором в 7 px — так делает Discord, и так делает
  * Plink). Справа сверху — кисточка к обложкам, над аватаром — пузырь-мысль
  * с «о себе», под обложкой — тонированная кнопка «Изменить», имя с галочкой
- * и ролью, ниже — стеклянная карта счётчиков.
+ * и ролью. На этом лицо кончается.
+ *
+ * Карты счётчиков («2 Фото · 0 Видео · 3 Интереса») здесь нет намеренно. Это
+ * своя анкета, а не чужая: хозяин и так знает, сколько у него фото, зато
+ * прямо под лицом стоит карточка заполненности — она говорит о том же, но
+ * по делу и со ссылкой. Рядом с ней три числа выглядели вторым, беззубым
+ * упрёком, а «0 Видео» — крупным нулём в самом видном месте экрана.
  *
  * Цвет лица не зависит от темы приложения: кнопка, чип и бейджи берут
  * акцент обложки (пресет из кейсов или пара по id человека).
@@ -16,7 +22,6 @@ import { Crown, Paintbrush, Pencil } from "lucide-react";
 import type { UserProfile } from "../lib/api";
 import { coverBackground, coverForProfile } from "../lib/cover";
 import { letterAvatarStyle, readableOn } from "../lib/aura";
-import { plural } from "../lib/plural";
 import { IdentityBadge } from "./ui";
 
 /** Геометрия лица — цифры Plink (pt → px 1:1). */
@@ -50,8 +55,6 @@ interface Props {
   onEdit?: () => void;
   onDecor?: () => void;
   onBio?: () => void;
-  /** Что считаем в карте счётчиков. По умолчанию — фото/интересы/приглашено. */
-  counters?: { label: string; value: number | string }[];
 }
 
 export default function ProfileFace({
@@ -60,7 +63,6 @@ export default function ProfileFace({
   onEdit,
   onDecor,
   onBio,
-  counters,
 }: Props) {
   const cover = coverForProfile(profile);
   const photo = profile.photos?.[0];
@@ -73,16 +75,6 @@ export default function ProfileFace({
   const тонированный = { "--tint": cover.accent } as React.CSSProperties;
   const bio = (profile.bio ?? "").trim();
   const мысль = bio.length > ПУЗЫРЬ_МАКС ? bio.slice(0, ПУЗЫРЬ_МАКС - 1).trimEnd() + "…" : bio;
-  const интересов = profile.interests?.length ?? 0;
-  // «Приглашено» отсюда убрано: это реферальная метрика, и она уже показана
-  // своей карточкой с прогрессом ниже на экране. На лице анкеты считаем то,
-  // из чего анкета состоит, — и подпись согласуем с числом, иначе выходит
-  // машинное «3 Интересы»
-  const счётчики = counters ?? [
-    { label: "Фото", value: profile.photos?.length ?? 0 },
-    { label: "Видео", value: profile.videos?.length ?? 0 },
-    { label: plural(интересов, "Интерес", "Интереса", "Интересов"), value: интересов },
-  ];
 
   return (
     <section aria-label="Анкета" className="relative">
@@ -215,19 +207,6 @@ export default function ProfileFace({
           {profile.age ? `${profile.age} · ` : ""}
           {profile.city || "Город не указан"}
         </p>
-      </div>
-
-      {/* Карта счётчиков */}
-      <div className="mx-4 mt-4 rounded-[20px] glass flex py-[13px]">
-        {счётчики.map((c, i) => (
-          <div
-            key={c.label}
-            className={`flex-1 text-center ${i > 0 ? "border-l border-white/10" : ""}`}
-          >
-            <p className="text-[20px] font-extrabold leading-none">{c.value}</p>
-            <p className="text-[11.5px] text-text-muted mt-1">{c.label}</p>
-          </div>
-        ))}
       </div>
     </section>
   );

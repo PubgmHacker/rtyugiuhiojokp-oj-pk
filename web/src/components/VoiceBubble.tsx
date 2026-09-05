@@ -183,7 +183,10 @@ export default function VoiceBubble({ media, mine, meta }: Props) {
 
   const шагом = (сек: number) => применить(progress + сек / duration);
 
-  const ink = mine ? "text-white" : "text-text";
+  // Свой пузырь залит акцентом — чернила на нём берём из --color-on-accent,
+  // а не белым: в светлых схемах («Серебро», «Золото») акцент светлый, и
+  // белая строка на нём пропадала.
+  const ink = mine ? "text-on-accent" : "text-text";
   const shown = playing || progress > 0 ? progress * duration : duration;
   const активна = playing || progress > 0;
 
@@ -197,7 +200,7 @@ export default function VoiceBubble({ media, mine, meta }: Props) {
         disabled={failed}
         className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center
                     active:scale-90 transition-transform disabled:opacity-40 ${
-                      mine ? "bg-white/22 text-white" : "liquid-primary"
+                      mine ? "bg-on-accent/22 text-on-accent" : "liquid-primary"
                     }`}
       >
         {playing ? (
@@ -258,7 +261,7 @@ export default function VoiceBubble({ media, mine, meta }: Props) {
              яркость, что и часы у соседних текстовых пузырей — замер:
              179 у входящего текста против 116, когда строка была muted. */
           className={`flex items-center gap-1.5 h-[17px] text-[11.5px] tabular-nums ${
-            mine ? "text-white" : "text-text"
+            mine ? "text-on-accent" : "text-text"
           }`}
         >
           <span className="truncate">
@@ -267,7 +270,7 @@ export default function VoiceBubble({ media, mine, meta }: Props) {
           {unheard && !failed && (
             <span
               className={`shrink-0 w-[5px] h-[5px] rounded-full ${
-                mine ? "bg-white" : "bg-accent"
+                mine ? "bg-on-accent" : "bg-accent"
               }`}
               aria-label="не прослушано"
             />
@@ -290,7 +293,7 @@ export default function VoiceBubble({ media, mine, meta }: Props) {
                           font-semibold tabular-nums leading-none flex items-center
                           justify-center active:scale-90 transition-transform ${
                             mine
-                              ? "bg-white/22 text-white"
+                              ? "bg-on-accent/22 text-on-accent"
                               : "bg-text/10 text-text-muted"
                           }`}
             >

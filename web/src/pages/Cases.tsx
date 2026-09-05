@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Gift, Lock, Sparkles, Sticker as StickerIcon } from "lucide-react";
+import { Check, Gift, Lock, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   getCaseState,
@@ -169,7 +169,12 @@ export default function Cases() {
   }
 
   const платно = state.per_month === 0;
-  // Таблица редкостей общая для всех кейсов — берём у первого, где она есть
+  // Доля обложки — единственное, что не зависит от набора: она общая на все
+  // кейсы. Показываем её последним чипом на самой плитке, а не отдельной
+  // таблицей внизу: две таблицы процентов на одном экране человек пытается
+  // перемножить, и обе оказываются про разное.
+  const доляОбложки =
+    state.rewards.find((r) => r.code === "decor")?.chance_percent ?? 0;
   const награда = won?.result.reward;
   const можноНадеть = Boolean(награда?.sticker || награда?.decor);
 
@@ -319,6 +324,7 @@ export default function Cases() {
             <ПлиткаКейса
               key={к.code}
               кейс={к}
+              обложка={доляОбложки}
               открываю={busy === к.code}
               заблокировано={busy !== null || state.left === 0}
               платно={платно}
@@ -327,29 +333,6 @@ export default function Cases() {
           ))}
         </div>
 
-        {/* ── Что выпадает — одинаково для всех кейсов ─────────────── */}
-        <h2 className="text-caption text-text-muted mt-6 mb-2.5 px-1">
-          Что выпадает из любого кейса
-        </h2>
-        <div className="flex flex-col gap-2">
-          {state.rewards.map((reward) => (
-            <div
-              key={`${reward.code}-${reward.amount}`}
-              className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-tile)]
-                         bg-surface-2 border border-hairline"
-            >
-              {reward.code === "decor" ? (
-                <Sparkles size={17} className="text-warn shrink-0" />
-              ) : (
-                <StickerIcon size={17} className="text-accent shrink-0" />
-              )}
-              <span className="flex-1 text-[15px]">{reward.title}</span>
-              <span className="text-[13px] font-semibold text-text-muted tabular-nums">
-                {reward.chance_percent}%
-              </span>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Коллекция под витриной: сначала «что можно выиграть», потом
@@ -368,12 +351,16 @@ export default function Cases() {
 
 function ПлиткаКейса({
   кейс,
+  обложка,
   открываю,
   заблокировано,
   платно,
   onOpen,
 }: {
   кейс: CaseDef;
+  /** Доля открытий, дающих обложку анкеты, в процентах. Общая на все кейсы,
+      поэтому приходит с экрана, а не из плитки. */
+  обложка: number;
   открываю: boolean;
   заблокировано: boolean;
   платно: boolean;
@@ -456,7 +443,11 @@ function ПлиткаКейса({
 
       {/* Доли редкостей — у каждого набора свои: сервер нормирует веса по
           фактическому составу, и в наборе без легендарных строки легендарных
-          не будет. Одной таблицей на страницу это не сводится. */}
+          не будет. Одной таблицей на страницу это не сводится.
+
+          Проценты абсолютные и в сумме с обложкой дают 100: это полный ответ
+          на «что мне выпадет из этого кейса», а не половина ответа, которую
+          пришлось бы домножать на вторую половину с другого конца экрана. */}
       {шансы.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {шансы.map(([r, доля]) => (
@@ -467,6 +458,15 @@ function ПлиткаКейса({
               <РедкостьПодпись rarity={r} title={ИМЯ_РЕДКОСТИ[r] ?? r} /> · {доля}%
             </span>
           ))}
+          {обложка > 0 && (
+            <span className="px-2 py-0.5 chip text-[11px] font-semibold tabular-nums">
+              <span className="inline-flex items-center gap-1 text-warn">
+                <Sparkles size={10} strokeWidth={2.5} />
+                обложка
+              </span>{" "}
+              · {обложка}%
+            </span>
+          )}
         </div>
       )}
 

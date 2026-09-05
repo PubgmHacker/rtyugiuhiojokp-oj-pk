@@ -276,7 +276,7 @@ export default function ReelComments({
                   aria-label="Отправить"
                   onClick={send}
                   disabled={!text.trim() || sending}
-                  className="w-11 h-11 rounded-full bg-accent text-white shrink-0
+                  className="w-11 h-11 rounded-full bg-accent text-on-accent shrink-0
                              flex items-center justify-center
                              disabled:opacity-30 active:scale-95 transition-transform"
                 >

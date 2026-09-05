@@ -83,7 +83,7 @@ export default function PauseBanner() {
           <button
             onClick={resume}
             disabled={busy}
-            className="shrink-0 px-3.5 py-2 rounded-full bg-accent text-white
+            className="shrink-0 px-3.5 py-2 rounded-full bg-accent text-on-accent
                        text-[13px] font-bold active:scale-95 transition-transform
                        disabled:opacity-60"
           >

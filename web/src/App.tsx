@@ -196,7 +196,10 @@ function BottomNav() {
         }}
       >
         {/* Пилюля активной вкладки: одна на весь бар, переезжает между
-            вкладками по кривой Plink; при ведении — плотнее и чуть крупнее */}
+            вкладками по кривой Plink; при ведении — плотнее и чуть крупнее.
+            Заливка — 20% акцента поверх стекла, поэтому активная вкладка
+            набрана цветом текста темы, а не белым: белила тут были бы
+            совпадением, которое ломается на первой же светлой схеме. */}
         {ячейка > 0 && (
           <motion.span
             aria-hidden
@@ -253,7 +256,7 @@ function BottomNav() {
                     <item.icon
                       size={20}
                       strokeWidth={isActive ? 2.3 : 1.9}
-                      className={isActive ? "text-white" : "text-text-faint"}
+                      className={isActive ? "text-text" : "text-text-faint"}
                       fill={isActive && item.path === "/discover" ? "currentColor" : "none"}
                     />
                   </motion.div>
@@ -261,7 +264,7 @@ function BottomNav() {
                   {badge > 0 && (
                     <span
                       className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1
-                                 rounded-full bg-accent text-white text-[10px] font-bold
+                                 rounded-full bg-accent text-on-accent text-[10px] font-bold
                                  flex items-center justify-center shadow-[0_1px_4px_rgb(0_0_0/.35)]"
                     >
                       {badge > 99 ? "99+" : badge}
@@ -271,7 +274,7 @@ function BottomNav() {
 
                 <span
                   className={`text-[10px] font-semibold tracking-[0.01em] leading-none ${
-                    isActive ? "text-white" : "text-text-faint"
+                    isActive ? "text-text" : "text-text-faint"
                   }`}
                 >
                   {t(item.label)}
