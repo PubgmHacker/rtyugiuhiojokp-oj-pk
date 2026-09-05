@@ -256,7 +256,7 @@ function BottomNav() {
                     <item.icon
                       size={20}
                       strokeWidth={isActive ? 2.3 : 1.9}
-                      className={isActive ? "text-text" : "text-text-faint"}
+                      className={isActive ? "text-text" : "text-text-muted"}
                       fill={isActive && item.path === "/discover" ? "currentColor" : "none"}
                     />
                   </motion.div>
@@ -272,9 +272,14 @@ function BottomNav() {
                   )}
                 </div>
 
+                {/* Неактивная вкладка набрана подписным токеном, а не самым
+                    бледным: на стекле панели text-faint давал 2.8:1 при
+                    кегле 10 — ниже AA для мелкого текста. Активную отличает
+                    не только цвет, но и пилюля, толщина штриха и масштаб,
+                    поэтому подъём чернил иерархию не съедает. */}
                 <span
                   className={`text-[10px] font-semibold tracking-[0.01em] leading-none ${
-                    isActive ? "text-text" : "text-text-faint"
+                    isActive ? "text-text" : "text-text-muted"
                   }`}
                 >
                   {t(item.label)}

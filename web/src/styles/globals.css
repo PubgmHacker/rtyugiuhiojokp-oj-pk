@@ -53,12 +53,16 @@
   /* ── Текст ──────────────────────────────────────────────────
      Четыре ступени: заголовок, основной, подпись, служебное. */
   /* Подтон тот же, что у поверхностей — лавандовый: нейтрально-серый текст
-     на фиолетовой канве читался бы «грязным». Контраст проверен тестом. */
+     на фиолетовой канве читался бы «грязным». Все четыре ступени и все
+     стеклянные роли считает styles/__tests__/contrast.test.ts — он читает
+     этот же файл, так что цифры ниже не расходятся с правдой. */
   --color-text: #fafbfc;
   --color-text-secondary: #cdc7e2;
   --color-text-muted: #a29bbf;
   /* Этим цветом набраны таймстемпы в чате и дисклеймеры — держим AA:
-     5.4:1 на канве, 4.6:1 на surface-2. */
+     5.82:1 на канве, 4.95:1 на surface-2. На стекле он уже не годится
+     (1.79:1 без пола, 3.5:1 с полом над белым кадром) — там подписной
+     токен muted; поэтому вкладки таб-бара с него и сняты. */
   --color-text-faint: #8c86a8;
   --color-on-accent: #ffffff;
 
@@ -159,6 +163,33 @@
   --field-bg: rgb(255 255 255 / 0.06);
   --glass-highlight: rgb(255 255 255 / 0.3);
   --glass-rim: rgb(255 255 255 / 0.22);
+  /* Пол под плашкой. Стекло сперва гасит то, что за ним, и только потом
+     кладёт свой белый film — иначе яркость плашки задаёт живой фон.
+     Замер: 14 фаз анимации орбов, самый светлый пиксель под контентом —
+     rgb(110 92 136); плашка над ним без пола выходит rgb(122 105 146), и
+     подпись text-muted читается 1.87:1. Значение выбрано по самому злому
+     месту приложения, а это не карта над орбом (там пола хватает уже на
+     70 %, замер по снимкам даёт 5.2-5.8), а подпись вкладки на панели
+     таб-бара, когда снизу проезжает белый кадр ленты: 70 % — 4.47:1,
+     75 % — 4.55:1. Пять пунктов дают здесь немного, потому что над белым
+     панель держит не столько пол, сколько вуаль самой ленты; но 75 %
+     переводит худший случай за черту AA, а карты при этом теряют по размаху
+     каналов 34 → 31, то есть цвет остаётся. Модель композита («пол, потом
+     плёнка») повторена в styles/__tests__/contrast.test.ts: она же даёт
+     4.96 для glass, 5.45 для glass-soft и 4.65 для панели над пиком фона. Оттенок погоды жив: над орбом плашка всё
+     ещё фиолетовая rgb(56 50 71) против нейтральной rgb(28 26 40) над пустым
+     местом — гасится яркость, а не цвет. Пол взят цветом канвы, поэтому на
+     светлых схемах он осветляет, а на схемах без орбов («День», «Сепия»)
+     подмешивает канву к самой себе и не меняет ничего. Пол получают все
+     роли, несущие текст: glass, settings-card, glass-soft и glass-strong.
+     Панель нуждается в нём сильнее прочих — под таббаром проезжает что
+     угодно, вплоть до белого кадра ленты, и без пола подпись вкладки живёт
+     на чужой яркости. Контролы (liquid) стоят на фото и обложках: там за
+     стеклом снимок, который человек и пришёл смотреть, — гасить его нельзя.
+     Цвет-плёнку под полом приходится задавать картинкой
+     linear-gradient(c, c): в шорткате background цвет допустим только
+     последним слоем, иначе браузер молча выкидывает всё правило. */
+  --glass-floor: color-mix(in srgb, var(--color-bg) 75%, transparent);
 
   /* «Жидкое стекло» контролов: только там, где под стеклом есть что
      преломлять — фото деки, шапка над лентой, таб-бар. Плоские карты списков
@@ -408,7 +439,8 @@
 @utility glass {
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
-    var(--glass-bg);
+    linear-gradient(var(--glass-bg), var(--glass-bg)),
+    var(--glass-floor);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
@@ -421,7 +453,8 @@
 @utility glass-strong {
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
-    var(--glass-bg-strong);
+    linear-gradient(var(--glass-bg-strong), var(--glass-bg-strong)),
+    var(--glass-floor);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
@@ -435,7 +468,9 @@
    как раз под первой строкой и читалась как «выделенный пункт». Свет здесь
    даёт только волосяная кромка сверху. */
 @utility settings-card {
-  background: var(--glass-bg);
+  background:
+    linear-gradient(var(--glass-bg), var(--glass-bg)),
+    var(--glass-floor);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
@@ -448,7 +483,8 @@
 @utility glass-soft {
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 50%),
-    var(--glass-bg-soft);
+    linear-gradient(var(--glass-bg-soft), var(--glass-bg-soft)),
+    var(--glass-floor);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--glass-border);
