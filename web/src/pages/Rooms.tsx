@@ -8,7 +8,7 @@
  * комнату не делаем — возврат к списку должен быть мгновенным, без перезагрузки.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -27,7 +27,7 @@ import {
 } from "../lib/api";
 import { assertList } from "../lib/payload";
 import { haptic } from "../lib/haptics";
-import { letterAvatarStyle } from "../lib/aura";
+import { letterAvatarStyle, letterAvatarStyleAt, spreadIdentityIndexes } from "../lib/aura";
 import { useSectionOpen } from "../lib/useSectionOpen";
 import { useIsMounted } from "../hooks/useSafeAsync";
 import {
@@ -61,6 +61,14 @@ export default function Rooms() {
   }, []);
 
   useEffect(загрузить, [загрузить]);
+
+  // Каталог маленький и виден целиком: если два кружка рядом одного цвета,
+  // это читается как случайность, а не как «цвет от имени». Раздаём палитру
+  // по списку — по slug, он не переводится и не меняется от языка интерфейса.
+  const цвета = useMemo(
+    () => spreadIdentityIndexes((rooms ?? []).map((r) => r.slug)),
+    [rooms],
+  );
 
   if (active) {
     return <RoomChat room={active} onBack={() => setActive(null)} />;
@@ -118,7 +126,7 @@ export default function Rooms() {
           палитра, что у аватаров в самой комнате. */}
       <div className="px-4 pt-3">
         <div className="settings-card rounded-[20px] overflow-hidden">
-          {rooms.map((room) => (
+          {rooms.map((room, i) => (
             <button
               key={room.id}
               onClick={() => {
@@ -133,7 +141,7 @@ export default function Rooms() {
                 aria-hidden="true"
                 className="w-10 h-10 rounded-full grid place-items-center
                            text-[15px] font-bold shrink-0"
-                style={letterAvatarStyle(room.title)}
+                style={letterAvatarStyleAt(цвета[i])}
               >
                 {room.title.trim().slice(0, 1).toUpperCase()}
               </span>
@@ -157,7 +165,10 @@ export default function Rooms() {
                     <span className="text-[12px] text-text-faint shrink-0">тихо</span>
                   )}
                 </div>
-                <p className="text-caption text-text-muted truncate">
+                {/* Две строки, а не обрезка: описание — единственное, по чему
+                    выбирают комнату, а «Зал, бег, единоборства и всё осталь…»
+                    отнимает ровно ту половину, ради которой его читают. */}
+                <p className="text-caption text-text-muted line-clamp-2">
                   {room.description}
                 </p>
               </div>

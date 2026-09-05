@@ -11,11 +11,14 @@
 import { describe, expect, it } from "vitest";
 import {
   IDENTITY_PAIRS,
+  auraAt,
   auraOf,
   identityIndex,
   legible,
   letterAvatarStyle,
+  letterAvatarStyleAt,
   luminance,
+  spreadIdentityIndexes,
   хеш,
 } from "../aura";
 import { COVER_PRESETS, coverBackground, coverForProfile } from "../cover";
@@ -78,6 +81,72 @@ describe("палитра личности", () => {
     expect(s.color).toBe("#ffffff");
     expect(s.background).toMatch(/^linear-gradient\(145deg, #[0-9a-f]{6}, #[0-9a-f]{6}\)$/i);
     expect(letterAvatarStyle(undefined).background).toBe(letterAvatarStyle("simp").background);
+  });
+});
+
+describe("раздача палитры по списку", () => {
+  // Восемь пар на восемь мест: короткий каталог, который человек видит
+  // целиком, не должен показывать два одинаковых кружка подряд.
+  const комнаты = ["smalltalk", "music", "games", "movies", "sport", "art"];
+
+  it("auraAt берёт пару по индексу и совпадает с auraOf", () => {
+    for (let i = 0; i < IDENTITY_PAIRS.length; i++) {
+      expect(auraAt(i).pair).toEqual(IDENTITY_PAIRS[i]);
+    }
+    expect(auraAt(identityIndex("user-7"))).toBe(auraOf("user-7"));
+  });
+
+  it("индекс за границами заворачивается, включая отрицательный", () => {
+    const n = IDENTITY_PAIRS.length;
+    expect(auraAt(n)).toBe(auraAt(0));
+    expect(auraAt(n + 3)).toBe(auraAt(3));
+    expect(auraAt(-1)).toBe(auraAt(n - 1));
+    expect(auraAt(-n - 2)).toBe(auraAt(n - 2));
+  });
+
+  it("шесть комнат получают шесть разных цветов", () => {
+    // Ради этого всё и затевалось: сырой хеш давал три одинаковых оранжевых
+    const сырые = комнаты.map(identityIndex);
+    expect(new Set(сырые).size).toBeLessThan(комнаты.length);
+
+    const розданные = spreadIdentityIndexes(комнаты);
+    expect(розданные).toHaveLength(комнаты.length);
+    expect(new Set(розданные).size).toBe(комнаты.length);
+    for (const i of розданные) {
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(IDENTITY_PAIRS.length);
+    }
+  });
+
+  it("первый в списке остаётся при своём цвете, раздача воспроизводима", () => {
+    const розданные = spreadIdentityIndexes(комнаты);
+    expect(розданные[0]).toBe(identityIndex(комнаты[0]));
+    expect(spreadIdentityIndexes(комнаты)).toEqual(розданные);
+    // Тот же набор в другом порядке — те же цвета у тех же строк
+    const хвост = spreadIdentityIndexes(комнаты.slice(1));
+    expect(хвост[0]).toBe(identityIndex(комнаты[1]));
+  });
+
+  it("список длиннее палитры не ломается — цвета начинают повторяться", () => {
+    const много = Array.from({ length: 20 }, (_, i) => `room-${i}`);
+    const розданные = spreadIdentityIndexes(много);
+    expect(розданные).toHaveLength(20);
+    for (const i of розданные) {
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(IDENTITY_PAIRS.length);
+    }
+    // Первые восемь всё ещё все разные
+    expect(new Set(розданные.slice(0, IDENTITY_PAIRS.length)).size).toBe(IDENTITY_PAIRS.length);
+    expect(spreadIdentityIndexes([])).toEqual([]);
+  });
+
+  it("letterAvatarStyleAt красит по индексу, буква белая", () => {
+    for (let i = 0; i < IDENTITY_PAIRS.length; i++) {
+      const s = letterAvatarStyleAt(i);
+      expect(s.color).toBe("#ffffff");
+      expect(s.background).toBe(auraAt(i).letter);
+    }
+    expect(letterAvatarStyleAt(identityIndex("u-1"))).toEqual(letterAvatarStyle("u-1"));
   });
 });
 

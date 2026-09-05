@@ -155,19 +155,22 @@ function hueOf(hex: string): number {
   return Math.round(((h * 60) % 360 + 360) % 360);
 }
 
-const КЭШ = new Map<string, Aura>();
+const КЭШ = new Map<number, Aura>();
 
 /**
- * Аура по строке-семени (обычно user_id).
+ * Аура по индексу палитры.
  *
- * Результат кэшируем: функция вызывается на каждый кадр перерисовки
- * списка, а строки id длинные.
+ * Кэш ключуем индексом, а не семенем: аура целиком выводится из пары, пар
+ * восемь, и большего кэшу знать незачем. Раньше ключом был id, и карта
+ * росла на каждого встреченного человека — на ленте это тысячи длинных
+ * строк ради восьми разных значений.
  */
-export function auraOf(seed: string): Aura {
-  const готовая = КЭШ.get(seed);
+export function auraAt(index: number): Aura {
+  const i = ((index % IDENTITY_PAIRS.length) + IDENTITY_PAIRS.length) % IDENTITY_PAIRS.length;
+  const готовая = КЭШ.get(i);
   if (готовая) return готовая;
 
-  const [a, b] = identityPair(seed);
+  const [a, b] = IDENTITY_PAIRS[i];
   const la = legible(a);
   const lb = legible(b);
   const rgbA = hexToRgb(a) ?? [168, 85, 247];
@@ -185,8 +188,47 @@ export function auraOf(seed: string): Aura {
     letter: `linear-gradient(145deg, ${la}, ${lb})`,
   };
 
-  КЭШ.set(seed, aura);
+  КЭШ.set(i, aura);
   return aura;
+}
+
+/**
+ * Аура по строке-семени (обычно user_id).
+ */
+export function auraOf(seed: string): Aura {
+  return auraAt(identityIndex(seed));
+}
+
+/**
+ * Раскладка непохожих цветов на короткий список.
+ *
+ * Для людей столкновение пар безобидно: двое случайных с одной буквой и
+ * одним цветом в разных концах ленты друг с другом никак не соседствуют.
+ * Для каталога комнат — наоборот: все шесть лежат подряд в одной карте, и
+ * FNV по slug'ам честно выдавал три одинаково оранжевых кружка. Со стороны
+ * это читается не как «цвет от личности», а как «цвет наугад».
+ *
+ * Индекс по-прежнему берётся из семени; занятый — сдвигается к ближайшему
+ * свободному вперёд по кругу. Порядок списка входит в результат, поэтому
+ * зовём это только там, где список стабилен и короток. Список длиннее
+ * палитры снова начинает повторяться — восьми пар хватает ровно на восемь
+ * непохожих соседей, и притворяться иначе было бы враньём.
+ */
+export function spreadIdentityIndexes(seeds: readonly string[]): number[] {
+  const занято = new Set<number>();
+  return seeds.map((seed) => {
+    const старт = identityIndex(seed);
+    for (let шаг = 0; шаг < IDENTITY_PAIRS.length; шаг++) {
+      const i = (старт + шаг) % IDENTITY_PAIRS.length;
+      if (!занято.has(i)) {
+        занято.add(i);
+        return i;
+      }
+    }
+    занято.clear();
+    занято.add(старт);
+    return старт;
+  });
 }
 
 /**
@@ -199,6 +241,11 @@ export function letterAvatarStyle(seed: string | null | undefined): {
   color: string;
 } {
   return { background: auraOf(seed || "simp").letter, color: "#ffffff" };
+}
+
+/** То же, но по готовому индексу — для списков, разложенных `spreadIdentityIndexes`. */
+export function letterAvatarStyleAt(index: number): { background: string; color: string } {
+  return { background: auraAt(index).letter, color: "#ffffff" };
 }
 
 /**
