@@ -52,6 +52,7 @@ import {
   type TarotSpread,
   type TarotSpreadType,
 } from "../lib/api";
+import { ТаротАркан } from "../components/TarotArcana";
 import { assertList } from "../lib/payload";
 import { haptic } from "../lib/haptics";
 import { useSectionOpen } from "../lib/useSectionOpen";
@@ -64,11 +65,14 @@ const TABS: { type: TarotSpreadType; label: string }[] = [
   { type: "pair", label: "Он и я" },
 ];
 
-/** Лицо карты: римский номер аркана и знак. Порядок и имена — те же, что в
- *  колоде сервера (api/services/tarot_deck.py, старший аркан 0–XXI); ключ —
- *  имя карты, потому что именно оно приходит в ответе. Карту не из колоды
- *  (сервер добавит новую) рисуем нейтральной искрой, а не пустым местом. */
-const АРКАНЫ: Record<string, { n: string; icon: ComponentType<{ size?: number; className?: string }> }> = {
+/** Номер аркана и маркер его строки в списке под раскладом. Порядок и имена —
+ *  те же, что в колоде сервера (api/services/tarot_deck.py, старший аркан
+ *  0–XXI); ключ — имя карты, потому что именно оно приходит в ответе. Карту не
+ *  из колоды (сервер добавит новую) помечаем искрой, а не пустым местом.
+ *
+ *  Само лицо карты рисует TarotArcana — там сцена, а не значок; здесь набор
+ *  интерфейса, потому что в строке значок стоит 17 px рядом с текстом. */
+export const АРКАНЫ: Record<string, { n: string; icon: ComponentType<{ size?: number; className?: string }> }> = {
   Шут: { n: "0", icon: Footprints },
   Маг: { n: "I", icon: WandSparkles },
   Жрица: { n: "II", icon: Moon },
@@ -371,7 +375,7 @@ export default function Tarot() {
  *  здесь только картинка. */
 function ЛицоКарты({ name, задержка }: { name: string; задержка: number }) {
   const безДвижения = useReducedMotion();
-  const { n, icon: Знак } = АРКАНЫ[name] ?? ЗАПАСНОЙ_АРКАН;
+  const { n } = АРКАНЫ[name] ?? ЗАПАСНОЙ_АРКАН;
   return (
     <motion.div
       className="tarot-face flex-1 min-w-0 max-w-[112px]"
@@ -384,7 +388,7 @@ function ЛицоКарты({ name, задержка }: { name: string; заде
       <span className="text-[9px] font-bold tracking-[0.14em] text-text-faint leading-none">
         {n}
       </span>
-      <Знак size={26} className="text-accent" />
+      <ТаротАркан name={name} className="flex-1 min-h-0 w-full text-accent my-1" />
       <span className="text-[9.5px] font-semibold leading-tight text-center text-text-secondary px-0.5">
         {name}
       </span>
