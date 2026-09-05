@@ -580,11 +580,25 @@ export default function Chat() {
   const onInputChange = useCallback((value: string) => {
     setInput(value);
 
-    // Растущее поле: до пяти строк, дальше прокрутка
+    // Растущее поле: до пяти строк, дальше прокрутка.
+    // scrollHeight не считает рамку, а box-sizing у поля — border-box: без
+    // добавки поле садилось на два пикселя ниже своей же строки в тот момент,
+    // когда человек набирал первый символ, и текст подрезался сверху.
     const el = inputRef.current;
     if (el) {
+      // height:auto роняет прокрутку поля, а каретку браузер подводит к
+      // видимой части ещё ДО нашего обработчика: у потолка в 120 px строка,
+      // которую человек прямо сейчас печатает, уезжала под нижний край —
+      // набор вслепую. Позицию запоминаем до сброса и возвращаем после,
+      // а когда каретка в самом конце текста (обычный набор) — прижимаем
+      // поле к низу.
+      const прокрутка = el.scrollTop;
+      const вКонце =
+        el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+      const рамки = el.offsetHeight - el.clientHeight;
+      el.style.height = `${Math.min(el.scrollHeight + рамки, 120)}px`;
+      el.scrollTop = вКонце ? el.scrollHeight : прокрутка;
     }
 
     const now = Date.now();
@@ -1811,7 +1825,7 @@ export default function Chat() {
                            justify-center text-text-secondary disabled:opacity-40
                            active:scale-95 transition-transform"
               >
-                {sendingPhoto ? <Spinner size={18} /> : <ImagePlus size={20} />}
+                {sendingPhoto ? <Spinner size={22} /> : <ImagePlus size={22} />}
               </button>
             </>
           )}
@@ -1834,6 +1848,14 @@ export default function Chat() {
             />
           ) : (
             <div className="relative flex-1 min-w-0">
+              {/*
+                block и явный интерлиньяж ниже — не украшение. textarea по
+                умолчанию inline-block и стоит на базовой линии: под ним
+                оставался хвост строки в 6 px, обёртка вырастала до 50.5, а ряд
+                выровнен по низу — кнопки уезжали на те же 6 px ниже поля.
+                10 + 22 + 10 + 2 рамки = ровно 44, как круги и как дорожка
+                записи, поэтому три элемента совпадают и центрами, и низом.
+              */}
               <textarea
                 ref={inputRef}
                 value={input}
@@ -1846,8 +1868,8 @@ export default function Chat() {
                 }}
                 placeholder="Сообщение…"
                 rows={1}
-                className="field w-full max-h-[120px] py-2.5 px-4 rounded-[22px]
-                           resize-none text-[15px] no-scrollbar"
+                className="field block w-full max-h-[120px] py-2.5 px-4 rounded-[22px]
+                           resize-none text-[15px] leading-[22px] no-scrollbar"
               />
             </div>
           )}
@@ -1897,17 +1919,17 @@ export default function Chat() {
                         }`}
           >
             {правая === "text" || правая === "note" ? (
-              <Send size={18} />
+              <Send size={20} />
             ) : правая === "hold" ? (
               recording === "voice" ? (
-                <Mic size={20} />
+                <Mic size={22} />
               ) : (
-                <Video size={20} />
+                <Video size={22} />
               )
             ) : (
               // Иконки не подменяются, а сменяются: микрофон уходит вниз-влево,
               // камера приезжает ему на место — тап видно, даже не глядя на подсказку
-              // Размер чётный (20 в коробке 44): нечётные 19 сажали значок на
+              // Размер чётный (22 в коробке 44): нечётные 19 сажали значок на
               // половину пикселя и на 3× экране это читалось как перекос.
               // Никаких доводочных сдвигов: на чётном размере габарит чернил
               // камеры и микрофона совпадает с центром круга (замер по снимку).
@@ -1920,7 +1942,7 @@ export default function Chat() {
                       : "opacity-0 scale-[.55] -rotate-45"
                   }`}
                 >
-                  <Mic size={20} />
+                  <Mic size={22} />
                 </span>
                 <span
                   aria-hidden="true"
@@ -1930,7 +1952,7 @@ export default function Chat() {
                       : "opacity-0 scale-[.55] rotate-45"
                   }`}
                 >
-                  <Video size={20} />
+                  <Video size={22} />
                 </span>
               </>
             )}

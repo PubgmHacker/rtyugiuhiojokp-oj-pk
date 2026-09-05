@@ -260,7 +260,9 @@ export default function NoteRecorder({
                        flex items-center justify-center active:scale-95 transition-transform
                        disabled:opacity-40"
           >
-            <Trash2 size={18} />
+            {/* 22, как значки композера: иначе левый круг заметно худеет
+                ровно в тот момент, когда запись сменяет поле ввода */}
+            <Trash2 size={22} />
           </button>
         )}
 
