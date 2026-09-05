@@ -298,7 +298,10 @@ function SwipeCardImpl({
       )}
 
       {/* Жалоба/блокировка — всегда доступна с карточки незнакомца.
-          Гасим pointerdown до жеста: кнопка не должна начинать drag */}
+          Гасим pointerdown до жеста: кнопка не должна начинать drag.
+          Стекло тёмное (liquid-photo-quiet), а не общее светлое: на кадре
+          со светлым фоном белая заливка подсвечивалась и служебная кнопка
+          перебивала и бейдж совпадения, и само лицо. */}
       {isTop && onFlag && (
         <button
           aria-label={`Пожаловаться на ${profile.display_name}`}
@@ -309,7 +312,7 @@ function SwipeCardImpl({
             onFlag(profile);
           }}
           className="absolute top-7 right-3 z-30 grid h-[34px] w-[34px] place-items-center
-                     rounded-full liquid liquid-photo text-white/85 active:text-white
+                     rounded-full liquid liquid-photo-quiet text-white/85 active:text-white
                      transition-colors after:absolute after:-inset-1.5 after:content-['']"
         >
           <Flag size={15} />

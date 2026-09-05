@@ -184,16 +184,30 @@ function RateQueue() {
         </p>
       </div>
 
-      <div className="flex justify-between gap-2 mt-5">
-        {SCORES.map((score) => (
+      {/* Шкала — одна карта с волосяными разделителями, как список настроек
+          и комнат: пять отдельных плиток подряд читались как пять кнопок,
+          а не как один диапазон. Заливка нарастает от 1 к 5 (акцент
+          6→28 %), поэтому направление шкалы видно ДО нажатия — раньше все
+          пять клеток были одинаковыми, и «1» ничем не отличалась от «5».
+          Ступень остаётся 71 px в ширину и 60 в высоту — палец попадает. */}
+      <div
+        className="settings-card mt-5 flex overflow-hidden rounded-[20px]"
+        role="group"
+        aria-label="Оценка фото от 1 до 5"
+      >
+        {SCORES.map((score, i) => (
           <button
             key={score}
             onClick={() => rate(score)}
             disabled={busy}
             aria-label={`Оценка ${score}`}
-            className="flex-1 h-14 rounded-[var(--radius-tile)] bg-surface-2
-                       border border-hairline text-[19px] font-extrabold
-                       disabled:opacity-50 active:scale-95 transition-transform"
+            style={{
+              background: `color-mix(in srgb, var(--color-accent) ${6 + i * 5.5}%, transparent)`,
+              color: `color-mix(in srgb, var(--color-text) ${74 + i * 6.5}%, transparent)`,
+            }}
+            className="flex-1 h-[60px] text-[19px] font-extrabold tabular-nums
+                       border-l border-[color:var(--glass-divider)] first:border-l-0
+                       disabled:opacity-50 active:brightness-[1.35] transition-[filter]"
           >
             {score}
           </button>
