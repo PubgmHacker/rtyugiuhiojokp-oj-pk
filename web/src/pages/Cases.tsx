@@ -460,8 +460,12 @@ function ПлиткаКейса({
           ))}
           {обложка > 0 && (
             <span className="px-2 py-0.5 chip text-[11px] font-semibold tabular-nums">
-              <span className="inline-flex items-center gap-1 text-warn">
-                <Sparkles size={10} strokeWidth={2.5} />
+              {/* Обложка — не редкость, а другой предмет, поэтому набрана не
+                  цветом редкости, а обычными чернилами с искрой: text-warn
+                  здесь читался как ещё одна «легендарная» — у легенды ровно
+                  этот же токен. */}
+              <span className="inline-flex items-center gap-1 text-text">
+                <Sparkles size={10} strokeWidth={2.5} className="text-accent" />
                 обложка
               </span>{" "}
               · {обложка}%

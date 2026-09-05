@@ -702,84 +702,90 @@ export default function Profile() {
               togglePrivacy("hide_from_ratings", !profile?.hide_from_ratings)
             }
           />
+
+          {/* Блок-лист — та же приватность, но раньше он лежал отдельной
+              карточкой без заголовка: ни группа с надзаголовком, ни карточка
+              со своим именем — единственное место экрана, выпадавшее из обеих
+              грамматик. Последней строкой «Приватности» он стоит рядом с
+              тумблерами, которые решают ту же задачу. */}
+          <div className="pt-3.5 border-t border-hairline">
+            <button
+              onClick={() => {
+                haptic("light");
+                blockedOpen ? setBlockedOpen(false) : openBlocked();
+              }}
+              className="flex w-full items-center gap-2.5 py-0.5"
+              aria-expanded={blockedOpen}
+            >
+              <span className="settings-badge">
+                <Ban size={15} />
+              </span>
+              <span className="flex-1 text-left text-[15px] font-semibold">
+                Заблокированные
+              </span>
+              <ChevronRight
+                size={14}
+                className={`text-text-faint shrink-0 transition-transform ${
+                  blockedOpen ? "rotate-90" : ""
+                }`}
+              />
+            </button>
+            <AnimatePresence initial={false}>
+              {blockedOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  {blockedСбой && blocked === null ? (
+                    <div className="pt-3">
+                      <p className="text-[13.5px] text-text-muted mb-2.5">
+                        Не удалось загрузить
+                      </p>
+                      <Button variant="secondary" size="sm" onClick={openBlocked}>
+                        Повторить
+                      </Button>
+                    </div>
+                  ) : blocked === null ? (
+                    <div className="flex justify-center pt-3.5">
+                      <Spinner size={18} />
+                    </div>
+                  ) : blocked.length === 0 ? (
+                    <p className="pt-3 text-[13.5px] text-text-muted">
+                      Вы никого не блокировали.
+                    </p>
+                  ) : (
+                    blocked.map((u, i) => (
+                      <div
+                        key={u.id}
+                        className={`flex items-center gap-3 py-2.5
+                                    ${i > 0 ? "border-t border-hairline" : "mt-1"}`}
+                      >
+                        <div className="w-8 h-8 rounded-full overflow-hidden bg-surface shrink-0">
+                          {u.photos?.[0] && (
+                            <img src={u.photos[0]} alt="" className="w-full h-full object-cover" />
+                          )}
+                        </div>
+                        <span className="flex-1 text-[14px] truncate">
+                          {u.display_name || "Без имени"}
+                        </span>
+                        <button
+                          onClick={() => handleUnblock(u.id, u.display_name || "")}
+                          className="text-[13px] text-accent font-medium tap-target px-1"
+                        >
+                          Разблокировать
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </Card>
-
-      {/* ── Заблокированные ──────────────────────────────────── */}
-      <div className="mb-4 glass rounded-[20px] py-1 overflow-hidden">
-        <button
-          onClick={() => {
-            haptic("light");
-            blockedOpen ? setBlockedOpen(false) : openBlocked();
-          }}
-          className="settings-row"
-          aria-expanded={blockedOpen}
-        >
-          <span className="settings-badge">
-            <Ban size={15} />
-          </span>
-          <span className="flex-1 text-left text-[15px] font-semibold">Заблокированные</span>
-          <ChevronRight
-            size={14}
-            className={`text-text-faint shrink-0 transition-transform ${
-              blockedOpen ? "rotate-90" : ""
-            }`}
-          />
-        </button>
-        <AnimatePresence initial={false}>
-          {blockedOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden border-t border-[var(--glass-divider)]"
-            >
-              {blockedСбой && blocked === null ? (
-                <div className="px-4 py-3.5">
-                  <p className="text-[13.5px] text-text-muted mb-2.5">
-                    Не удалось загрузить
-                  </p>
-                  <Button variant="secondary" size="sm" onClick={openBlocked}>
-                    Повторить
-                  </Button>
-                </div>
-              ) : blocked === null ? (
-                <div className="flex justify-center py-4">
-                  <Spinner size={18} />
-                </div>
-              ) : blocked.length === 0 ? (
-                <p className="px-4 py-3.5 text-[13.5px] text-text-muted">
-                  Вы никого не блокировали.
-                </p>
-              ) : (
-                blocked.map((u, i) => (
-                  <div
-                    key={u.id}
-                    className={`flex items-center gap-3 px-4 py-2.5
-                                ${i > 0 ? "border-t border-hairline" : ""}`}
-                  >
-                    <div className="w-8 h-8 rounded-full overflow-hidden bg-surface shrink-0">
-                      {u.photos?.[0] && (
-                        <img src={u.photos[0]} alt="" className="w-full h-full object-cover" />
-                      )}
-                    </div>
-                    <span className="flex-1 text-[14px] truncate">
-                      {u.display_name || "Без имени"}
-                    </span>
-                    <button
-                      onClick={() => handleUnblock(u.id, u.display_name || "")}
-                      className="text-[13px] text-accent font-medium tap-target px-1"
-                    >
-                      Разблокировать
-                    </button>
-                  </div>
-                ))
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
 
       {/* ── Документы и правила ───────────────────────────────── */}
       {/* legalUrl, а не window.location.origin: в нативной сборке origin —
