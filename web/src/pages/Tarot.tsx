@@ -322,7 +322,12 @@ export default function Tarot() {
               aria-hidden="true"
             >
               {spread.cards.map((card, i) => (
-                <ЛицоКарты key={i} name={card.name} задержка={i * 0.08} />
+                <ЛицоКарты
+                  key={i}
+                  name={card.name}
+                  задержка={i * 0.08}
+                  крупно={spread.cards.length === 1}
+                />
               ))}
             </div>
 
@@ -373,23 +378,42 @@ export default function Tarot() {
 /** Плашка карты: номер аркана, знак, имя. Читалке она не нужна — те же имя и
  *  значение стоят ниже строкой списка, поэтому ряд помечен aria-hidden, а
  *  здесь только картинка. */
-function ЛицоКарты({ name, задержка }: { name: string; задержка: number }) {
+function ЛицоКарты({
+  name,
+  задержка,
+  крупно = false,
+}: {
+  name: string;
+  задержка: number;
+  /** Карта дня выходит одна: 112 px — размер соседа в ряду из трёх, а не
+   *  размер героя. В одиночном раскладе она занимает место, которое иначе
+   *  остаётся пустым до самого таб-бара, и подписи растут вместе с ней. */
+  крупно?: boolean;
+}) {
   const безДвижения = useReducedMotion();
   const { n } = АРКАНЫ[name] ?? ЗАПАСНОЙ_АРКАН;
   return (
     <motion.div
-      className="tarot-face flex-1 min-w-0 max-w-[112px]"
+      className={`tarot-face flex-1 min-w-0 ${крупно ? "max-w-[172px]" : "max-w-[112px]"}`}
       initial={безДвижения ? false : { opacity: 0, rotateY: -62, y: 6 }}
       animate={{ opacity: 1, rotateY: 0, y: 0 }}
       transition={{ duration: 0.38, delay: задержка, ease: [0.22, 1, 0.36, 1] }}
       style={{ transformPerspective: 620 }}
     >
       <span className="tarot-face-rule" />
-      <span className="text-[9px] font-bold tracking-[0.14em] text-text-faint leading-none">
+      <span
+        className={`font-bold tracking-[0.14em] text-text-faint leading-none ${
+          крупно ? "text-[11px]" : "text-[9px]"
+        }`}
+      >
         {n}
       </span>
       <ТаротАркан name={name} className="flex-1 min-h-0 w-full text-accent my-1" />
-      <span className="text-[9.5px] font-semibold leading-tight text-center text-text-secondary px-0.5">
+      <span
+        className={`font-semibold leading-tight text-center text-text-secondary px-0.5 ${
+          крупно ? "text-[12px]" : "text-[9.5px]"
+        }`}
+      >
         {name}
       </span>
     </motion.div>

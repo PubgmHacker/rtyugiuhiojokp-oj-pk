@@ -188,11 +188,15 @@ export function HabitList({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
       ) : (
-        <ul className="space-y-2">
+        /* Список — одна карта с волосяными разделителями, как везде в
+           приложении. Отдельная карточка на задачу разносила три строки по
+           экрану так, будто это три разных раздела, и добавляла к каждой свой
+           контур: на плане дня из трёх пунктов рамок было больше, чем дел. */
+        <ul className="settings-card overflow-hidden rounded-[14px]">
           {habits.map((h) => (
             <li
               key={h.id}
-              className="flex items-center gap-3 rounded-[12px] border border-hairline bg-surface px-3 py-2.5"
+              className="flex items-center gap-3 border-t border-[color:var(--glass-divider)] px-3 py-2.5 first:border-t-0"
             >
               <button
                 onClick={() => отметить(h)}

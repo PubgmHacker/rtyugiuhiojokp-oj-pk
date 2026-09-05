@@ -269,6 +269,25 @@ function IncomingLikes() {
         </AnimatePresence>
       </div>
 
+      {/* Конец списка. Без него сетка обрывается, и под ней остаётся полэкрана
+          черноты — на двух лайках это читается как «дальше не загрузилось».
+          Строка отвечает на единственный вопрос, который тут возникает: где
+          взять ещё. Тихо — накопительный призыв уже стоит выше, у платной
+          строки, и два акцентных блока на экране спорили бы друг с другом. */}
+      <Link
+        to="/discover"
+        onClick={() => haptic("light")}
+        className="mx-4 mt-6 flex items-center gap-3 glass-soft rounded-[16px] px-4 py-3.5
+                   active:scale-[0.99] transition-transform"
+      >
+        <Sparkles size={18} className="shrink-0 text-text-muted" />
+        <p className="flex-1 text-[13px] leading-relaxed text-text-muted">
+          Это все, кто ждёт ответа. Новые лайки приходят из ленты — там анкеты,
+          которые вас ещё не видели.
+        </p>
+        <ChevronRight size={18} className="shrink-0 text-text-faint" />
+      </Link>
+
       <MatchModal data={matchData} onClose={() => setMatchData(null)} />
 
       {/* Полный профиль: решения те же, что на тайле, — человек не обязан
